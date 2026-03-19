@@ -8,13 +8,13 @@ A featherweight, always-on file converter that lives in your menu bar. Drop any 
 ## Features
 
 - **Floating drop zone** — a small, always-on-top window accepts drag-and-drop from Finder or any file manager
-- **Global hotkey** — ⌘⇧Space toggles the window; conversion options appear immediately
+- **Global hotkey** — cmd + shift + Space toggles the window; conversion options appear immediately
 - **Zero-friction UX** — one click to pick the output format, conversion starts instantly
 - **Broad format support**
   - Images: WebP, PNG, JPEG, AVIF, GIF, BMP, TIFF, HEIC/HEIF
   - Video: MP4, MOV, MKV, WebM, AVI, GIF (video-to-GIF and GIF-to-video)
   - Audio: MP3, AAC, FLAC, OGG, WAV, OPUS
-  - Data: JSON ↔ YAML ↔ TOML ↔ CSV
+  - Data: JSON, YAML, TOML, CSV
 - **Output next to source** — converted file lands in the same folder as the input
 - **Batch conversion** — drop multiple files at once
 - **Progress indicator** — lightweight inline progress bar per file, no modal dialogs
@@ -135,4 +135,4 @@ The <3 MB goal applies to the app shell excluding `ffmpeg`. Tactics:
 
 ## License
 
-MIT
+Apache License Version 2.0
