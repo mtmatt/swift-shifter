@@ -1,0 +1,49 @@
+{
+  "productName": "Swift Shifter",
+  "version": "0.1.0",
+  "identifier": "com.swiftshifter.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build",
+    "devUrl": "http://localhost:5173",
+    "frontendDist": "../ui/dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Swift Shifter",
+        "width": 320,
+        "height": 220,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "transparent": true,
+        "visible": true,
+        "center": true
+      }
+    ],
+    "trayIcon": {
+      "iconPath": "icons/icon.png",
+      "iconAsTemplate": true,
+      "menuOnLeftClick": false,
+      "tooltip": "Swift Shifter"
+    },
+    "macOSPrivateApi": true,
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

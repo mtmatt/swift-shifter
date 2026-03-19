@@ -1,0 +1,413 @@
+/* ===== Design tokens ===== */
+:root {
+  --radius: 10px;
+
+  /* Indigo accent — unexpected, premium */
+  --accent:      #6366f1;
+  --accent-dim:  rgba(99, 102, 241, 0.10);
+  --accent-mid:  rgba(99, 102, 241, 0.22);
+
+  /* Light — warm parchment, not cold white */
+  --bg:           #f0ede8;
+  --surface:      rgba(0, 0, 0, 0.03);
+  --border:       rgba(0, 0, 0, 0.07);
+  --border-hard:  rgba(0, 0, 0, 0.14);
+  --text:         #111110;
+  --text-2:       #706e69;
+  --text-3:       #a8a39c;
+  --danger:       #e5484d;
+  --success:      #3d9a50;
+  --progress-track: rgba(0, 0, 0, 0.07);
+  --titlebar-h:   26px;
+  --statusbar-h:  18px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent:      #818cf8;
+    --accent-dim:  rgba(129, 140, 248, 0.10);
+    --accent-mid:  rgba(129, 140, 248, 0.20);
+
+    --bg:           #111113;
+    --surface:      rgba(255, 255, 255, 0.035);
+    --border:       rgba(255, 255, 255, 0.07);
+    --border-hard:  rgba(255, 255, 255, 0.13);
+    --text:         #eeecea;
+    --text-2:       #9c9893;
+    --text-3:       #635f59;
+    --danger:       #f2555a;
+    --success:      #62c073;
+    --progress-track: rgba(255, 255, 255, 0.07);
+  }
+}
+
+/* ===== Reset ===== */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/* ===== THE corner fix — clips the entire WebKit render surface ===== */
+html {
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  width: 320px;
+  height: 220px;
+  overflow: hidden;
+  background: transparent;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  font-size: 12px;
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ===== App shell ===== */
+#app {
+  width: 320px;
+  height: 220px;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  border-radius: var(--radius);
+  border: 0.5px solid var(--border-hard);
+  overflow: hidden;
+  position: relative;
+}
+
+/* Accent seam — the "instrument" detail */
+#app::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 20px;
+  right: 20px;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent 0%,
+    var(--accent) 40%,
+    var(--accent) 60%,
+    transparent 100%
+  );
+  opacity: 0.45;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* ===== Titlebar ===== */
+#titlebar {
+  height: var(--titlebar-h);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 9px 0 11px;
+  border-bottom: 0.5px solid var(--border);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+#app-title {
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  color: var(--text-2);
+  text-transform: uppercase;
+}
+
+#btn-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  transition: opacity 0.12s;
+  outline: none;
+}
+
+.close-dot {
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border-hard);
+  transition: background 0.12s;
+}
+
+#btn-close:hover .close-dot {
+  background: var(--danger);
+}
+
+/* ===== Drop zone ===== */
+#drop-zone {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  transition: background 0.15s;
+}
+
+/* Subtle dot-grid texture */
+#drop-zone::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, var(--border-hard) 1px, transparent 1px);
+  background-size: 16px 16px;
+  opacity: 0.45;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+#drop-zone.drag-over {
+  background: var(--accent-dim);
+}
+
+#drop-zone.drag-over::after {
+  opacity: 0.7;
+}
+
+#drop-prompt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  pointer-events: none;
+  z-index: 1;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+#drop-zone.drag-over #drop-prompt {
+  opacity: 0.3;
+  transform: scale(0.96);
+}
+
+#drop-icon {
+  width: 26px;
+  height: 26px;
+  color: var(--accent);
+  opacity: 0.75;
+}
+
+#drop-text {
+  font-size: 12px;
+  font-weight: 590;
+  color: var(--text);
+  letter-spacing: -0.015em;
+}
+
+#drop-hint {
+  font-size: 10px;
+  color: var(--text-3);
+  letter-spacing: 0.01em;
+}
+
+/* ===== File list ===== */
+#file-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 5px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  scrollbar-width: none;
+}
+
+#file-list::-webkit-scrollbar {
+  display: none;
+}
+
+.file-item {
+  padding: 5px 6px 5px 9px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-radius: 6px;
+  border: 0.5px solid var(--border);
+  background: var(--surface);
+  position: relative;
+  animation: itemIn 0.13s ease;
+}
+
+/* Left accent bar on each file item */
+.file-item::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 5px;
+  bottom: 5px;
+  width: 2px;
+  border-radius: 0 1px 1px 0;
+  background: var(--accent);
+  opacity: 0.4;
+}
+
+@keyframes itemIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.file-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.file-name {
+  flex: 1;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text);
+  letter-spacing: -0.01em;
+}
+
+.file-remove {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 13px;
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  flex-shrink: 0;
+  line-height: 1;
+  padding-bottom: 1px;
+  transition: background 0.1s, color 0.1s;
+}
+
+.file-remove:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
+/* ===== Format badges ===== */
+.format-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.fmt-btn {
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 5px;
+  border-radius: 3px;
+  border: 0.5px solid var(--border-hard);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: border-color 0.1s, color 0.1s, background 0.1s;
+}
+
+.fmt-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.fmt-btn:active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.fmt-btn.selected {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.fmt-btn:disabled {
+  opacity: 0.28;
+  cursor: default;
+}
+
+/* ===== Progress ===== */
+.progress-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 2px;
+  background: var(--progress-track);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--accent);
+  border-radius: 1px;
+  transition: width 0.25s ease;
+}
+
+.progress-label {
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+  font-size: 9px;
+  color: var(--text-3);
+  min-width: 24px;
+  text-align: right;
+}
+
+/* ===== Inline status ===== */
+.file-status {
+  font-size: 10px;
+  padding-left: 1px;
+  letter-spacing: -0.01em;
+}
+
+.file-status.error {
+  color: var(--danger);
+}
+
+.file-status.success {
+  color: var(--success);
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+/* ===== Status bar ===== */
+#status-bar {
+  flex-shrink: 0;
+  height: var(--statusbar-h);
+  padding: 0 11px;
+  display: flex;
+  align-items: center;
+  border-top: 0.5px solid var(--border);
+}
+
+#ffmpeg-status {
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+  font-size: 9px;
+  letter-spacing: 0.05em;
+  color: var(--text-3);
+}
+
+#ffmpeg-status.warning {
+  color: #d97706;
+}

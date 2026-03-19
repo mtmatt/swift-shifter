@@ -1,0 +1,12 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/schema/capability.json",
+  "identifier": "default",
+  "description": "Default permissions for Swift Shifter",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    "dialog:allow-open",
+    "shell:default"
+  ]
+}

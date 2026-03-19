@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Swift Shifter</title>
+  <link rel="stylesheet" href="src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="titlebar" data-tauri-drag-region>
+      <span id="app-title">Swift Shifter</span>
+      <button id="btn-close" title="Hide (stays in tray)" aria-label="Hide">
+        <span class="close-dot"></span>
+      </button>
+    </div>
+
+    <div
+      id="drop-zone"
+      role="region"
+      aria-label="Drop files here to convert"
+    >
+      <div id="drop-prompt">
+        <svg id="drop-icon" viewBox="0 0 32 32" fill="none">
+          <rect x="4" y="6" width="10" height="14" rx="2" stroke="currentColor" stroke-width="1.25"/>
+          <rect x="18" y="12" width="10" height="14" rx="2" stroke="currentColor" stroke-width="1.25"/>
+          <path d="M14 11l4 2-4 2" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <p id="drop-text">Drop files to convert</p>
+        <p id="drop-hint">or click to browse</p>
+      </div>
+    </div>
+
+    <div id="file-list" hidden></div>
+
+    <div id="status-bar">
+      <span id="ffmpeg-status"></span>
+    </div>
+  </div>
+
+  <script type="module" src="src/main.ts"></script>
+</body>
+</html>
