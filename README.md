@@ -78,7 +78,7 @@ The Rust backend exposes a small set of Tauri commands:
 | Tool | Version | Notes |
 |---|---|---|
 | Rust | stable (≥ 1.78) | via `rustup` |
-| Node.js | ≥ 20 | for Tauri CLI and Vite |
+| Node.js | ≥ 24 | for Tauri CLI and Vite |
 | ffmpeg | ≥ 6 | for video/audio; auto-installed via `brew` if missing |
 
 The Tauri CLI is installed as a local npm dev dependency — no global install needed.
