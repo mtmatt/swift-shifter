@@ -15,8 +15,10 @@ pub fn detect_output_formats(path: &str) -> Result<Vec<String>, String> {
     let formats: &[&str] = match ext.as_str() {
         // Images
         "png" | "jpg" | "jpeg" | "webp" | "bmp" | "tiff" | "tif" | "gif" | "avif" => {
-            &["png", "jpg", "webp", "avif", "gif", "bmp", "tiff"]
+            &["png", "jpg", "webp", "avif", "gif", "bmp", "tiff", "heic"]
         }
+        // HEIC — macOS sips only; no WebP/AVIF output via sips
+        "heic" | "heif" => &["jpg", "png", "tiff", "gif", "bmp"],
         // Video
         "mp4" | "mov" | "mkv" | "webm" | "avi" => &["mp4", "mov", "mkv", "webm", "avi", "gif"],
         // Audio
@@ -53,14 +55,20 @@ pub async fn convert_file(
         "png" | "jpg" | "jpeg" | "webp" | "bmp" | "tiff" | "tif" | "gif" => {
             if target_format == "avif" {
                 image::convert_to_avif(path)
+            } else if target_format == "heic" {
+                image::convert_to_heic(path)
             } else {
                 image::convert_image(path, target_format)
             }
         }
         "avif" => {
-            // avif decode then re-encode via image crate path
-            image::convert_image(path, target_format)
+            if target_format == "heic" {
+                image::convert_to_heic(path)
+            } else {
+                image::convert_image(path, target_format)
+            }
         }
+        "heic" | "heif" => image::convert_heic(path, target_format),
         "mp4" | "mov" | "mkv" | "webm" | "avi" | "mp3" | "aac" | "flac" | "ogg" | "wav"
         | "opus" => media::convert_media(app, path, target_format).await,
         "json" | "yaml" | "yml" | "toml" | "csv" => data::convert_data(path, target_format),

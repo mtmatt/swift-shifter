@@ -1,10 +1,49 @@
 use std::path::{Path, PathBuf};
 
 fn output_path(input: &str, ext: &str) -> PathBuf {
+    // deduplicate: if stem already ends with the ext, avoid double extension
     let p = Path::new(input);
     let stem = p.file_stem().unwrap_or_default();
     let dir = p.parent().unwrap_or(Path::new("."));
     dir.join(format!("{}.{}", stem.to_string_lossy(), ext))
+}
+
+// sips is built-in on every macOS install — the only reliable way to handle HEIC.
+fn sips_convert(path: &str, sips_format: &str, out: &Path) -> Result<(), String> {
+    let status = std::process::Command::new("sips")
+        .args([
+            "-s", "format", sips_format,
+            path,
+            "--out", out.to_str().unwrap_or(""),
+        ])
+        .status()
+        .map_err(|e| format!("sips not available: {e}"))?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("sips exited with status {}", status.code().unwrap_or(-1)))
+    }
+}
+
+pub fn convert_heic(path: &str, target_format: &str) -> Result<String, String> {
+    let out = output_path(path, target_format);
+    let sips_format = match target_format {
+        "jpg" | "jpeg" => "jpeg",
+        "png"          => "png",
+        "tiff" | "tif" => "tiff",
+        "bmp"          => "bmp",
+        "gif"          => "gif",
+        other => return Err(format!("HEIC → {other} is not supported")),
+    };
+    sips_convert(path, sips_format, &out)?;
+    Ok(out.to_string_lossy().to_string())
+}
+
+pub fn convert_to_heic(path: &str) -> Result<String, String> {
+    let out = output_path(path, "heic");
+    sips_convert(path, "heic", &out)?;
+    Ok(out.to_string_lossy().to_string())
 }
 
 pub fn convert_image(path: &str, target_format: &str) -> Result<String, String> {
