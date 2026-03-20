@@ -391,6 +391,28 @@ body {
   text-underline-offset: 2px;
 }
 
+/* ===== Batch toolbar ===== */
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 3px;
+  padding: 4px 6px 4px 9px;
+  border-radius: 5px;
+  border: 0.5px solid var(--accent-mid);
+  background: var(--accent-dim);
+}
+
+.batch-label {
+  font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  white-space: nowrap;
+  margin-right: 2px;
+}
+
 /* ===== Status bar ===== */
 #status-bar {
   flex-shrink: 0;
