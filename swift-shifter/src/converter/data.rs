@@ -15,7 +15,11 @@ fn output_path(input: &str, ext: &str, output_dir: Option<&str>) -> Result<PathB
     Ok(dir.join(format!("{}.{}", stem.to_string_lossy(), ext)))
 }
 
-pub fn convert_data(path: &str, target_format: &str, output_dir: Option<&str>) -> Result<String, String> {
+pub fn convert_data(
+    path: &str,
+    target_format: &str,
+    output_dir: Option<&str>,
+) -> Result<String, String> {
     let content = std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {e}"))?;
     let ext = Path::new(path)
         .extension()
@@ -65,8 +69,8 @@ pub fn convert_data(path: &str, target_format: &str, output_dir: Option<&str>) -
             serde_yaml::to_string(&value).map_err(|e| format!("YAML serialization error: {e}"))?
         }
         "toml" => {
-            let toml_val: toml::Value = serde_json::from_value(value)
-                .map_err(|e| format!("JSON→TOML conversion: {e}"))?;
+            let toml_val: toml::Value =
+                serde_json::from_value(value).map_err(|e| format!("JSON→TOML conversion: {e}"))?;
             toml::to_string_pretty(&toml_val)
                 .map_err(|e| format!("TOML serialization error: {e}"))?
         }
@@ -103,8 +107,11 @@ pub fn convert_data(path: &str, target_format: &str, output_dir: Option<&str>) -
                             .map_err(|e| format!("CSV write error: {e}"))?;
                     }
                 }
-                String::from_utf8(wtr.into_inner().map_err(|e| format!("CSV flush error: {e}"))?)
-                    .map_err(|e| format!("CSV encoding error: {e}"))?
+                String::from_utf8(
+                    wtr.into_inner()
+                        .map_err(|e| format!("CSV flush error: {e}"))?,
+                )
+                .map_err(|e| format!("CSV encoding error: {e}"))?
             }
         }
         other => return Err(format!("Unsupported target format: {other}")),

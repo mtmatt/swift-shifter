@@ -132,6 +132,7 @@ The <3 MB goal applies to the app shell excluding `ffmpeg`. Tactics:
 - [ ] Auto-update via Tauri updater plugin
 - [ ] Windows and Linux support
 - [ ] Windows and Linux builds in CI
+- [ ] Support document conversion with pandoc.
 
 
 ## License

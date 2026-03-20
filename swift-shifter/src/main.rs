@@ -9,7 +9,7 @@ mod tray;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::{Manager, WindowEvent};
+use tauri::{Emitter, Manager, WindowEvent};
 
 use config::AppState;
 
@@ -78,6 +78,7 @@ fn main() {
             tauri::async_runtime::spawn(async move {
                 if let Err(e) = converter::media::ensure_ffmpeg(&handle).await {
                     eprintln!("ffmpeg setup warning: {e}");
+                    handle.emit("ffmpeg:failed", e).ok();
                 }
             });
             Ok(())

@@ -1,4 +1,6 @@
 .claude/
 CLAUDE.md
-node_modules/
+memory/
 
+node_modules/
+*.js

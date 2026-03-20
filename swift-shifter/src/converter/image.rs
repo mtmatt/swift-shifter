@@ -20,9 +20,12 @@ fn output_path(input: &str, ext: &str, output_dir: Option<&str>) -> Result<PathB
 fn sips_convert(path: &str, sips_format: &str, out: &Path) -> Result<(), String> {
     let status = std::process::Command::new("sips")
         .args([
-            "-s", "format", sips_format,
+            "-s",
+            "format",
+            sips_format,
             path,
-            "--out", out.to_str().unwrap_or(""),
+            "--out",
+            out.to_str().unwrap_or(""),
         ])
         .status()
         .map_err(|e| format!("sips not available: {e}"))?;
@@ -30,7 +33,10 @@ fn sips_convert(path: &str, sips_format: &str, out: &Path) -> Result<(), String>
     if status.success() {
         Ok(())
     } else {
-        Err(format!("sips exited with status {}", status.code().unwrap_or(-1)))
+        Err(format!(
+            "sips exited with status {}",
+            status.code().unwrap_or(-1)
+        ))
     }
 }
 
@@ -42,10 +48,10 @@ pub fn convert_heic(
     let out = output_path(path, target_format, output_dir)?;
     let sips_format = match target_format {
         "jpg" | "jpeg" => "jpeg",
-        "png"          => "png",
+        "png" => "png",
         "tiff" | "tif" => "tiff",
-        "bmp"          => "bmp",
-        "gif"          => "gif",
+        "bmp" => "bmp",
+        "gif" => "gif",
         other => return Err(format!("HEIC → {other} is not supported")),
     };
     sips_convert(path, sips_format, &out)?;
@@ -70,18 +76,17 @@ pub fn convert_image(
     if target_format == "jpg" || target_format == "jpeg" {
         use image::codecs::jpeg::JpegEncoder;
         use std::io::BufWriter;
-        let file = std::fs::File::create(&out)
-            .map_err(|e| format!("Cannot create file: {e}"))?;
+        let file = std::fs::File::create(&out).map_err(|e| format!("Cannot create file: {e}"))?;
         let enc = JpegEncoder::new_with_quality(BufWriter::new(file), jpeg_quality);
         img.write_with_encoder(enc)
             .map_err(|e| format!("Failed to save JPEG: {e}"))?;
     } else {
         let fmt = match target_format {
-            "png"        => image::ImageFormat::Png,
-            "webp"       => image::ImageFormat::WebP,
-            "bmp"        => image::ImageFormat::Bmp,
+            "png" => image::ImageFormat::Png,
+            "webp" => image::ImageFormat::WebP,
+            "bmp" => image::ImageFormat::Bmp,
             "tiff" | "tif" => image::ImageFormat::Tiff,
-            "gif"        => image::ImageFormat::Gif,
+            "gif" => image::ImageFormat::Gif,
             other => return Err(format!("Unknown image format: {other}")),
         };
         img.save_with_format(&out, fmt)
@@ -115,7 +120,6 @@ pub fn convert_to_avif(
         .map_err(|e| format!("AVIF encoding failed: {e}"))?;
 
     let out = output_path(path, "avif", output_dir)?;
-    std::fs::write(&out, result.avif_file)
-        .map_err(|e| format!("Failed to write AVIF: {e}"))?;
+    std::fs::write(&out, result.avif_file).map_err(|e| format!("Failed to write AVIF: {e}"))?;
     Ok(out.to_string_lossy().to_string())
 }
