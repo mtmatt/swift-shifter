@@ -99,6 +99,36 @@ body {
 }
 
 /* ===== Titlebar ===== */
+.titlebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+#btn-settings {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  color: var(--text-3);
+  transition: color 0.12s, background 0.12s;
+  outline: none;
+}
+
+#btn-settings:hover {
+  color: var(--text-2);
+  background: var(--surface);
+}
+
+#btn-settings.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
 #titlebar {
   height: var(--titlebar-h);
   display: flex;
@@ -390,6 +420,159 @@ body {
   text-decoration: underline dotted;
   text-underline-offset: 2px;
 }
+
+/* ===== Settings panel ===== */
+#settings-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 9px 4px;
+  gap: 5px;
+  overflow: hidden;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 22px;
+}
+
+.settings-label {
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--text-2);
+  width: 62px;
+  flex-shrink: 0;
+  letter-spacing: -0.01em;
+}
+
+/* Output folder row */
+.settings-output-ctrl {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.settings-path-val {
+  flex: 1;
+  font-size: 10px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.settings-output-btns {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.settings-mini-btn {
+  font-size: 9px;
+  font-weight: 500;
+  padding: 2px 5px;
+  border-radius: 3px;
+  border: 0.5px solid var(--border-hard);
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition: border-color 0.1s, color 0.1s, background 0.1s;
+  letter-spacing: 0.02em;
+}
+
+.settings-mini-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+.settings-clear-btn {
+  font-size: 12px;
+  padding: 1px 5px 2px;
+  line-height: 1;
+}
+
+/* Slider rows */
+.settings-slider-ctrl {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-slider-ctrl input[type="range"] {
+  flex: 1;
+  height: 3px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--progress-track);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.settings-slider-ctrl input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  border: none;
+  transition: transform 0.1s;
+}
+
+.settings-slider-ctrl input[type="range"]::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+.settings-val {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 9px;
+  color: var(--text-3);
+  min-width: 20px;
+  text-align: right;
+}
+
+/* Footer */
+.settings-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+  padding-top: 4px;
+  border-top: 0.5px solid var(--border);
+}
+
+.settings-status {
+  font-size: 9px;
+  color: var(--text-3);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.settings-status.error { color: var(--danger); }
+.settings-status.ok    { color: var(--success); }
+
+.settings-save-btn {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 0.5px solid var(--accent);
+  background: var(--accent);
+  color: #fff;
+  cursor: pointer;
+  letter-spacing: 0.02em;
+  transition: opacity 0.1s;
+}
+
+.settings-save-btn:hover  { opacity: 0.85; }
+.settings-save-btn:active { opacity: 0.7; }
 
 /* ===== Batch toolbar ===== */
 .batch-toolbar {

@@ -126,7 +126,7 @@ The <3 MB goal applies to the app shell excluding `ffmpeg`. Tactics:
 - [x] Progress events streamed to UI
 - [x] Output folder reveal
 - [x] macOS CI
-- [ ] Batch conversion with concurrency
+- [x] Batch conversion with concurrency
 - [ ] Config file + settings panel
 - [ ] Auto-update via Tauri updater plugin
 - [ ] Windows and Linux support

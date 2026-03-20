@@ -1,13 +1,21 @@
 use std::path::{Path, PathBuf};
 
-fn output_path(input: &str, ext: &str) -> PathBuf {
+fn output_path(input: &str, ext: &str, output_dir: Option<&str>) -> Result<PathBuf, String> {
     let p = Path::new(input);
     let stem = p.file_stem().unwrap_or_default();
-    let dir = p.parent().unwrap_or(Path::new("."));
-    dir.join(format!("{}.{}", stem.to_string_lossy(), ext))
+    let dir = match output_dir {
+        Some(d) => {
+            let dir = PathBuf::from(d);
+            std::fs::create_dir_all(&dir)
+                .map_err(|e| format!("Failed to create output directory: {e}"))?;
+            dir
+        }
+        None => p.parent().unwrap_or(Path::new(".")).to_path_buf(),
+    };
+    Ok(dir.join(format!("{}.{}", stem.to_string_lossy(), ext)))
 }
 
-pub fn convert_data(path: &str, target_format: &str) -> Result<String, String> {
+pub fn convert_data(path: &str, target_format: &str, output_dir: Option<&str>) -> Result<String, String> {
     let content = std::fs::read_to_string(path).map_err(|e| format!("Failed to read file: {e}"))?;
     let ext = Path::new(path)
         .extension()
@@ -49,7 +57,7 @@ pub fn convert_data(path: &str, target_format: &str) -> Result<String, String> {
     };
 
     // Serialize to target format
-    let out = output_path(path, target_format);
+    let out = output_path(path, target_format, output_dir)?;
     let output_content = match target_format {
         "json" => serde_json::to_string_pretty(&value)
             .map_err(|e| format!("JSON serialization error: {e}"))?,

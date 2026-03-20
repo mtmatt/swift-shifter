@@ -27,12 +27,21 @@ interface BatchResult {
   error: string | null;
 }
 
+interface Config {
+  output_dir: string | null;
+  jpeg_quality: number;
+  avif_quality: number;
+  max_concurrent: number;
+}
+
 const files = new Map<string, FileEntry>();
 
 const dropZone = document.getElementById("drop-zone") as HTMLDivElement;
 const fileList = document.getElementById("file-list") as HTMLDivElement;
+const settingsPanel = document.getElementById("settings-panel") as HTMLDivElement;
 const ffmpegStatus = document.getElementById("ffmpeg-status") as HTMLSpanElement;
 const btnClose = document.getElementById("btn-close") as HTMLButtonElement;
+const btnSettings = document.getElementById("btn-settings") as HTMLButtonElement;
 
 const appWindow = getCurrentWindow();
 
@@ -40,11 +49,107 @@ btnClose.addEventListener("click", () => {
   invoke("quit");
 });
 
+// ===== Settings panel =====
+
+btnSettings.addEventListener("click", () => {
+  if (settingsPanel.hidden) {
+    openSettings();
+  } else {
+    closeSettings();
+  }
+});
+
+document.getElementById("btn-save-config")!.addEventListener("click", saveSettings);
+
+document.getElementById("btn-browse-output")!.addEventListener("click", async () => {
+  const dir = await openDialog({ multiple: false, directory: true });
+  if (!dir) return;
+  const path = Array.isArray(dir) ? dir[0] : dir;
+  document.getElementById("cfg-output-dir-display")!.textContent = path;
+});
+
+document.getElementById("btn-clear-output")!.addEventListener("click", () => {
+  document.getElementById("cfg-output-dir-display")!.textContent = "Same as source";
+});
+
+// Live-update value displays for sliders
+for (const [id, valId] of [
+  ["cfg-jpeg-quality", "cfg-jpeg-quality-val"],
+  ["cfg-avif-quality", "cfg-avif-quality-val"],
+  ["cfg-max-concurrent", "cfg-max-concurrent-val"],
+] as [string, string][]) {
+  document.getElementById(id)!.addEventListener("input", (e) => {
+    document.getElementById(valId)!.textContent = (e.target as HTMLInputElement).value;
+  });
+}
+
+async function openSettings(): Promise<void> {
+  let cfg: Config;
+  try {
+    cfg = await invoke<Config>("get_config");
+  } catch {
+    cfg = { output_dir: null, jpeg_quality: 85, avif_quality: 80, max_concurrent: 4 };
+  }
+
+  const displayEl = document.getElementById("cfg-output-dir-display")!;
+  displayEl.textContent = cfg.output_dir ?? "Same as source";
+
+  const setSlider = (id: string, valId: string, value: number) => {
+    (document.getElementById(id) as HTMLInputElement).value = String(value);
+    document.getElementById(valId)!.textContent = String(value);
+  };
+  setSlider("cfg-jpeg-quality",   "cfg-jpeg-quality-val",   cfg.jpeg_quality);
+  setSlider("cfg-avif-quality",   "cfg-avif-quality-val",   cfg.avif_quality);
+  setSlider("cfg-max-concurrent", "cfg-max-concurrent-val", cfg.max_concurrent);
+
+  const statusEl = document.getElementById("settings-status")!;
+  statusEl.textContent = "";
+  statusEl.className = "settings-status";
+
+  // Show settings panel, hide main content
+  dropZone.hidden = true;
+  fileList.hidden = true;
+  settingsPanel.hidden = false;
+  btnSettings.classList.add("active");
+}
+
+function closeSettings(): void {
+  settingsPanel.hidden = true;
+  btnSettings.classList.remove("active");
+  // Restore correct content area
+  if (files.size > 0) {
+    fileList.hidden = false;
+  } else {
+    dropZone.hidden = false;
+  }
+}
+
+async function saveSettings(): Promise<void> {
+  const statusEl = document.getElementById("settings-status")!;
+  const rawOutputDir = document.getElementById("cfg-output-dir-display")!.textContent ?? "";
+  const newConfig: Config = {
+    output_dir: rawOutputDir === "Same as source" ? null : rawOutputDir,
+    jpeg_quality: Number((document.getElementById("cfg-jpeg-quality") as HTMLInputElement).value),
+    avif_quality: Number((document.getElementById("cfg-avif-quality") as HTMLInputElement).value),
+    max_concurrent: Number((document.getElementById("cfg-max-concurrent") as HTMLInputElement).value),
+  };
+
+  try {
+    await invoke("set_config", { newConfig });
+    statusEl.textContent = "Saved";
+    statusEl.className = "settings-status ok";
+    setTimeout(() => closeSettings(), 800);
+  } catch (err) {
+    statusEl.textContent = String(err);
+    statusEl.className = "settings-status error";
+  }
+}
+
 // startDragging() is the reliable way to move a decoration-less window on macOS
 const titlebar = document.getElementById("titlebar") as HTMLDivElement;
 titlebar.addEventListener("mousedown", (e) => {
   if (e.button !== 0) return;
-  if ((e.target as HTMLElement).closest("#btn-close")) return;
+  if ((e.target as HTMLElement).closest(".titlebar-actions")) return;
   appWindow.startDragging();
 });
 
@@ -351,9 +456,7 @@ async function startBatchConversion(targetFormat: string): Promise<void> {
       path: e.path,
       targetFormat,
     }));
-    const results = await invoke<BatchResult[]>("convert_batch", {
-      items: batchItems,
-    });
+    const results = await invoke<BatchResult[]>("convert_batch", { items: batchItems });
 
     for (const result of results) {
       const entry = files.get(result.path);
