@@ -127,10 +127,12 @@ The <3 MB goal applies to the app shell excluding `ffmpeg`. Tactics:
 - [x] Output folder reveal
 - [x] macOS CI
 - [x] Batch conversion with concurrency
-- [ ] Config file + settings panel
+- [x] Config file + settings panel
+- [ ] Handle ffmpeg and brew installation automatically
 - [ ] Auto-update via Tauri updater plugin
 - [ ] Windows and Linux support
 - [ ] Windows and Linux builds in CI
+- [ ] Support document conversion with pandoc.
 
 
 ## License

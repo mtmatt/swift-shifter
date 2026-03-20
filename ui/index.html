@@ -1,42 +1,74 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Swift Shifter</title>
-  <link rel="stylesheet" href="src/style.css" />
-</head>
-<body>
-  <div id="app">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Swift Shifter</title>
+        <link rel="stylesheet" href="src/style.css" />
+    </head>
+    <body>
+        <div id="app">
+            <!-- ── Drag strip ────────────────────────────────────────────────── -->
+            <div id="drag-strip" data-tauri-drag-region></div>
 
-    <!-- ── Drag strip ────────────────────────────────────────────────── -->
-    <div id="drag-strip" data-tauri-drag-region></div>
+            <!-- ── Drop zone (idle state) ─────────────────────────────────────── -->
+            <div
+                id="drop-zone"
+                role="region"
+                aria-label="Drop files here to convert"
+            >
+                <div id="drop-content">
+                    <div id="drop-icon-wrap">
+                        <div id="drop-ring"></div>
+                        <svg
+                            id="drop-arrow"
+                            width="20"
+                            height="20"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            aria-hidden="true"
+                        >
+                            <path
+                                d="M12 4v13"
+                                stroke="currentColor"
+                                stroke-width="1.5"
+                                stroke-linecap="round"
+                            />
+                            <path
+                                d="M7 13l5 5 5-5"
+                                stroke="currentColor"
+                                stroke-width="1.5"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            />
+                        </svg>
+                    </div>
+                    <p id="drop-text">drop files to convert</p>
+                    <p id="drop-hint">or click to browse</p>
+                </div>
+            </div>
 
-    <!-- ── Drop zone (idle state) ─────────────────────────────────────── -->
-    <div id="drop-zone" role="region" aria-label="Drop files here to convert">
-      <div id="drop-content">
-        <div id="drop-icon-wrap">
-          <div id="drop-ring"></div>
-          <svg id="drop-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-            <path d="M12 4v13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            <path d="M7 13l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-          </svg>
+            <!-- ── File list (active state) ──────────────────────────────────── -->
+            <div id="file-list" hidden></div>
+
+            <!-- ── Install panel ──────────────────────────────────────────────── -->
+            <div id="install-panel" hidden>
+                <p id="install-title">installing…</p>
+                <p id="install-subtitle"></p>
+                <div class="progress-bar" id="install-progress-bar">
+                    <div id="install-progress-fill"></div>
+                </div>
+                <div id="install-log-wrap">
+                    <div id="install-log"></div>
+                </div>
+            </div>
+
+            <!-- ── Bottom bar ─────────────────────────────────────────────────── -->
+            <div id="bottom-bar">
+                <span id="bottom-status"></span>
+                <button id="btn-clear-all" hidden>clear all</button>
+            </div>
         </div>
-        <p id="drop-text">drop files to convert</p>
-        <p id="drop-hint">or click to browse</p>
-      </div>
-    </div>
-
-    <!-- ── File list (active state) ──────────────────────────────────── -->
-    <div id="file-list" hidden></div>
-
-    <!-- ── Bottom bar ─────────────────────────────────────────────────── -->
-    <div id="bottom-bar">
-      <span id="bottom-status"></span>
-      <button id="btn-clear-all" hidden>clear all</button>
-    </div>
-
-  </div>
-  <script type="module" src="src/main.ts"></script>
-</body>
+        <script type="module" src="src/main.ts"></script>
+    </body>
 </html>

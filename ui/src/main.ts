@@ -6,7 +6,14 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────
 
-interface ProgressPayload { path: string; percent: number; }
+interface ProgressPayload {
+  path: string;
+  percent: number;
+}
+interface InstallLogPayload {
+  line: string;
+  phase: string;
+}
 
 interface FileEntry {
   path: string;
@@ -15,16 +22,38 @@ interface FileEntry {
   el: HTMLElement;
 }
 
-interface BatchItem   { path: string; targetFormat: string; }
-interface BatchResult { path: string; output_path: string | null; error: string | null; }
+interface BatchItem {
+  path: string;
+  targetFormat: string;
+}
+interface BatchResult {
+  path: string;
+  output_path: string | null;
+  error: string | null;
+}
 
 // ─── Element refs ─────────────────────────────────────────────────────────
 
-const files      = new Map<string, FileEntry>();
-const dropZone   = document.getElementById("drop-zone")   as HTMLDivElement;
-const fileList   = document.getElementById("file-list")   as HTMLDivElement;
-const bottomStatus = document.getElementById("bottom-status") as HTMLSpanElement;
-const btnClearAll  = document.getElementById("btn-clear-all") as HTMLButtonElement;
+const files = new Map<string, FileEntry>();
+const dropZone = document.getElementById("drop-zone") as HTMLDivElement;
+const fileList = document.getElementById("file-list") as HTMLDivElement;
+const installPanel = document.getElementById("install-panel") as HTMLDivElement;
+const installTitle = document.getElementById(
+  "install-title",
+) as HTMLParagraphElement;
+const installSubtitle = document.getElementById(
+  "install-subtitle",
+) as HTMLParagraphElement;
+const installLogWrap = document.getElementById(
+  "install-log-wrap",
+) as HTMLDivElement;
+const installLog = document.getElementById("install-log") as HTMLDivElement;
+const bottomStatus = document.getElementById(
+  "bottom-status",
+) as HTMLSpanElement;
+const btnClearAll = document.getElementById(
+  "btn-clear-all",
+) as HTMLButtonElement;
 
 const appWindow = getCurrentWindow();
 
@@ -39,18 +68,21 @@ btnClearAll.addEventListener("click", () => {
 
 // ─── Drag-drop ────────────────────────────────────────────────────────────
 
-appWindow.onDragDropEvent((event) => {
-  const { type } = event.payload;
-  if (type === "over" || type === "enter") {
-    dropZone.classList.add("drag-over");
-  } else if (type === "drop") {
-    dropZone.classList.remove("drag-over");
-    const paths = (event.payload as { type: string; paths: string[] }).paths ?? [];
-    for (const path of paths) addFile(path);
-  } else {
-    dropZone.classList.remove("drag-over");
-  }
-}).catch(console.error);
+appWindow
+  .onDragDropEvent((event) => {
+    const { type } = event.payload;
+    if (type === "over" || type === "enter") {
+      dropZone.classList.add("drag-over");
+    } else if (type === "drop") {
+      dropZone.classList.remove("drag-over");
+      const paths =
+        (event.payload as { type: string; paths: string[] }).paths ?? [];
+      for (const path of paths) addFile(path);
+    } else {
+      dropZone.classList.remove("drag-over");
+    }
+  })
+  .catch(console.error);
 
 // Click-to-browse
 dropZone.addEventListener("click", async () => {
@@ -91,18 +123,33 @@ function removeFile(path: string): void {
 }
 
 function setFileListVisible(visible: boolean): void {
+  installPanel.hidden = true;
   if (visible) {
-    dropZone.hidden    = true;
-    fileList.hidden    = false;
+    dropZone.hidden = true;
+    fileList.hidden = false;
     btnClearAll.hidden = false;
   } else {
-    dropZone.hidden    = false;
-    fileList.hidden    = true;
+    dropZone.hidden = false;
+    fileList.hidden = true;
     btnClearAll.hidden = true;
   }
 }
 
-function buildFileItem(path: string, name: string, formats: string[]): HTMLElement {
+function showInstallPanel(title: string, subtitle = ""): void {
+  dropZone.hidden = true;
+  fileList.hidden = true;
+  btnClearAll.hidden = true;
+  installLog.innerHTML = "";
+  installTitle.textContent = title;
+  installSubtitle.textContent = subtitle;
+  installPanel.hidden = false;
+}
+
+function buildFileItem(
+  path: string,
+  name: string,
+  formats: string[],
+): HTMLElement {
   const item = document.createElement("div");
   item.className = "file-item";
 
@@ -142,9 +189,11 @@ function buildFileItem(path: string, name: string, formats: string[]): HTMLEleme
 async function startConversion(
   path: string,
   targetFormat: string,
-  item: HTMLElement
+  item: HTMLElement,
 ): Promise<void> {
-  item.querySelectorAll<HTMLButtonElement>(".fmt-btn").forEach((b) => (b.disabled = true));
+  item
+    .querySelectorAll<HTMLButtonElement>(".fmt-btn")
+    .forEach((b) => (b.disabled = true));
   item.querySelector(".file-status")?.remove();
 
   let progressRow = item.querySelector<HTMLElement>(".progress-row");
@@ -166,23 +215,23 @@ async function startConversion(
     progressRow.appendChild(progressLabel);
     item.appendChild(progressRow);
   } else {
-    progressFill  = progressRow.querySelector(".progress-fill")  as HTMLElement;
+    progressFill = progressRow.querySelector(".progress-fill") as HTMLElement;
     progressLabel = progressRow.querySelector(".progress-label") as HTMLElement;
   }
 
-  progressFill.style.width  = "0%";
+  progressFill.style.width = "0%";
   progressLabel.textContent = "0%";
 
   const unlisten = await listen<ProgressPayload>("convert:progress", (ev) => {
     if (ev.payload.path !== path) return;
     const pct = Math.round(ev.payload.percent);
-    progressFill.style.width  = `${pct}%`;
+    progressFill.style.width = `${pct}%`;
     progressLabel.textContent = `${pct}%`;
   });
 
   try {
     const outputPath = await invoke<string>("convert", { path, targetFormat });
-    progressFill.style.width  = "100%";
+    progressFill.style.width = "100%";
     progressLabel.textContent = "100%";
 
     setTimeout(() => {
@@ -192,10 +241,12 @@ async function startConversion(
       status.textContent = `↗ ${outputPath.split("/").pop()}`;
       status.title = "Click to reveal in Finder";
       status.addEventListener("click", () =>
-        invoke("open_output_folder", { path: outputPath }).catch(console.error)
+        invoke("open_output_folder", { path: outputPath }).catch(console.error),
       );
       item.appendChild(status);
-      item.querySelectorAll<HTMLButtonElement>(".fmt-btn").forEach((b) => (b.disabled = false));
+      item
+        .querySelectorAll<HTMLButtonElement>(".fmt-btn")
+        .forEach((b) => (b.disabled = false));
     }, 600);
   } catch (err) {
     progressRow.remove();
@@ -203,7 +254,9 @@ async function startConversion(
     status.className = "file-status error";
     status.textContent = `✗ ${String(err)}`;
     item.appendChild(status);
-    item.querySelectorAll<HTMLButtonElement>(".fmt-btn").forEach((b) => (b.disabled = false));
+    item
+      .querySelectorAll<HTMLButtonElement>(".fmt-btn")
+      .forEach((b) => (b.disabled = false));
   } finally {
     unlisten();
   }
@@ -215,9 +268,9 @@ function updateBatchToolbar(): void {
   fileList.querySelector(".batch-toolbar")?.remove();
   if (files.size < 2) return;
 
-  const allFormats   = Array.from(files.values()).map((e) => new Set(e.formats));
+  const allFormats = Array.from(files.values()).map((e) => new Set(e.formats));
   const intersection = allFormats.reduce(
-    (acc, set) => new Set([...acc].filter((f) => set.has(f)))
+    (acc, set) => new Set([...acc].filter((f) => set.has(f))),
   );
   if (intersection.size === 0) return;
 
@@ -242,17 +295,23 @@ function updateBatchToolbar(): void {
 // ─── Batch conversion ─────────────────────────────────────────────────────
 
 async function startBatchConversion(targetFormat: string): Promise<void> {
-  const entries = Array.from(files.values()).filter((e) => e.formats.includes(targetFormat));
+  const entries = Array.from(files.values()).filter((e) =>
+    e.formats.includes(targetFormat),
+  );
   if (entries.length === 0) return;
 
   const toolbar = fileList.querySelector<HTMLElement>(".batch-toolbar");
-  toolbar?.querySelectorAll<HTMLButtonElement>("button").forEach((b) => (b.disabled = true));
+  toolbar
+    ?.querySelectorAll<HTMLButtonElement>("button")
+    .forEach((b) => (b.disabled = true));
 
   const unlisteners: Array<() => void> = [];
 
   for (const entry of entries) {
     const item = entry.el;
-    item.querySelectorAll<HTMLButtonElement>(".fmt-btn").forEach((b) => (b.disabled = true));
+    item
+      .querySelectorAll<HTMLButtonElement>(".fmt-btn")
+      .forEach((b) => (b.disabled = true));
     item.querySelector(".file-status")?.remove();
 
     let progressRow = item.querySelector<HTMLElement>(".progress-row");
@@ -274,39 +333,46 @@ async function startBatchConversion(targetFormat: string): Promise<void> {
       progressRow.appendChild(progressLabel);
       item.appendChild(progressRow);
     } else {
-      progressFill  = progressRow.querySelector(".progress-fill")  as HTMLElement;
-      progressLabel = progressRow.querySelector(".progress-label") as HTMLElement;
-      progressFill.style.width  = "0%";
+      progressFill = progressRow.querySelector(".progress-fill") as HTMLElement;
+      progressLabel = progressRow.querySelector(
+        ".progress-label",
+      ) as HTMLElement;
+      progressFill.style.width = "0%";
       progressLabel.textContent = "0%";
     }
 
     const filePath = entry.path;
     const fill = progressFill;
-    const lbl  = progressLabel;
+    const lbl = progressLabel;
     const unlisten = await listen<ProgressPayload>("convert:progress", (ev) => {
       if (ev.payload.path !== filePath) return;
       const pct = Math.round(ev.payload.percent);
-      fill.style.width  = `${pct}%`;
-      lbl.textContent   = `${pct}%`;
+      fill.style.width = `${pct}%`;
+      lbl.textContent = `${pct}%`;
     });
     unlisteners.push(unlisten);
   }
 
   try {
-    const batchItems: BatchItem[] = entries.map((e) => ({ path: e.path, targetFormat }));
-    const results = await invoke<BatchResult[]>("convert_batch", { items: batchItems });
+    const batchItems: BatchItem[] = entries.map((e) => ({
+      path: e.path,
+      targetFormat,
+    }));
+    const results = await invoke<BatchResult[]>("convert_batch", {
+      items: batchItems,
+    });
 
     for (const result of results) {
       const entry = files.get(result.path);
       if (!entry) continue;
       const item = entry.el;
-      const pr   = item.querySelector<HTMLElement>(".progress-row");
+      const pr = item.querySelector<HTMLElement>(".progress-row");
 
       if (result.output_path) {
         const fill = pr?.querySelector<HTMLElement>(".progress-fill");
-        const lbl  = pr?.querySelector<HTMLElement>(".progress-label");
-        if (fill) fill.style.width  = "100%";
-        if (lbl)  lbl.textContent   = "100%";
+        const lbl = pr?.querySelector<HTMLElement>(".progress-label");
+        if (fill) fill.style.width = "100%";
+        if (lbl) lbl.textContent = "100%";
         setTimeout(() => {
           pr?.remove();
           const status = document.createElement("span");
@@ -314,10 +380,14 @@ async function startBatchConversion(targetFormat: string): Promise<void> {
           status.textContent = `↗ ${result.output_path!.split("/").pop()}`;
           status.title = "Click to reveal in Finder";
           status.addEventListener("click", () =>
-            invoke("open_output_folder", { path: result.output_path }).catch(console.error)
+            invoke("open_output_folder", { path: result.output_path }).catch(
+              console.error,
+            ),
           );
           item.appendChild(status);
-          item.querySelectorAll<HTMLButtonElement>(".fmt-btn").forEach((b) => (b.disabled = false));
+          item
+            .querySelectorAll<HTMLButtonElement>(".fmt-btn")
+            .forEach((b) => (b.disabled = false));
         }, 600);
       } else {
         pr?.remove();
@@ -325,12 +395,16 @@ async function startBatchConversion(targetFormat: string): Promise<void> {
         status.className = "file-status error";
         status.textContent = `✗ ${result.error ?? "Unknown error"}`;
         item.appendChild(status);
-        item.querySelectorAll<HTMLButtonElement>(".fmt-btn").forEach((b) => (b.disabled = false));
+        item
+          .querySelectorAll<HTMLButtonElement>(".fmt-btn")
+          .forEach((b) => (b.disabled = false));
       }
     }
   } finally {
     unlisteners.forEach((u) => u());
-    toolbar?.querySelectorAll<HTMLButtonElement>("button").forEach((b) => (b.disabled = false));
+    toolbar
+      ?.querySelectorAll<HTMLButtonElement>("button")
+      .forEach((b) => (b.disabled = false));
   }
 }
 
@@ -370,18 +444,65 @@ function showInlineError(path: string, message: string): void {
   setFileListVisible(true);
 }
 
-// ─── ffmpeg / system status ───────────────────────────────────────────────
+// ─── Install progress ─────────────────────────────────────────────────────
+
+listen("brew:installing", () => {
+  showInstallPanel("Installing Homebrew", "needed to install ffmpeg");
+  bottomStatus.className = "warning";
+  bottomStatus.textContent = "installing Homebrew…";
+}).catch(console.error);
+
+listen("brew:installed", () => {
+  installTitle.textContent = "Homebrew installed ✓";
+  installSubtitle.textContent = "installing ffmpeg…";
+  bottomStatus.className = "ok";
+  bottomStatus.textContent = "Homebrew installed ✓";
+}).catch(console.error);
 
 listen("ffmpeg:missing", () => {
-  bottomStatus.className   = "warning";
+  bottomStatus.className = "warning";
+  bottomStatus.textContent = "ffmpeg not found — installing…";
+}).catch(console.error);
+
+listen("ffmpeg:installing", () => {
+  showInstallPanel(
+    "Installing ffmpeg",
+    "required for video & audio conversion",
+  );
+  bottomStatus.className = "warning";
   bottomStatus.textContent = "installing ffmpeg…";
 }).catch(console.error);
 
 listen("ffmpeg:installed", () => {
-  bottomStatus.className   = "ok";
+  installPanel.hidden = true;
+  bottomStatus.className = "ok";
   bottomStatus.textContent = "ffmpeg installed ✓";
+  // Return to drop zone if no files are loaded
+  if (files.size === 0) setFileListVisible(false);
   setTimeout(() => {
     bottomStatus.textContent = "";
-    bottomStatus.className   = "";
+    bottomStatus.className = "";
   }, 4000);
+}).catch(console.error);
+
+listen("ffmpeg:failed", (ev) => {
+  installTitle.textContent = "Installation failed";
+  installSubtitle.textContent = String(ev.payload);
+  installLogWrap.classList.add("visible");
+  installLog.scrollTop = installLog.scrollHeight;
+  bottomStatus.className = "warning";
+  bottomStatus.textContent = "ffmpeg unavailable";
+}).catch(console.error);
+
+// Buffer log lines silently — only visible if an error occurs
+listen<InstallLogPayload>("install:log", (ev) => {
+  const line = ev.payload.line.trim();
+  if (!line) return;
+  const el = document.createElement("div");
+  el.textContent = line;
+  installLog.appendChild(el);
+  // Cap buffer at 300 lines
+  while (installLog.children.length > 300) {
+    installLog.removeChild(installLog.firstChild!);
+  }
 }).catch(console.error);
