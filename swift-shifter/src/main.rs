@@ -8,6 +8,7 @@ mod tray;
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Manager, WindowEvent};
 
 use config::AppState;
@@ -40,6 +41,37 @@ fn main() {
 
             tray::setup_tray(app)?;
             hotkey::register_shortcut(app)?;
+
+            // Native macOS menu bar
+            let about = PredefinedMenuItem::about(app, None::<&str>, None)?;
+            let sep1 = PredefinedMenuItem::separator(app)?;
+            let prefs = MenuItem::with_id(app, "preferences", "Preferences…", true, Some("CmdOrCtrl+,"))?;
+            let sep2 = PredefinedMenuItem::separator(app)?;
+            let quit = PredefinedMenuItem::quit(app, None::<&str>)?;
+            let app_menu = Submenu::with_items(app, "Swift Shifter", true, &[&about, &sep1, &prefs, &sep2, &quit])?;
+            let menu = Menu::with_items(app, &[&app_menu])?;
+            app.set_menu(menu)?;
+
+            let menu_handle = app.handle().clone();
+            app.on_menu_event(move |_app, event| {
+                if event.id() == "preferences" {
+                    // Focus existing settings window if already open
+                    if let Some(win) = menu_handle.get_webview_window("settings") {
+                        let _ = win.set_focus();
+                        return;
+                    }
+                    let _ = tauri::WebviewWindowBuilder::new(
+                        &menu_handle,
+                        "settings",
+                        tauri::WebviewUrl::App("settings.html".into()),
+                    )
+                    .title("Preferences")
+                    .inner_size(360.0, 220.0)
+                    .resizable(false)
+                    .center()
+                    .build();
+                }
+            });
 
             // Check for ffmpeg at startup
             let handle = app.handle().clone();

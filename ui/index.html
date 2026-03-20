@@ -8,87 +8,35 @@
 </head>
 <body>
   <div id="app">
-    <div id="titlebar" data-tauri-drag-region>
-      <span id="app-title">Swift Shifter</span>
-      <div class="titlebar-actions">
-        <button id="btn-settings" title="Settings" aria-label="Settings">
-          <!-- Sliders / settings icon -->
-          <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
-            <line x1="1" y1="4"  x2="15" y2="4"  stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            <line x1="1" y1="8"  x2="15" y2="8"  stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            <line x1="1" y1="12" x2="15" y2="12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-            <circle cx="5"  cy="4"  r="2" fill="var(--bg)" stroke="currentColor" stroke-width="1.5"/>
-            <circle cx="10" cy="8"  r="2" fill="var(--bg)" stroke="currentColor" stroke-width="1.5"/>
-            <circle cx="6"  cy="12" r="2" fill="var(--bg)" stroke="currentColor" stroke-width="1.5"/>
-          </svg>
-        </button>
-        <button id="btn-close" title="Hide (stays in tray)" aria-label="Hide">
-          <span class="close-dot"></span>
-        </button>
-      </div>
-    </div>
 
-    <div
-      id="drop-zone"
-      role="region"
-      aria-label="Drop files here to convert"
-    >
-      <div id="drop-prompt">
-        <svg id="drop-icon" viewBox="0 0 32 32" fill="none">
-          <rect x="4" y="6" width="10" height="14" rx="2" stroke="currentColor" stroke-width="1.25"/>
-          <rect x="18" y="12" width="10" height="14" rx="2" stroke="currentColor" stroke-width="1.25"/>
-          <path d="M14 11l4 2-4 2" stroke="currentColor" stroke-width="1.25" stroke-linecap="round" stroke-linejoin="round"/>
-        </svg>
-        <p id="drop-text">Drop files to convert</p>
+    <!-- ── Drag strip ────────────────────────────────────────────────── -->
+    <div id="drag-strip" data-tauri-drag-region></div>
+
+    <!-- ── Drop zone (idle state) ─────────────────────────────────────── -->
+    <div id="drop-zone" role="region" aria-label="Drop files here to convert">
+      <div id="drop-content">
+        <div id="drop-icon-wrap">
+          <div id="drop-ring"></div>
+          <svg id="drop-arrow" width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 4v13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+            <path d="M7 13l5 5 5-5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <p id="drop-text">drop files to convert</p>
         <p id="drop-hint">or click to browse</p>
       </div>
     </div>
 
+    <!-- ── File list (active state) ──────────────────────────────────── -->
     <div id="file-list" hidden></div>
 
-    <div id="settings-panel" hidden aria-label="Settings panel">
-      <div class="settings-row">
-        <span class="settings-label">Output</span>
-        <div class="settings-output-ctrl">
-          <span id="cfg-output-dir-display" class="settings-path-val">Same as source</span>
-          <div class="settings-output-btns">
-            <button id="btn-browse-output" class="settings-mini-btn">Browse</button>
-            <button id="btn-clear-output" class="settings-mini-btn settings-clear-btn" title="Reset to same as source">×</button>
-          </div>
-        </div>
-      </div>
-      <div class="settings-row">
-        <label class="settings-label" for="cfg-jpeg-quality">JPEG quality</label>
-        <div class="settings-slider-ctrl">
-          <input type="range" id="cfg-jpeg-quality" min="1" max="100" />
-          <span id="cfg-jpeg-quality-val" class="settings-val">85</span>
-        </div>
-      </div>
-      <div class="settings-row">
-        <label class="settings-label" for="cfg-avif-quality">AVIF quality</label>
-        <div class="settings-slider-ctrl">
-          <input type="range" id="cfg-avif-quality" min="1" max="100" />
-          <span id="cfg-avif-quality-val" class="settings-val">80</span>
-        </div>
-      </div>
-      <div class="settings-row">
-        <label class="settings-label" for="cfg-max-concurrent">Concurrent</label>
-        <div class="settings-slider-ctrl">
-          <input type="range" id="cfg-max-concurrent" min="1" max="8" />
-          <span id="cfg-max-concurrent-val" class="settings-val">4</span>
-        </div>
-      </div>
-      <div class="settings-footer">
-        <span id="settings-status" class="settings-status"></span>
-        <button id="btn-save-config" class="settings-save-btn">Save</button>
-      </div>
+    <!-- ── Bottom bar ─────────────────────────────────────────────────── -->
+    <div id="bottom-bar">
+      <span id="bottom-status"></span>
+      <button id="btn-clear-all" hidden>clear all</button>
     </div>
 
-    <div id="status-bar">
-      <span id="ffmpeg-status"></span>
-    </div>
   </div>
-
   <script type="module" src="src/main.ts"></script>
 </body>
 </html>

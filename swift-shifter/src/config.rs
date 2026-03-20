@@ -17,16 +17,16 @@ pub struct Config {
     pub max_concurrent: usize,
 }
 
-fn default_jpeg_quality() -> u8 { 85 }
-fn default_avif_quality() -> u8 { 80 }
+fn default_jpeg_quality() -> u8 { 75 }
+fn default_avif_quality() -> u8 { 65 }
 fn default_max_concurrent() -> usize { 4 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             output_dir: None,
-            jpeg_quality: default_jpeg_quality(),
-            avif_quality: default_avif_quality(),
+            jpeg_quality:   default_jpeg_quality(),
+            avif_quality:   default_avif_quality(),
             max_concurrent: default_max_concurrent(),
         }
     }
