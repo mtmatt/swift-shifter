@@ -11,14 +11,34 @@ fn output_path(input: &str, ext: &str) -> PathBuf {
     dir.join(format!("{}.{}", stem.to_string_lossy(), ext))
 }
 
+/// Locations that Homebrew uses but macOS GUI apps don't inherit via PATH.
+#[cfg(target_os = "macos")]
+const EXTRA_SEARCH_PATHS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
+
+fn find_ffmpeg_binary() -> Option<PathBuf> {
+    // First try PATH (works in dev / terminal launches)
+    if let Ok(p) = which::which("ffmpeg") {
+        return Some(p);
+    }
+    // Then check known Homebrew locations that GUI bundles miss
+    #[cfg(target_os = "macos")]
+    for dir in EXTRA_SEARCH_PATHS {
+        let candidate = PathBuf::from(dir).join("ffmpeg");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
 pub async fn ensure_ffmpeg(app: &tauri::AppHandle) -> Result<(), String> {
     // Check if already cached
     if FFMPEG_PATH.get().is_some() {
         return Ok(());
     }
 
-    // Try to find ffmpeg in PATH
-    if let Ok(path) = which::which("ffmpeg") {
+    // Try to find ffmpeg in PATH and well-known Homebrew locations
+    if let Some(path) = find_ffmpeg_binary() {
         FFMPEG_PATH.set(Some(path)).ok();
         return Ok(());
     }
@@ -51,12 +71,8 @@ pub async fn ensure_ffmpeg(app: &tauri::AppHandle) -> Result<(), String> {
 fn get_ffmpeg() -> Result<PathBuf, String> {
     match FFMPEG_PATH.get() {
         Some(Some(p)) => Ok(p.clone()),
-        _ => {
-            // Try once more at call time
-            which::which("ffmpeg").map_err(|_| {
-                "ffmpeg not found. Install it with: brew install ffmpeg".to_string()
-            })
-        }
+        _ => find_ffmpeg_binary()
+            .ok_or_else(|| "ffmpeg not found. Install it with: brew install ffmpeg".to_string()),
     }
 }
 

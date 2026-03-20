@@ -16,6 +16,17 @@ interface FileEntry {
   el: HTMLElement;
 }
 
+interface BatchItem {
+  path: string;
+  targetFormat: string;
+}
+
+interface BatchResult {
+  path: string;
+  output_path: string | null;
+  error: string | null;
+}
+
 const files = new Map<string, FileEntry>();
 
 const dropZone = document.getElementById("drop-zone") as HTMLDivElement;
@@ -80,6 +91,7 @@ async function addFile(path: string): Promise<void> {
 
   fileList.appendChild(el);
   setFileListVisible(true);
+  updateBatchToolbar();
 }
 
 function removeFile(path: string): void {
@@ -88,6 +100,7 @@ function removeFile(path: string): void {
   entry.el.remove();
   files.delete(path);
   if (files.size === 0) setFileListVisible(false);
+  updateBatchToolbar();
 }
 
 function setFileListVisible(visible: boolean): void {
@@ -236,6 +249,156 @@ async function startConversion(
     });
   } finally {
     unlisten();
+  }
+}
+
+function updateBatchToolbar(): void {
+  const existing = fileList.querySelector<HTMLElement>(".batch-toolbar");
+  if (existing) existing.remove();
+
+  if (files.size < 2) return;
+
+  // Compute the intersection of all files' supported formats
+  const allFormats = Array.from(files.values()).map((e) => new Set(e.formats));
+  const intersection = allFormats.reduce(
+    (acc, set) => new Set([...acc].filter((f) => set.has(f)))
+  );
+  if (intersection.size === 0) return;
+
+  const toolbar = document.createElement("div");
+  toolbar.className = "batch-toolbar";
+
+  const label = document.createElement("span");
+  label.className = "batch-label";
+  label.textContent = "All →";
+  toolbar.appendChild(label);
+
+  for (const fmt of intersection) {
+    const btn = document.createElement("button");
+    btn.className = "fmt-btn";
+    btn.textContent = fmt;
+    btn.addEventListener("click", () => startBatchConversion(fmt));
+    toolbar.appendChild(btn);
+  }
+
+  fileList.insertBefore(toolbar, fileList.firstChild);
+}
+
+async function startBatchConversion(targetFormat: string): Promise<void> {
+  const entries = Array.from(files.values()).filter((e) =>
+    e.formats.includes(targetFormat)
+  );
+  if (entries.length === 0) return;
+
+  // Disable the batch toolbar during the operation
+  const toolbar = fileList.querySelector<HTMLElement>(".batch-toolbar");
+  toolbar
+    ?.querySelectorAll<HTMLButtonElement>("button")
+    .forEach((b) => (b.disabled = true));
+
+  // Set up progress UI and listeners for each file
+  const unlisteners: Array<() => void> = [];
+
+  for (const entry of entries) {
+    const item = entry.el;
+    item
+      .querySelectorAll<HTMLButtonElement>(".fmt-btn")
+      .forEach((b) => (b.disabled = true));
+
+    item.querySelector(".file-status")?.remove();
+
+    let progressRow = item.querySelector<HTMLElement>(".progress-row");
+    let progressFill: HTMLElement;
+    let progressLabel: HTMLElement;
+
+    if (!progressRow) {
+      progressRow = document.createElement("div");
+      progressRow.className = "progress-row";
+      const bar = document.createElement("div");
+      bar.className = "progress-bar";
+      progressFill = document.createElement("div");
+      progressFill.className = "progress-fill";
+      bar.appendChild(progressFill);
+      progressLabel = document.createElement("span");
+      progressLabel.className = "progress-label";
+      progressLabel.textContent = "0%";
+      progressRow.appendChild(bar);
+      progressRow.appendChild(progressLabel);
+      item.appendChild(progressRow);
+    } else {
+      progressFill = progressRow.querySelector(".progress-fill") as HTMLElement;
+      progressLabel = progressRow.querySelector(
+        ".progress-label"
+      ) as HTMLElement;
+      progressFill.style.width = "0%";
+      progressLabel.textContent = "0%";
+    }
+
+    const filePath = entry.path;
+    const fill = progressFill;
+    const lbl = progressLabel;
+    const unlisten = await listen<ProgressPayload>("convert:progress", (ev) => {
+      if (ev.payload.path !== filePath) return;
+      const pct = Math.round(ev.payload.percent);
+      fill.style.width = `${pct}%`;
+      lbl.textContent = `${pct}%`;
+    });
+    unlisteners.push(unlisten);
+  }
+
+  try {
+    const batchItems: BatchItem[] = entries.map((e) => ({
+      path: e.path,
+      targetFormat,
+    }));
+    const results = await invoke<BatchResult[]>("convert_batch", {
+      items: batchItems,
+    });
+
+    for (const result of results) {
+      const entry = files.get(result.path);
+      if (!entry) continue;
+      const item = entry.el;
+      const progressRow = item.querySelector<HTMLElement>(".progress-row");
+
+      if (result.output_path) {
+        const fill = progressRow?.querySelector<HTMLElement>(".progress-fill");
+        const lbl = progressRow?.querySelector<HTMLElement>(".progress-label");
+        if (fill) fill.style.width = "100%";
+        if (lbl) lbl.textContent = "100%";
+
+        setTimeout(() => {
+          progressRow?.remove();
+          const status = document.createElement("span");
+          status.className = "file-status success";
+          status.textContent = `✓ Saved as ${result.output_path!.split("/").pop()}`;
+          status.title = "Click to reveal in Finder";
+          status.addEventListener("click", () => {
+            invoke("open_output_folder", { path: result.output_path }).catch(
+              console.error
+            );
+          });
+          item.appendChild(status);
+          item
+            .querySelectorAll<HTMLButtonElement>(".fmt-btn")
+            .forEach((b) => (b.disabled = false));
+        }, 600);
+      } else {
+        progressRow?.remove();
+        const status = document.createElement("span");
+        status.className = "file-status error";
+        status.textContent = `✗ ${result.error ?? "Unknown error"}`;
+        item.appendChild(status);
+        item
+          .querySelectorAll<HTMLButtonElement>(".fmt-btn")
+          .forEach((b) => (b.disabled = false));
+      }
+    }
+  } finally {
+    unlisteners.forEach((u) => u());
+    toolbar
+      ?.querySelectorAll<HTMLButtonElement>("button")
+      .forEach((b) => (b.disabled = false));
   }
 }
 

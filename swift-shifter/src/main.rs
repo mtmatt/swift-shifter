@@ -5,7 +5,22 @@ mod converter;
 mod hotkey;
 mod tray;
 
+use serde::{Deserialize, Serialize};
 use tauri::WindowEvent;
+
+#[derive(Deserialize)]
+struct BatchItem {
+    path: String,
+    #[serde(rename = "targetFormat")]
+    target_format: String,
+}
+
+#[derive(Serialize)]
+struct BatchResult {
+    path: String,
+    output_path: Option<String>,
+    error: Option<String>,
+}
 
 fn main() {
     tauri::Builder::default()
@@ -34,6 +49,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             detect_format,
             convert,
+            convert_batch,
             open_output_folder,
             quit,
         ])
@@ -58,6 +74,56 @@ async fn convert(
     target_format: String,
 ) -> Result<String, String> {
     converter::convert_file(&app_handle, &path, &target_format).await
+}
+
+/// Convert multiple files concurrently, capped at MAX_CONCURRENT simultaneous jobs.
+/// Progress events are emitted per-file via the existing "convert:progress" channel.
+#[tauri::command]
+async fn convert_batch(
+    app_handle: tauri::AppHandle,
+    items: Vec<BatchItem>,
+) -> Vec<BatchResult> {
+    use std::sync::Arc;
+    use tokio::sync::Semaphore;
+
+    const MAX_CONCURRENT: usize = 4;
+    let sem = Arc::new(Semaphore::new(MAX_CONCURRENT));
+
+    let handles: Vec<_> = items
+        .into_iter()
+        .map(|item| {
+            let sem = Arc::clone(&sem);
+            let handle = app_handle.clone();
+            tokio::spawn(async move {
+                let _permit = sem.acquire().await.unwrap();
+                match converter::convert_file(&handle, &item.path, &item.target_format).await {
+                    Ok(out) => BatchResult {
+                        path: item.path,
+                        output_path: Some(out),
+                        error: None,
+                    },
+                    Err(e) => BatchResult {
+                        path: item.path,
+                        output_path: None,
+                        error: Some(e),
+                    },
+                }
+            })
+        })
+        .collect();
+
+    let mut results = Vec::with_capacity(handles.len());
+    for h in handles {
+        match h.await {
+            Ok(r) => results.push(r),
+            Err(e) => results.push(BatchResult {
+                path: String::new(),
+                output_path: None,
+                error: Some(format!("task panicked: {e}")),
+            }),
+        }
+    }
+    results
 }
 
 #[tauri::command]
