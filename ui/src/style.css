@@ -1,33 +1,4 @@
-/* ─── Design tokens ───────────────────────────────────────────────────── */
-:root {
-  --radius:       12px;
-  --bar-h:        36px;
-
-  /* Background — near-black, cool undertone */
-  --bg:           #0d0d10;
-  --surface:      rgba(255, 255, 255, 0.048);
-  --surface-hi:   rgba(255, 255, 255, 0.08);
-
-  /* Borders */
-  --border:       rgba(255, 255, 255, 0.07);
-  --border-hi:    rgba(255, 255, 255, 0.14);
-
-  /* Text */
-  --text:         rgba(255, 255, 255, 0.90);
-  --text-2:       rgba(255, 255, 255, 0.62);
-  --text-3:       rgba(255, 255, 255, 0.35);
-
-  /* Accent — warm violet, vivid against very dark */
-  --accent:       #a78bfa;
-  --accent-dim:   rgba(167, 139, 250, 0.11);
-  --accent-mid:   rgba(167, 139, 250, 0.24);
-  --accent-glow:  rgba(167, 139, 250, 0.35);
-
-  /* Semantic */
-  --danger:       #f87171;
-  --success:      #4ade80;
-  --warn:         #fbbf24;
-}
+@import './tokens.css';
 
 /* ─── Reset ───────────────────────────────────────────────────────────── */
 *, *::before, *::after {
@@ -48,7 +19,7 @@ body {
   overflow: hidden;
   background: transparent;
   font-family: "SF Mono", "Menlo", "Cascadia Code", ui-monospace, monospace;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text);
   -webkit-font-smoothing: antialiased;
 }
@@ -116,7 +87,7 @@ body {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  font-size: 8px;
+  font-size: 10px;
   letter-spacing: 4px;
   color: var(--text-3);
   pointer-events: none;
@@ -212,14 +183,14 @@ body {
 }
 
 #drop-text {
-  font-size: 11px;
+  font-size: 13px;
   font-weight: 500;
   color: var(--text-2);
   letter-spacing: 0.06em;
 }
 
 #drop-hint {
-  font-size: 9px;
+  font-size: 11px;
   color: var(--text-3);
   letter-spacing: 0.1em;
   margin-top: -8px;
@@ -288,7 +259,7 @@ body {
 
 .file-name {
   flex: 1;
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
@@ -302,7 +273,7 @@ body {
   border: none;
   color: var(--text-3);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 16px;
   width: 18px;
   height: 18px;
   display: flex;
@@ -330,7 +301,7 @@ body {
 
 .fmt-btn {
   font-family: inherit;
-  font-size: 8.5px;
+  font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -386,7 +357,7 @@ body {
 }
 
 .progress-label {
-  font-size: 8.5px;
+  font-size: 9.5px;
   color: var(--text-3);
   min-width: 22px;
   text-align: right;
@@ -395,7 +366,7 @@ body {
 
 /* ─── Inline status ───────────────────────────────────────────────────── */
 .file-status {
-  font-size: 9px;
+  font-size: 11px;
   letter-spacing: 0.02em;
 }
 
@@ -422,7 +393,7 @@ body {
 }
 
 .batch-label {
-  font-size: 8.5px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -444,7 +415,7 @@ body {
 
 #bottom-status {
   flex: 1;
-  font-size: 9px;
+  font-size: 10px;
   color: var(--text-3);
   letter-spacing: 0.04em;
   white-space: nowrap;
@@ -460,9 +431,9 @@ body {
   border: none;
   cursor: pointer;
   font-family: inherit;
-  font-size: 8.5px;
+  font-size: 11px;
   letter-spacing: 0.06em;
-  color: var(--text-3);
+  color: var(--text-2);
   padding: 3px 7px;
   border-radius: 3px;
   flex-shrink: 0;
@@ -471,5 +442,5 @@ body {
 
 #btn-clear-all:hover {
   color: var(--danger);
-  background: rgba(248, 113, 113, 0.08);
+  background: rgba(248, 113, 113, 0.18);
 }

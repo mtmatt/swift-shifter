@@ -1,0 +1,151 @@
+@import './tokens.css';
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "SF Mono", "Menlo", "Cascadia Code", ui-monospace, monospace;
+  font-size: 16px;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  padding: 20px 22px 18px;
+  user-select: none;
+}
+
+/* ─── Section label ───────────────────────────────────────────────────── */
+.section-label {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  margin-bottom: 14px;
+}
+
+/* ─── Content area ────────────────────────────────────────────────────── */
+.content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.divider {
+  height: 0.5px;
+  background: var(--border);
+}
+
+/* ─── Slider row ──────────────────────────────────────────────────────── */
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+label {
+  font-size: 14px;
+  color: var(--text-2);
+  width: 52px;
+  flex-shrink: 0;
+  letter-spacing: 0.04em;
+}
+
+input[type="range"] {
+  flex: 1;
+  height: 2px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: var(--border-hi);
+  border-radius: 1px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+
+input[type="range"]:hover::-webkit-slider-thumb,
+input[type="range"]:active::-webkit-slider-thumb {
+  transform: scale(1.2);
+  box-shadow: 0 0 8px var(--accent-glow);
+}
+
+.val {
+  font-size: 13px;
+  color: var(--text-3);
+  min-width: 26px;
+  text-align: right;
+  letter-spacing: 0.02em;
+}
+
+/* ─── Footer ──────────────────────────────────────────────────────────── */
+footer {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-top: 16px;
+  border-top: 0.5px solid var(--border);
+}
+
+#status {
+  flex: 1;
+  font-size: 13px;
+  color: var(--danger);
+  letter-spacing: 0.02em;
+}
+
+button {
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 4px 14px;
+  border-radius: 5px;
+  cursor: pointer;
+  letter-spacing: 0.04em;
+  transition: opacity 0.1s, box-shadow 0.1s;
+}
+
+#btn-cancel {
+  background: transparent;
+  border: 0.5px solid var(--border-hi);
+  color: var(--text-2);
+}
+
+#btn-cancel:hover {
+  border-color: var(--text-2);
+  color: var(--text);
+}
+
+#btn-save {
+  background: var(--accent);
+  border: 0.5px solid var(--accent);
+  color: #0d0d10;
+  font-weight: 600;
+}
+
+#btn-save:hover {
+  opacity: 0.88;
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+#btn-save:active { opacity: 0.7; }

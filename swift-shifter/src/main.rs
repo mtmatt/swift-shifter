@@ -66,7 +66,7 @@ fn main() {
                         tauri::WebviewUrl::App("settings.html".into()),
                     )
                     .title("Preferences")
-                    .inner_size(360.0, 220.0)
+                    .inner_size(360.0, 300.0)
                     .resizable(false)
                     .center()
                     .build();
