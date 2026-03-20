@@ -4,6 +4,8 @@ pub mod media;
 
 use std::path::Path;
 
+use crate::config::Config;
+
 /// Return the list of valid output format strings for a given input file path.
 pub fn detect_output_formats(path: &str) -> Result<Vec<String>, String> {
     let ext = Path::new(path)
@@ -44,6 +46,7 @@ pub async fn convert_file(
     app: &tauri::AppHandle,
     path: &str,
     target_format: &str,
+    config: &Config,
 ) -> Result<String, String> {
     let ext = Path::new(path)
         .extension()
@@ -51,27 +54,31 @@ pub async fn convert_file(
         .unwrap_or("")
         .to_lowercase();
 
+    let out_dir = config.output_dir.as_deref();
+
     match ext.as_str() {
         "png" | "jpg" | "jpeg" | "webp" | "bmp" | "tiff" | "tif" | "gif" => {
             if target_format == "avif" {
-                image::convert_to_avif(path)
+                image::convert_to_avif(path, config.avif_quality, out_dir)
             } else if target_format == "heic" {
-                image::convert_to_heic(path)
+                image::convert_to_heic(path, out_dir)
             } else {
-                image::convert_image(path, target_format)
+                image::convert_image(path, target_format, config.jpeg_quality, out_dir)
             }
         }
         "avif" => {
             if target_format == "heic" {
-                image::convert_to_heic(path)
+                image::convert_to_heic(path, out_dir)
             } else {
-                image::convert_image(path, target_format)
+                image::convert_image(path, target_format, config.jpeg_quality, out_dir)
             }
         }
-        "heic" | "heif" => image::convert_heic(path, target_format),
+        "heic" | "heif" => image::convert_heic(path, target_format, out_dir),
         "mp4" | "mov" | "mkv" | "webm" | "avi" | "mp3" | "aac" | "flac" | "ogg" | "wav"
-        | "opus" => media::convert_media(app, path, target_format).await,
-        "json" | "yaml" | "yml" | "toml" | "csv" => data::convert_data(path, target_format),
+        | "opus" => media::convert_media(app, path, target_format, out_dir).await,
+        "json" | "yaml" | "yml" | "toml" | "csv" => {
+            data::convert_data(path, target_format, out_dir)
+        }
         _ => Err(format!("Unsupported input format: .{ext}")),
     }
 }

@@ -4,11 +4,19 @@ use tauri::Emitter;
 
 static FFMPEG_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
 
-fn output_path(input: &str, ext: &str) -> PathBuf {
+fn output_path(input: &str, ext: &str, output_dir: Option<&str>) -> Result<PathBuf, String> {
     let p = Path::new(input);
     let stem = p.file_stem().unwrap_or_default();
-    let dir = p.parent().unwrap_or(Path::new("."));
-    dir.join(format!("{}.{}", stem.to_string_lossy(), ext))
+    let dir = match output_dir {
+        Some(d) => {
+            let dir = PathBuf::from(d);
+            std::fs::create_dir_all(&dir)
+                .map_err(|e| format!("Failed to create output directory: {e}"))?;
+            dir
+        }
+        None => p.parent().unwrap_or(Path::new(".")).to_path_buf(),
+    };
+    Ok(dir.join(format!("{}.{}", stem.to_string_lossy(), ext)))
 }
 
 /// Locations that Homebrew uses but macOS GUI apps don't inherit via PATH.
@@ -86,9 +94,10 @@ pub async fn convert_media(
     app: &tauri::AppHandle,
     path: &str,
     target_format: &str,
+    output_dir: Option<&str>,
 ) -> Result<String, String> {
     let ffmpeg = get_ffmpeg()?;
-    let out = output_path(path, target_format);
+    let out = output_path(path, target_format, output_dir)?;
 
     // Get duration for progress reporting
     let duration_secs = get_duration(&ffmpeg, path).await.unwrap_or(0.0);

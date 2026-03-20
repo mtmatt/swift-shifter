@@ -1,12 +1,17 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod config;
 mod converter;
 mod hotkey;
 mod tray;
 
 use serde::{Deserialize, Serialize};
-use tauri::WindowEvent;
+use std::sync::Arc;
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
+use tauri::{Manager, WindowEvent};
+
+use config::AppState;
 
 #[derive(Deserialize)]
 struct BatchItem {
@@ -28,8 +33,46 @@ fn main() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
+            // Load persisted config and register managed state
+            let cfg = config::load();
+            app.manage(AppState {
+                config: std::sync::Mutex::new(cfg),
+            });
+
             tray::setup_tray(app)?;
             hotkey::register_shortcut(app)?;
+
+            // Native macOS menu bar
+            let about = PredefinedMenuItem::about(app, None::<&str>, None)?;
+            let sep1 = PredefinedMenuItem::separator(app)?;
+            let prefs = MenuItem::with_id(app, "preferences", "Preferences…", true, Some("CmdOrCtrl+,"))?;
+            let sep2 = PredefinedMenuItem::separator(app)?;
+            let quit = PredefinedMenuItem::quit(app, None::<&str>)?;
+            let app_menu = Submenu::with_items(app, "Swift Shifter", true, &[&about, &sep1, &prefs, &sep2, &quit])?;
+            let menu = Menu::with_items(app, &[&app_menu])?;
+            app.set_menu(menu)?;
+
+            let menu_handle = app.handle().clone();
+            app.on_menu_event(move |_app, event| {
+                if event.id() == "preferences" {
+                    // Focus existing settings window if already open
+                    if let Some(win) = menu_handle.get_webview_window("settings") {
+                        let _ = win.set_focus();
+                        return;
+                    }
+                    let _ = tauri::WebviewWindowBuilder::new(
+                        &menu_handle,
+                        "settings",
+                        tauri::WebviewUrl::App("settings.html".into()),
+                    )
+                    .title("Preferences")
+                    .inner_size(360.0, 300.0)
+                    .resizable(false)
+                    .center()
+                    .build();
+                }
+            });
+
             // Check for ffmpeg at startup
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -50,6 +93,8 @@ fn main() {
             detect_format,
             convert,
             convert_batch,
+            get_config,
+            set_config,
             open_output_folder,
             quit,
         ])
@@ -70,33 +115,38 @@ async fn detect_format(path: String) -> Result<Vec<String>, String> {
 #[tauri::command]
 async fn convert(
     app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
     path: String,
     target_format: String,
 ) -> Result<String, String> {
-    converter::convert_file(&app_handle, &path, &target_format).await
+    // Clone releases the lock before the await — never hold std::sync::Mutex across await
+    let cfg = state.config.lock().unwrap().clone();
+    converter::convert_file(&app_handle, &path, &target_format, &cfg).await
 }
 
-/// Convert multiple files concurrently, capped at MAX_CONCURRENT simultaneous jobs.
+/// Convert multiple files concurrently, capped by `config.max_concurrent`.
 /// Progress events are emitted per-file via the existing "convert:progress" channel.
 #[tauri::command]
 async fn convert_batch(
     app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
     items: Vec<BatchItem>,
-) -> Vec<BatchResult> {
-    use std::sync::Arc;
+) -> Result<Vec<BatchResult>, String> {
     use tokio::sync::Semaphore;
 
-    const MAX_CONCURRENT: usize = 4;
-    let sem = Arc::new(Semaphore::new(MAX_CONCURRENT));
+    let cfg = Arc::new(state.config.lock().unwrap().clone());
+    let sem = Arc::new(Semaphore::new(cfg.max_concurrent));
 
     let handles: Vec<_> = items
         .into_iter()
         .map(|item| {
             let sem = Arc::clone(&sem);
+            let cfg = Arc::clone(&cfg);
             let handle = app_handle.clone();
             tokio::spawn(async move {
                 let _permit = sem.acquire().await.unwrap();
-                match converter::convert_file(&handle, &item.path, &item.target_format).await {
+                match converter::convert_file(&handle, &item.path, &item.target_format, &cfg).await
+                {
                     Ok(out) => BatchResult {
                         path: item.path,
                         output_path: Some(out),
@@ -123,7 +173,28 @@ async fn convert_batch(
             }),
         }
     }
-    results
+    Ok(results)
+}
+
+#[tauri::command]
+fn get_config(state: tauri::State<'_, AppState>) -> config::Config {
+    state.config.lock().unwrap().clone()
+}
+
+#[tauri::command]
+fn set_config(
+    state: tauri::State<'_, AppState>,
+    new_config: config::Config,
+) -> Result<(), String> {
+    let validated = config::Config {
+        output_dir: new_config.output_dir,
+        jpeg_quality: new_config.jpeg_quality.clamp(1, 100),
+        avif_quality: new_config.avif_quality.clamp(1, 100),
+        max_concurrent: new_config.max_concurrent.clamp(1, 8),
+    };
+    config::save(&validated)?;
+    *state.config.lock().unwrap() = validated;
+    Ok(())
 }
 
 #[tauri::command]

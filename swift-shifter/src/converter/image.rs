@@ -1,11 +1,19 @@
 use std::path::{Path, PathBuf};
 
-fn output_path(input: &str, ext: &str) -> PathBuf {
-    // deduplicate: if stem already ends with the ext, avoid double extension
+/// Resolve the output path, creating a custom output directory if specified.
+fn output_path(input: &str, ext: &str, output_dir: Option<&str>) -> Result<PathBuf, String> {
     let p = Path::new(input);
     let stem = p.file_stem().unwrap_or_default();
-    let dir = p.parent().unwrap_or(Path::new("."));
-    dir.join(format!("{}.{}", stem.to_string_lossy(), ext))
+    let dir = match output_dir {
+        Some(d) => {
+            let dir = PathBuf::from(d);
+            std::fs::create_dir_all(&dir)
+                .map_err(|e| format!("Failed to create output directory: {e}"))?;
+            dir
+        }
+        None => p.parent().unwrap_or(Path::new(".")).to_path_buf(),
+    };
+    Ok(dir.join(format!("{}.{}", stem.to_string_lossy(), ext)))
 }
 
 // sips is built-in on every macOS install — the only reliable way to handle HEIC.
@@ -26,8 +34,12 @@ fn sips_convert(path: &str, sips_format: &str, out: &Path) -> Result<(), String>
     }
 }
 
-pub fn convert_heic(path: &str, target_format: &str) -> Result<String, String> {
-    let out = output_path(path, target_format);
+pub fn convert_heic(
+    path: &str,
+    target_format: &str,
+    output_dir: Option<&str>,
+) -> Result<String, String> {
+    let out = output_path(path, target_format, output_dir)?;
     let sips_format = match target_format {
         "jpg" | "jpeg" => "jpeg",
         "png"          => "png",
@@ -40,30 +52,50 @@ pub fn convert_heic(path: &str, target_format: &str) -> Result<String, String> {
     Ok(out.to_string_lossy().to_string())
 }
 
-pub fn convert_to_heic(path: &str) -> Result<String, String> {
-    let out = output_path(path, "heic");
+pub fn convert_to_heic(path: &str, output_dir: Option<&str>) -> Result<String, String> {
+    let out = output_path(path, "heic", output_dir)?;
     sips_convert(path, "heic", &out)?;
     Ok(out.to_string_lossy().to_string())
 }
 
-pub fn convert_image(path: &str, target_format: &str) -> Result<String, String> {
+pub fn convert_image(
+    path: &str,
+    target_format: &str,
+    jpeg_quality: u8,
+    output_dir: Option<&str>,
+) -> Result<String, String> {
     let img = image::open(path).map_err(|e| format!("Failed to open image: {e}"))?;
-    let out = output_path(path, target_format);
-    let fmt = match target_format {
-        "png" => image::ImageFormat::Png,
-        "jpg" | "jpeg" => image::ImageFormat::Jpeg,
-        "webp" => image::ImageFormat::WebP,
-        "bmp" => image::ImageFormat::Bmp,
-        "tiff" | "tif" => image::ImageFormat::Tiff,
-        "gif" => image::ImageFormat::Gif,
-        other => return Err(format!("Unknown image format: {other}")),
-    };
-    img.save_with_format(&out, fmt)
-        .map_err(|e| format!("Failed to save image: {e}"))?;
+    let out = output_path(path, target_format, output_dir)?;
+
+    if target_format == "jpg" || target_format == "jpeg" {
+        use image::codecs::jpeg::JpegEncoder;
+        use std::io::BufWriter;
+        let file = std::fs::File::create(&out)
+            .map_err(|e| format!("Cannot create file: {e}"))?;
+        let enc = JpegEncoder::new_with_quality(BufWriter::new(file), jpeg_quality);
+        img.write_with_encoder(enc)
+            .map_err(|e| format!("Failed to save JPEG: {e}"))?;
+    } else {
+        let fmt = match target_format {
+            "png"        => image::ImageFormat::Png,
+            "webp"       => image::ImageFormat::WebP,
+            "bmp"        => image::ImageFormat::Bmp,
+            "tiff" | "tif" => image::ImageFormat::Tiff,
+            "gif"        => image::ImageFormat::Gif,
+            other => return Err(format!("Unknown image format: {other}")),
+        };
+        img.save_with_format(&out, fmt)
+            .map_err(|e| format!("Failed to save image: {e}"))?;
+    }
+
     Ok(out.to_string_lossy().to_string())
 }
 
-pub fn convert_to_avif(path: &str) -> Result<String, String> {
+pub fn convert_to_avif(
+    path: &str,
+    avif_quality: u8,
+    output_dir: Option<&str>,
+) -> Result<String, String> {
     use ravif::{Encoder, Img};
     use rgb::FromSlice;
 
@@ -75,14 +107,15 @@ pub fn convert_to_avif(path: &str) -> Result<String, String> {
     let rgba_pixels = pixels.as_rgba();
 
     let enc = Encoder::new()
-        .with_quality(80.0)
+        .with_quality(avif_quality as f32)
         .with_speed(6);
 
     let result = enc
         .encode_rgba(Img::new(rgba_pixels, width as usize, height as usize))
         .map_err(|e| format!("AVIF encoding failed: {e}"))?;
 
-    let out = output_path(path, "avif");
-    std::fs::write(&out, result.avif_file).map_err(|e| format!("Failed to write AVIF: {e}"))?;
+    let out = output_path(path, "avif", output_dir)?;
+    std::fs::write(&out, result.avif_file)
+        .map_err(|e| format!("Failed to write AVIF: {e}"))?;
     Ok(out.to_string_lossy().to_string())
 }

@@ -24,7 +24,10 @@ export default defineConfig({
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
     outDir: "ui/dist",
     rollupOptions: {
-      input: "ui/index.html",
+      input: {
+        main: "ui/index.html",
+        settings: "ui/settings.html",
+      },
     },
   },
 });

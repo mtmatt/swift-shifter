@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Preferences</title>
+</head>
+<body>
+  <div class="content">
+    <h2 class="section-label">quality</h2>
+    <div class="group">
+      <div class="row">
+        <label for="jpeg-q">jpeg</label>
+        <input type="range" id="jpeg-q" min="1" max="100" value="75" />
+        <span id="jpeg-q-val" class="val">75</span>
+      </div>
+      <div class="row">
+        <label for="avif-q">avif</label>
+        <input type="range" id="avif-q" min="1" max="100" value="65" />
+        <span id="avif-q-val" class="val">65</span>
+      </div>
+    </div>
+
+    <div class="divider"></div>
+
+    <h2 class="section-label">concurrency</h2>
+    <div class="group">
+      <div class="row">
+        <label for="max-c">workers</label>
+        <input type="range" id="max-c" min="1" max="8" value="4" />
+        <span id="max-c-val" class="val">4</span>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    <span id="status"></span>
+    <button id="btn-cancel">cancel</button>
+    <button id="btn-save">save</button>
+  </footer>
+
+  <script type="module" src="src/settings.ts"></script>
+</body>
+</html>
