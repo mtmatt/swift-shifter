@@ -6,17 +6,77 @@ on:
   pull_request:
 
 jobs:
-  build-macos:
-    runs-on: macos-latest
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS
+          - os: windows-latest
+            name: Windows
+          - os: ubuntu-latest
+            name: Ubuntu
+          - os: ubuntu-latest
+            name: Fedora
+            container: fedora:latest
+          - os: ubuntu-latest
+            name: Arch
+            container: archlinux:latest
+
+    name: Build (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
 
     steps:
+      - name: Install Ubuntu system dependencies
+        if: matrix.name == 'Ubuntu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            nasm
+
+      - name: Install Fedora system dependencies
+        if: matrix.name == 'Fedora'
+        run: |
+          dnf install -y \
+            git curl tar gzip findutils file \
+            gcc gcc-c++ make \
+            webkit2gtk4.1-devel \
+            gtk3-devel \
+            libayatana-appindicator-gtk3-devel \
+            librsvg2-devel \
+            patchelf \
+            openssl-devel \
+            nasm
+
+      - name: Install Arch system dependencies
+        if: matrix.name == 'Arch'
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm \
+            git curl \
+            base-devel \
+            webkit2gtk-4.1 \
+            gtk3 \
+            libayatana-appindicator \
+            librsvg \
+            patchelf \
+            openssl \
+            nasm
+
       - uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
+          cache: ${{ matrix.container == '' && 'npm' || '' }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
@@ -35,5 +95,5 @@ jobs:
       - name: Build frontend
         run: npm run build
 
-      - name: Build Tauri app (no bundle, skips code signing)
+      - name: Build Tauri app (compile check, no bundle)
         run: npm run tauri -- build --no-bundle

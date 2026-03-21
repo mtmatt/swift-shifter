@@ -128,7 +128,7 @@ The <3 MB goal applies to the app shell excluding `ffmpeg`. Tactics:
 - [x] macOS CI
 - [x] Batch conversion with concurrency
 - [x] Config file + settings panel
-- [ ] Handle ffmpeg and brew installation automatically
+- [x] Handle ffmpeg and brew installation automatically
 - [ ] Auto-update via Tauri updater plugin
 - [ ] Windows and Linux support
 - [ ] Windows and Linux builds in CI
