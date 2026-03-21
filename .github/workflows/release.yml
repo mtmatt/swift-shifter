@@ -5,6 +5,12 @@ on:
     tags:
       - 'v*'
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # Lets linuxdeploy (itself an AppImage) extract+run without FUSE in CI.
+  # Has no effect on macOS/Windows.
+  APPIMAGE_EXTRACT_AND_RUN: 1
+
 jobs:
   release:
     permissions:
@@ -20,9 +26,13 @@ jobs:
             name: Windows
           - os: ubuntu-latest
             name: Ubuntu
+            # AppImage is the portable Linux binary; deb for Debian/Ubuntu users.
+            bundles: deb,appimage
           - os: ubuntu-latest
             name: Fedora
             container: fedora:latest
+            # RPM only — AppImage requires FUSE which is unavailable inside Docker.
+            bundles: rpm
 
     name: Release (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
@@ -39,7 +49,8 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
-            nasm
+            nasm \
+            libfuse2
 
       - name: Install Fedora system dependencies
         if: matrix.name == 'Fedora'
@@ -86,6 +97,23 @@ jobs:
       #
       # Without APPLE_ID / APPLE_PASSWORD the binary is signed but not notarized;
       # Gatekeeper will still block it for users on macOS 10.15+.
+      - name: Prepare Apple signing environment
+        if: matrix.name == 'macOS'
+        env:
+          CERT: ${{ secrets.APPLE_CERTIFICATE }}
+        run: |
+          if [ -z "$CERT" ]; then
+            echo "APPLE_CERTIFICATE secret not configured — building unsigned."
+            exit 0
+          fi
+          {
+            echo "APPLE_CERTIFICATE=${{ secrets.APPLE_CERTIFICATE }}"
+            echo "APPLE_CERTIFICATE_PASSWORD=${{ secrets.APPLE_CERTIFICATE_PASSWORD }}"
+            echo "APPLE_SIGNING_IDENTITY=${{ secrets.APPLE_SIGNING_IDENTITY }}"
+            echo "APPLE_ID=${{ secrets.APPLE_ID }}"
+            echo "APPLE_PASSWORD=${{ secrets.APPLE_PASSWORD }}"
+            echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}"
+          } >> "$GITHUB_ENV"
 
       # ── Windows Authenticode signing ──────────────────────────────────────
       # Requires a code-signing certificate (.pfx) from a trusted CA and:
@@ -130,16 +158,8 @@ jobs:
         uses: tauri-apps/tauri-action@v0.5.17
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Tauri updater signing (all platforms)
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # Apple signing & notarization (macOS only — empty on other platforms)
-          APPLE_CERTIFICATE: ${{ matrix.name == 'macOS' && secrets.APPLE_CERTIFICATE || '' }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ matrix.name == 'macOS' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
-          APPLE_SIGNING_IDENTITY: ${{ matrix.name == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
-          APPLE_ID: ${{ matrix.name == 'macOS' && secrets.APPLE_ID || '' }}
-          APPLE_PASSWORD: ${{ matrix.name == 'macOS' && secrets.APPLE_PASSWORD || '' }}
-          APPLE_TEAM_ID: ${{ matrix.name == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
         with:
           tagName: ${{ github.ref_name }}
           releaseName: Swift Shifter ${{ github.ref_name }}
@@ -148,3 +168,4 @@ jobs:
           releaseDraft: true
           prerelease: false
           updaterJsonKeepUniversal: ${{ matrix.updaterJsonKeepUniversal || false }}
+          args: ${{ matrix.bundles && format('--bundles {0}', matrix.bundles) || '' }}
