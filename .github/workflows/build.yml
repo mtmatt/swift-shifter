@@ -38,19 +38,22 @@ jobs:
             libgtk-3-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            nasm
 
       - name: Install Fedora system dependencies
         if: matrix.name == 'Fedora'
         run: |
           dnf install -y \
             git curl tar gzip findutils file \
+            gcc gcc-c++ make \
             webkit2gtk4.1-devel \
             gtk3-devel \
             libayatana-appindicator-gtk3-devel \
             librsvg2-devel \
             patchelf \
-            openssl-devel
+            openssl-devel \
+            nasm
 
       - name: Install Arch system dependencies
         if: matrix.name == 'Arch'
@@ -64,7 +67,8 @@ jobs:
             libayatana-appindicator \
             librsvg \
             patchelf \
-            openssl
+            openssl \
+            nasm
 
       - uses: actions/checkout@v4
 
