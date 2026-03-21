@@ -1,0 +1,60 @@
+name: Tag
+
+# Waits for the Build workflow to pass on main, then creates a v{version} tag
+# if the version in package.json hasn't been tagged yet.
+# Using a PAT (TAG_TOKEN) so the pushed tag triggers the Release workflow —
+# GITHUB_TOKEN pushes are intentionally blocked from triggering further workflows.
+on:
+  workflow_run:
+    workflows: [Build]
+    types: [completed]
+    branches: [main]
+
+jobs:
+  tag:
+    # Only run when the build passed
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # needed to check existing tags
+          token: ${{ secrets.TAG_TOKEN }}
+
+      - name: Read version from package.json
+        id: pkg
+        run: echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Verify all version files agree
+        run: |
+          PKG=$(jq -r .version package.json)
+          CARGO=$(grep -m1 '^version = ' swift-shifter/Cargo.toml | sed 's/version = "\(.*\)"/\1/')
+          TAURI=$(jq -r .version swift-shifter/tauri.conf.json)
+
+          if [[ "$PKG" != "$CARGO" || "$PKG" != "$TAURI" ]]; then
+            echo "Version mismatch — run scripts/bump-version.sh to sync all files:"
+            echo "  package.json:             $PKG"
+            echo "  swift-shifter/Cargo.toml: $CARGO"
+            echo "  tauri.conf.json:          $TAURI"
+            exit 1
+          fi
+
+          echo "All version files agree: $PKG"
+
+      - name: Create tag if it does not exist
+        env:
+          VERSION: ${{ steps.pkg.outputs.version }}
+        run: |
+          TAG="v$VERSION"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists — nothing to do."
+          else
+            git config user.name  "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag "$TAG"
+            git push origin "$TAG"
+            echo "Created and pushed $TAG"
+          fi

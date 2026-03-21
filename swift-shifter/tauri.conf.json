@@ -44,6 +44,26 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "signingIdentity": null,
+      "providerShortName": null,
+      "entitlements": null
+    },
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "http://timestamp.digicert.com"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFCMTBCOTYzMDg5NTM2OUMKUldTY05wVUlZN2tRRzMwV1ZlaXdsRnJ1OHgzcTBVbzV5eEwrTkhZc2JnVXFlWW40Q2tTaTFQMVkK",
+      "endpoints": [
+        "https://github.com/mtmatt/swift-shifter/releases/latest/download/latest.json"
+      ],
+      "dialog": false
+    }
   }
 }

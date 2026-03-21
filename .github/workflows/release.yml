@@ -1,0 +1,147 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            name: macOS
+            updaterJsonKeepUniversal: true
+          - os: windows-latest
+            name: Windows
+          - os: ubuntu-latest
+            name: Ubuntu
+          - os: ubuntu-latest
+            name: Fedora
+            container: fedora:latest
+
+    name: Release (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    container: ${{ matrix.container }}
+
+    steps:
+      - name: Install Ubuntu system dependencies
+        if: matrix.name == 'Ubuntu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install Fedora system dependencies
+        if: matrix.name == 'Fedora'
+        run: |
+          dnf install -y \
+            git curl tar gzip findutils file \
+            webkit2gtk4.1-devel \
+            gtk3-devel \
+            libayatana-appindicator-gtk3-devel \
+            librsvg2-devel \
+            patchelf \
+            openssl-devel
+
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: ${{ matrix.container == '' && 'npm' || '' }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: swift-shifter
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      # ── Apple code signing & notarization ─────────────────────────────────
+      # Requires an Apple Developer Program membership and the following secrets:
+      #
+      #   APPLE_CERTIFICATE               base64-encoded Developer ID Application .p12
+      #   APPLE_CERTIFICATE_PASSWORD      password for the .p12
+      #   APPLE_SIGNING_IDENTITY          e.g. "Developer ID Application: Your Name (TEAMID)"
+      #   APPLE_ID                        your Apple ID email
+      #   APPLE_PASSWORD                  app-specific password (appleid.apple.com → Security)
+      #   APPLE_TEAM_ID                   10-character team ID from developer.apple.com
+      #
+      # Without APPLE_ID / APPLE_PASSWORD the binary is signed but not notarized;
+      # Gatekeeper will still block it for users on macOS 10.15+.
+
+      # ── Windows Authenticode signing ──────────────────────────────────────
+      # Requires a code-signing certificate (.pfx) from a trusted CA and:
+      #
+      #   WINDOWS_CERTIFICATE             base64-encoded .pfx  (openssl pkcs12 ... | base64)
+      #   WINDOWS_CERTIFICATE_PASSWORD    password for the .pfx
+      #
+      # Without this, Windows SmartScreen will warn users on first launch.
+      # An EV certificate skips SmartScreen reputation building entirely.
+      - name: Import Windows signing certificate
+        if: matrix.name == 'Windows'
+        shell: pwsh
+        env:
+          WINDOWS_CERTIFICATE: ${{ secrets.WINDOWS_CERTIFICATE }}
+          WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.WINDOWS_CERTIFICATE_PASSWORD }}
+        run: |
+          if (-not $env:WINDOWS_CERTIFICATE) {
+            Write-Host "WINDOWS_CERTIFICATE secret not set — skipping signing."
+            exit 0
+          }
+
+          $pfxPath = Join-Path $env:RUNNER_TEMP "cert.pfx"
+          [IO.File]::WriteAllBytes(
+            $pfxPath,
+            [Convert]::FromBase64String($env:WINDOWS_CERTIFICATE)
+          )
+
+          $cert = Import-PfxCertificate `
+            -FilePath $pfxPath `
+            -CertStoreLocation "Cert:\LocalMachine\My" `
+            -Password (ConvertTo-SecureString $env:WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force)
+
+          # Write thumbprint into tauri.conf.json so the Tauri CLI picks it up
+          $config = Get-Content swift-shifter/tauri.conf.json | ConvertFrom-Json
+          $config.bundle.windows.certificateThumbprint = $cert.Thumbprint
+          $config | ConvertTo-Json -Depth 20 | Set-Content swift-shifter/tauri.conf.json
+
+          Remove-Item $pfxPath
+          Write-Host "Certificate imported. Thumbprint: $($cert.Thumbprint)"
+
+      - name: Build and publish release
+        uses: tauri-apps/tauri-action@v0.5.17
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Tauri updater signing (all platforms)
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Apple signing & notarization (macOS only — empty on other platforms)
+          APPLE_CERTIFICATE: ${{ matrix.name == 'macOS' && secrets.APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ matrix.name == 'macOS' && secrets.APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ matrix.name == 'macOS' && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ matrix.name == 'macOS' && secrets.APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ matrix.name == 'macOS' && secrets.APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ matrix.name == 'macOS' && secrets.APPLE_TEAM_ID || '' }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: Swift Shifter ${{ github.ref_name }}
+          releaseBody: |
+            See the assets below to download this release.
+          releaseDraft: true
+          prerelease: false
+          updaterJsonKeepUniversal: ${{ matrix.updaterJsonKeepUniversal || false }}

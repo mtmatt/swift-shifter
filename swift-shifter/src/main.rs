@@ -10,8 +10,32 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter, Manager, WindowEvent};
+use tauri_plugin_updater::UpdaterExt;
 
 use config::AppState;
+
+#[derive(Serialize, Clone)]
+struct UpdateInfo {
+    version: String,
+    body: Option<String>,
+}
+
+async fn check_for_update_and_emit(app: &tauri::AppHandle) {
+    let Ok(updater) = app.updater_builder().build() else {
+        return;
+    };
+    let Ok(Some(update)) = updater.check().await else {
+        return;
+    };
+    app.emit(
+        "update:available",
+        UpdateInfo {
+            version: update.version.clone(),
+            body: update.body.clone(),
+        },
+    )
+    .ok();
+}
 
 #[derive(Deserialize)]
 struct BatchItem {
@@ -29,6 +53,8 @@ struct BatchResult {
 
 fn main() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .plugin(hotkey::build_plugin())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -45,10 +71,21 @@ fn main() {
             // Native macOS menu bar
             let about = PredefinedMenuItem::about(app, None::<&str>, None)?;
             let sep1 = PredefinedMenuItem::separator(app)?;
-            let prefs = MenuItem::with_id(app, "preferences", "Preferences…", true, Some("CmdOrCtrl+,"))?;
+            let prefs = MenuItem::with_id(
+                app,
+                "preferences",
+                "Preferences…",
+                true,
+                Some("CmdOrCtrl+,"),
+            )?;
             let sep2 = PredefinedMenuItem::separator(app)?;
             let quit = PredefinedMenuItem::quit(app, None::<&str>)?;
-            let app_menu = Submenu::with_items(app, "Swift Shifter", true, &[&about, &sep1, &prefs, &sep2, &quit])?;
+            let app_menu = Submenu::with_items(
+                app,
+                "Swift Shifter",
+                true,
+                &[&about, &sep1, &prefs, &sep2, &quit],
+            )?;
             let menu = Menu::with_items(app, &[&app_menu])?;
             app.set_menu(menu)?;
 
@@ -81,6 +118,21 @@ fn main() {
                     handle.emit("ffmpeg:failed", e).ok();
                 }
             });
+
+            // Check for pandoc at startup
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = converter::document::ensure_pandoc(&handle).await {
+                    eprintln!("pandoc setup warning: {e}");
+                    handle.emit("pandoc:failed", e).ok();
+                }
+            });
+
+            // Check for app updates in the background
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                check_for_update_and_emit(&handle).await;
+            });
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -97,6 +149,8 @@ fn main() {
             get_config,
             set_config,
             open_output_folder,
+            check_update,
+            install_update,
             quit,
         ])
         .run(tauri::generate_context!())
@@ -106,6 +160,38 @@ fn main() {
 #[tauri::command]
 fn quit(app: tauri::AppHandle) {
     app.exit(0);
+}
+
+#[tauri::command]
+async fn check_update(app: tauri::AppHandle) -> Result<Option<UpdateInfo>, String> {
+    let updater = app.updater_builder().build().map_err(|e| e.to_string())?;
+    let update = updater.check().await.map_err(|e| e.to_string())?;
+    Ok(update.map(|u| UpdateInfo {
+        version: u.version.clone(),
+        body: u.body.clone(),
+    }))
+}
+
+#[tauri::command]
+async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
+    let updater = app.updater_builder().build().map_err(|e| e.to_string())?;
+    let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
+        return Ok(());
+    };
+    let handle = app.clone();
+    update
+        .download_and_install(
+            move |downloaded, total| {
+                let percent = total
+                    .map(|t| downloaded as f32 / t as f32 * 100.0)
+                    .unwrap_or(0.0);
+                handle.emit("update:progress", percent).ok();
+            },
+            || {},
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    app.restart();
 }
 
 #[tauri::command]
@@ -183,10 +269,7 @@ fn get_config(state: tauri::State<'_, AppState>) -> config::Config {
 }
 
 #[tauri::command]
-fn set_config(
-    state: tauri::State<'_, AppState>,
-    new_config: config::Config,
-) -> Result<(), String> {
+fn set_config(state: tauri::State<'_, AppState>, new_config: config::Config) -> Result<(), String> {
     let validated = config::Config {
         output_dir: new_config.output_dir,
         jpeg_quality: new_config.jpeg_quality.clamp(1, 100),
@@ -204,9 +287,7 @@ async fn open_output_folder(path: String) -> Result<(), String> {
     let dir = if p.is_dir() {
         p.to_path_buf()
     } else {
-        p.parent()
-            .ok_or("No parent directory")?
-            .to_path_buf()
+        p.parent().ok_or("No parent directory")?.to_path_buf()
     };
     #[cfg(target_os = "macos")]
     std::process::Command::new("open")

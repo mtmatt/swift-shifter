@@ -1,4 +1,5 @@
 pub mod data;
+pub mod document;
 pub mod image;
 pub mod media;
 
@@ -32,6 +33,11 @@ pub fn detect_output_formats(path: &str) -> Result<Vec<String>, String> {
         "yaml" | "yml" => &["json", "toml", "csv"],
         "toml" => &["json", "yaml", "csv"],
         "csv" => &["json", "yaml", "toml"],
+        // Documents (pandoc)
+        "md" | "markdown" => &["txt", "pdf", "tex", "typst"],
+        "txt" => &["md", "pdf", "tex", "typst"],
+        "tex" | "latex" => &["md", "txt", "pdf", "typst"],
+        "typst" => &["md", "txt", "pdf", "tex"],
         _ => return Err(format!("Unsupported file type: .{ext}")),
     };
 
@@ -78,6 +84,9 @@ pub async fn convert_file(
         | "opus" => media::convert_media(app, path, target_format, out_dir).await,
         "json" | "yaml" | "yml" | "toml" | "csv" => {
             data::convert_data(path, target_format, out_dir)
+        }
+        "md" | "markdown" | "txt" | "tex" | "latex" | "typst" => {
+            document::convert_document(app, path, target_format, out_dir).await
         }
         _ => Err(format!("Unsupported input format: .{ext}")),
     }
