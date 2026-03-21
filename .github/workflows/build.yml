@@ -72,7 +72,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
+          cache: ${{ matrix.container == '' && 'npm' || '' }}
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
