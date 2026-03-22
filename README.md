@@ -2,8 +2,6 @@
 
 A featherweight, always-on file converter that lives in your menu bar. Drop any file onto the floating window — or select files and hit a hotkey — and get instant format conversion without opening a browser or bulky software.
 
-**Target binary size: < 3 MB. Target launch time: < 100 ms.**
-
 
 ## Features
 
@@ -14,7 +12,8 @@ A featherweight, always-on file converter that lives in your menu bar. Drop any 
   - Images: WebP, PNG, JPEG, AVIF, GIF, BMP, TIFF, HEIC/HEIF
   - Video: MP4, MOV, MKV, WebM, AVI, GIF (video-to-GIF and GIF-to-video)
   - Audio: MP3, AAC, FLAC, OGG, WAV, OPUS
-  - Data: JSON, YAML, TOML, CSV
+  - Data: JSON, YAML, TOML, CSV,
+  - Document: txt, markdown, latex, typst
 - **Output next to source** — converted file lands in the same folder as the input
 - **Batch conversion** — drop multiple files at once
 - **Progress indicator** — lightweight inline progress bar per file, no modal dialogs
@@ -23,16 +22,16 @@ A featherweight, always-on file converter that lives in your menu bar. Drop any 
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| App shell | [Tauri v2](https://tauri.app) |
-| Backend logic | Rust |
-| Image processing | [`image`](https://crates.io/crates/image) crate + [`ravif`](https://crates.io/crates/ravif) for AVIF + macOS `sips` for HEIC |
-| Video / audio | System `ffmpeg` (auto-installed via Homebrew if missing) |
-| Data serialization | `serde_json`, `serde_yaml`, `toml`, `csv` crates |
-| Frontend UI | TypeScript + [Vite](https://vitejs.dev) |
-| Global hotkeys | `tauri-plugin-global-shortcut` |
-| System tray | Tauri built-in tray API |
+| Layer              | Technology                                               |
+| ------------------ | -------------------------------------------------------- |
+| App shell          | [Tauri v2](https://tauri.app)                            |
+| Backend logic      | Rust                                                     |
+| Image processing   | [`image`](https://crates.io/crates/image) crate + [`ravif`](https://crates.io/crates/ravif) for AVIF + macOS `sips` for HEIC |
+| Video / audio      | System `ffmpeg` (auto-installed via Homebrew if missing) |
+| Data serialization | `serde_json`, `serde_yaml`, `toml`, `csv` crates         |
+| Frontend UI        | TypeScript + [Vite](https://vitejs.dev)                  |
+| Global hotkeys     | `tauri-plugin-global-shortcut`                           |
+| System tray        | Tauri built-in tray API                                  |
 
 
 ## Architecture Overview
@@ -75,11 +74,11 @@ The Rust backend exposes a small set of Tauri commands:
 
 ## Prerequisites
 
-| Tool | Version | Notes |
-|---|---|---|
-| Rust | stable (≥ 1.78) | via `rustup` |
-| Node.js | ≥ 24 | for Tauri CLI and Vite |
-| ffmpeg | ≥ 6 | for video/audio; auto-installed via `brew` if missing |
+| Tool    | Version         | Notes                                                 |
+| ------- | --------------- | ----------------------------------------------------- |
+| Rust    | stable (≥ 1.78) | via `rustup`                                          |
+| Node.js | ≥ 24            | for Tauri CLI and Vite                                |
+| ffmpeg  | ≥ 6             | for video/audio; auto-installed via `brew` if missing |
 
 The Tauri CLI is installed as a local npm dev dependency — no global install needed.
 
@@ -104,17 +103,6 @@ npm run tauri -- build
 The release `.app` lands in `swift-shifter/target/release/bundle/`.
 
 
-## Size Budget
-
-The <3 MB goal applies to the app shell excluding `ffmpeg`. Tactics:
-
-- Tauri webview uses the OS-native renderer (no Chromium embedded)
-- No JS framework — TypeScript compiled to vanilla JS by Vite
-- `image` crate compiled with only the feature flags needed
-- `strip = true` + `opt-level = "z"` + `lto = true` in release profile
-- `ffmpeg` is a runtime dependency, not bundled
-
-
 ## Roadmap
 
 - [x] Core Tauri shell + system tray
@@ -132,7 +120,8 @@ The <3 MB goal applies to the app shell excluding `ffmpeg`. Tactics:
 - [x] Auto-update via Tauri updater plugin
 - [x] Windows and Linux support
 - [x] Windows and Linux builds in CI
-- [x] Support document conversion with pandoc.
+- [x] Support document conversion with pandoc
+- [ ] Support ocr conversion (from pdf/image to txt)
 
 
 ## License
