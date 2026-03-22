@@ -1,0 +1,32 @@
+{
+  "models": [
+    {
+      "comment": "GGUF 量化模型，走 llama.cpp 後端",
+      "model_id": "/path/to/gemma-3n-e4b-q4_k_m.gguf",
+      "n_gpu_layers": -1
+    },
+    {
+      "comment": "HuggingFace 模型，走 transformers 後端",
+      "model_id": "Qwen/Qwen2.5-7B-Instruct",
+      "dtype": "bfloat16"
+    },
+    {
+      "comment": "4-bit 量化，VRAM 不足時使用",
+      "model_id": "google/gemma-3n-E4B-it",
+      "dtype": "bfloat16",
+      "load_in_4bit": true
+    }
+  ],
+
+  "flores200": {
+    "source_lang": "zho_Hant",
+    "target_lang": "eng_Latn",
+    "max_samples": 50
+  },
+
+  "custom_samples": "testsets/custom_template.json",
+
+  "use_comet": true,
+  "comet_batch_size": 8
+}
+

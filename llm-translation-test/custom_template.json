@@ -1,0 +1,105 @@
+[
+  {
+    "id": "biz_001",
+    "source_lang": "Chinese",
+    "target_lang": "English",
+    "source_text": "本合約自雙方簽署之日起生效，有效期限為一年，期滿前三十日內若無任何一方提出書面異議，則自動續約一年。",
+    "reference": null,
+    "references": {
+      "claude": "This Agreement shall come into effect upon the date of execution by both parties and shall remain valid for one year. Unless either party submits a written objection within thirty (30) days prior to expiration, the Agreement shall be automatically renewed for an additional one-year term.",
+      "gemini": "This Agreement shall take effect on the date of signing by both parties, with a term of one year. If neither party raises a written objection within thirty days before the expiration date, the Agreement shall be automatically renewed for one year."
+    },
+    "domain": "business",
+    "notes": "注意「書面異議」和「自動續約」的標準法律用語"
+  },
+  {
+    "id": "biz_002",
+    "source_lang": "Chinese",
+    "target_lang": "English",
+    "source_text": "本季營收較上季成長 12.4%，主要來自亞太區業務擴張及新產品線的貢獻，惟受原物料成本上漲影響，毛利率略降至 38.2%。",
+    "reference": null,
+    "references": {},
+    "domain": "business",
+    "notes": "財務術語：毛利率、營收、原物料成本"
+  },
+  {
+    "id": "biz_003",
+    "source_lang": "English",
+    "target_lang": "Chinese",
+    "source_text": "The Licensor hereby grants the Licensee a non-exclusive, non-transferable, revocable license to use the Software solely for the Licensee's internal business purposes.",
+    "reference": null,
+    "references": {},
+    "domain": "business",
+    "notes": "授權條款術語：non-exclusive、non-transferable、revocable"
+  },
+  {
+    "id": "biz_004",
+    "source_lang": "English",
+    "target_lang": "Chinese",
+    "source_text": "In the event of a material breach, the non-breaching party shall provide written notice specifying the nature of the breach, and the breaching party shall have thirty (30) days to cure such breach.",
+    "reference": null,
+    "references": {},
+    "domain": "business",
+    "notes": "注意「material breach」和「cure」在法律語境中的標準譯法"
+  },
+  {
+    "id": "tech_001",
+    "source_lang": "English",
+    "target_lang": "Chinese",
+    "source_text": "Authentication tokens are passed as Bearer tokens in the Authorization header. Tokens expire after 3600 seconds and must be refreshed using the /oauth/token endpoint with the refresh_token grant type.",
+    "reference": null,
+    "references": {},
+    "domain": "technical",
+    "notes": "API 文件：Bearer token、refresh_token 通常保留英文或有固定譯法"
+  },
+  {
+    "id": "tech_002",
+    "source_lang": "English",
+    "target_lang": "Chinese",
+    "source_text": "If the request payload exceeds the maximum allowed size of 10 MB, the server returns a 413 Payload Too Large error. Implement exponential backoff with jitter for retry logic to avoid thundering herd problems.",
+    "reference": null,
+    "references": {},
+    "domain": "technical",
+    "notes": "技術術語：exponential backoff、jitter、thundering herd"
+  },
+  {
+    "id": "tech_003",
+    "source_lang": "Chinese",
+    "target_lang": "English",
+    "source_text": "系統在偵測到記憶體使用率超過閾值 85% 時，將自動觸發垃圾回收機制，並記錄相關事件至系統日誌，同時透過監控告警通知維運團隊。",
+    "reference": null,
+    "references": {},
+    "domain": "technical",
+    "notes": "垃圾回收（GC）、閾值、監控告警的標準英文術語"
+  },
+  {
+    "id": "tech_004",
+    "source_lang": "Chinese",
+    "target_lang": "English",
+    "source_text": "請確認防火牆規則已允許目標連接埠的入站流量，並檢查安全群組設定是否與網路存取控制清單（NACL）存在衝突。",
+    "reference": null,
+    "references": {},
+    "domain": "technical",
+    "notes": "網路術語：防火牆、安全群組、NACL 的標準用語"
+  },
+  {
+    "id": "stress_001",
+    "source_lang": "English",
+    "target_lang": "Chinese",
+    "source_text": "Notwithstanding any other provision of this Agreement, neither party shall be liable to the other for any indirect, incidental, consequential, special, exemplary, or punitive damages, including but not limited to loss of revenue, loss of profits, loss of business, or loss of data.",
+    "reference": null,
+    "references": {},
+    "domain": "business",
+    "notes": "壓力測試：長句、多重法律術語堆疊，考驗結構完整性"
+  },
+  {
+    "id": "stress_002",
+    "source_lang": "Chinese",
+    "target_lang": "English",
+    "source_text": "鑑於甲方（以下簡稱「委託方」）與乙方（以下簡稱「受託方」）就委託方委託受託方提供軟體開發服務一事，雙方本著平等互利之原則，經友好協商，達成以下協議，以資共同遵守。",
+    "reference": null,
+    "references": {},
+    "domain": "business",
+    "notes": "壓力測試：中文法律文書的典型開頭格式，考驗正式語氣和結構"
+  }
+]
