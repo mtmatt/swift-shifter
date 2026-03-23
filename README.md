@@ -121,7 +121,33 @@ The release `.app` lands in `swift-shifter/target/release/bundle/`.
 - [x] Windows and Linux support
 - [x] Windows and Linux builds in CI
 - [x] Support document conversion with pandoc
-- [ ] Support ocr conversion (from pdf/image to txt)
+- [ ] Images to PDF
+- [ ] EPUB to PDF
+
+
+### Workflow & Automation
+
+- [ ] Clipboard Integration: Convert image/text directly from clipboard to file and vice versa
+- [ ] Watched Folders: Designate folders for automatic background conversion upon file drop
+- [ ] Smart Presets: Create custom "Action Chains" (e.g., Convert to WebP + Resize to 1200px + Strip Metadata)
+- [ ] Post-processing hooks: Run custom shell commands or scripts after a successful conversion
+
+
+### Local AI & Privacy
+
+- [ ] Support ocr conversion (from pdf/image to txt, md, tex, and typst)
+- [ ] AI Background Removal: Remove image backgrounds locally using RMBG/ONNX models
+- [ ] Super Resolution: Local AI upscaling for low-res images
+- [ ] Privacy Shield: Auto-detect and blur faces or sensitive information (PII) before conversion
+- [ ] Offline LLM Support local model (Llama/Mistral via llama.cpp) for document translation and summarization
+
+
+### Power User & Developer Tools
+
+- [ ] Swift Shifter CLI: A standalone Rust binary for terminal-based conversion using the same engine
+- [ ] Plugin System: Support for user-defined conversion logic via Lua or JavaScript (Rhai/Deno)
+- [ ] Raycast / Alfred Integration: Deep links to trigger conversions via external launchers
+- [ ] Cloud Sync: Synchronize custom presets and workflows across multiple machines
 
 
 ## License
