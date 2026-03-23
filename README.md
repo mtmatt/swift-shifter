@@ -2,8 +2,6 @@
 
 A featherweight, always-on file converter that lives in your menu bar. Drop any file onto the floating window — or select files and hit a hotkey — and get instant format conversion without opening a browser or bulky software.
 
-**Target binary size: < 3 MB. Target launch time: < 100 ms.**
-
 
 ## Features
 
@@ -14,7 +12,8 @@ A featherweight, always-on file converter that lives in your menu bar. Drop any 
   - Images: WebP, PNG, JPEG, AVIF, GIF, BMP, TIFF, HEIC/HEIF
   - Video: MP4, MOV, MKV, WebM, AVI, GIF (video-to-GIF and GIF-to-video)
   - Audio: MP3, AAC, FLAC, OGG, WAV, OPUS
-  - Data: JSON, YAML, TOML, CSV
+  - Data: JSON, YAML, TOML, CSV,
+  - Document: txt, markdown, latex, typst
 - **Output next to source** — converted file lands in the same folder as the input
 - **Batch conversion** — drop multiple files at once
 - **Progress indicator** — lightweight inline progress bar per file, no modal dialogs
@@ -23,16 +22,16 @@ A featherweight, always-on file converter that lives in your menu bar. Drop any 
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| App shell | [Tauri v2](https://tauri.app) |
-| Backend logic | Rust |
-| Image processing | [`image`](https://crates.io/crates/image) crate + [`ravif`](https://crates.io/crates/ravif) for AVIF + macOS `sips` for HEIC |
-| Video / audio | System `ffmpeg` (auto-installed via Homebrew if missing) |
-| Data serialization | `serde_json`, `serde_yaml`, `toml`, `csv` crates |
-| Frontend UI | TypeScript + [Vite](https://vitejs.dev) |
-| Global hotkeys | `tauri-plugin-global-shortcut` |
-| System tray | Tauri built-in tray API |
+| Layer              | Technology                                               |
+| ------------------ | -------------------------------------------------------- |
+| App shell          | [Tauri v2](https://tauri.app)                            |
+| Backend logic      | Rust                                                     |
+| Image processing   | [`image`](https://crates.io/crates/image) crate + [`ravif`](https://crates.io/crates/ravif) for AVIF + macOS `sips` for HEIC |
+| Video / audio      | System `ffmpeg` (auto-installed via Homebrew if missing) |
+| Data serialization | `serde_json`, `serde_yaml`, `toml`, `csv` crates         |
+| Frontend UI        | TypeScript + [Vite](https://vitejs.dev)                  |
+| Global hotkeys     | `tauri-plugin-global-shortcut`                           |
+| System tray        | Tauri built-in tray API                                  |
 
 
 ## Architecture Overview
@@ -75,11 +74,11 @@ The Rust backend exposes a small set of Tauri commands:
 
 ## Prerequisites
 
-| Tool | Version | Notes |
-|---|---|---|
-| Rust | stable (≥ 1.78) | via `rustup` |
-| Node.js | ≥ 24 | for Tauri CLI and Vite |
-| ffmpeg | ≥ 6 | for video/audio; auto-installed via `brew` if missing |
+| Tool    | Version         | Notes                                                 |
+| ------- | --------------- | ----------------------------------------------------- |
+| Rust    | stable (≥ 1.78) | via `rustup`                                          |
+| Node.js | ≥ 24            | for Tauri CLI and Vite                                |
+| ffmpeg  | ≥ 6             | for video/audio; auto-installed via `brew` if missing |
 
 The Tauri CLI is installed as a local npm dev dependency — no global install needed.
 
@@ -104,17 +103,6 @@ npm run tauri -- build
 The release `.app` lands in `swift-shifter/target/release/bundle/`.
 
 
-## Size Budget
-
-The <3 MB goal applies to the app shell excluding `ffmpeg`. Tactics:
-
-- Tauri webview uses the OS-native renderer (no Chromium embedded)
-- No JS framework — TypeScript compiled to vanilla JS by Vite
-- `image` crate compiled with only the feature flags needed
-- `strip = true` + `opt-level = "z"` + `lto = true` in release profile
-- `ffmpeg` is a runtime dependency, not bundled
-
-
 ## Roadmap
 
 - [x] Core Tauri shell + system tray
@@ -129,10 +117,37 @@ The <3 MB goal applies to the app shell excluding `ffmpeg`. Tactics:
 - [x] Batch conversion with concurrency
 - [x] Config file + settings panel
 - [x] Handle ffmpeg and brew installation automatically
-- [ ] Auto-update via Tauri updater plugin
-- [ ] Windows and Linux support
-- [ ] Windows and Linux builds in CI
-- [ ] Support document conversion with pandoc.
+- [x] Auto-update via Tauri updater plugin
+- [x] Windows and Linux support
+- [x] Windows and Linux builds in CI
+- [x] Support document conversion with pandoc
+- [ ] Images to PDF
+- [ ] EPUB to PDF
+
+
+### Workflow & Automation
+
+- [ ] Clipboard Integration: Convert image/text directly from clipboard to file and vice versa
+- [ ] Watched Folders: Designate folders for automatic background conversion upon file drop
+- [ ] Smart Presets: Create custom "Action Chains" (e.g., Convert to WebP + Resize to 1200px + Strip Metadata)
+- [ ] Post-processing hooks: Run custom shell commands or scripts after a successful conversion
+
+
+### Local AI & Privacy
+
+- [ ] Support ocr conversion (from pdf/image to txt, md, tex, and typst)
+- [ ] AI Background Removal: Remove image backgrounds locally using RMBG/ONNX models
+- [ ] Super Resolution: Local AI upscaling for low-res images
+- [ ] Privacy Shield: Auto-detect and blur faces or sensitive information (PII) before conversion
+- [ ] Offline LLM Support local model (Llama/Mistral via llama.cpp) for document translation and summarization
+
+
+### Power User & Developer Tools
+
+- [ ] Swift Shifter CLI: A standalone Rust binary for terminal-based conversion using the same engine
+- [ ] Plugin System: Support for user-defined conversion logic via Lua or JavaScript (Rhai/Deno)
+- [ ] Raycast / Alfred Integration: Deep links to trigger conversions via external launchers
+- [ ] Cloud Sync: Synchronize custom presets and workflows across multiple machines
 
 
 ## License
