@@ -21,7 +21,6 @@ jobs:
         include:
           - os: macos-latest
             name: macOS
-            updaterJsonKeepUniversal: true
           - os: windows-latest
             name: Windows
           - os: ubuntu-latest
