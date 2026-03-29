@@ -4,3 +4,4 @@ memory/
 
 node_modules/
 *.js
+.env
