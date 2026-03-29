@@ -22,11 +22,11 @@ export default defineConfig({
     minify: !process.env.TAURI_ENV_DEBUG ? "esbuild" : false,
     // produce sourcemaps for debug builds
     sourcemap: !!process.env.TAURI_ENV_DEBUG,
-    outDir: "ui/dist",
+    outDir: "dist",
     rollupOptions: {
       input: {
-        main: "ui/index.html",
-        settings: "ui/settings.html",
+        main: "index.html",
+        settings: "settings.html",
       },
     },
   },
