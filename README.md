@@ -1,37 +1,42 @@
 # Swift Shifter
 
-A featherweight, always-on file converter that lives in your menu bar. Drop any file onto the floating window — or select files and hit a hotkey — and get instant format conversion without opening a browser or bulky software.
+A featherweight, always-on file converter that lives in your menu bar. Drop any file onto the floating window, or select files and hit a hotkey, and get instant format conversion without opening a browser or bulky software.
 
+![](docs/assets/example.png)
 
 ## Features
 
-- **Floating drop zone** — a small, always-on-top window accepts drag-and-drop from Finder or any file manager
-- **Global hotkey** — cmd + shift + Space toggles the window; conversion options appear immediately
-- **Zero-friction UX** — one click to pick the output format, conversion starts instantly
+- **Floating drop zone** -- a small, always-on-top window accepts drag-and-drop from Finder or any file manager
+- **Global hotkey** -- cmd + shift + Space toggles the window; conversion options appear immediately
+- **Zero-friction UX** -- one click to pick the output format, conversion starts instantly
 - **Broad format support**
   - Images: WebP, PNG, JPEG, AVIF, GIF, BMP, TIFF, HEIC/HEIF
   - Video: MP4, MOV, MKV, WebM, AVI, GIF (video-to-GIF and GIF-to-video)
   - Audio: MP3, AAC, FLAC, OGG, WAV, OPUS
-  - Data: JSON, YAML, TOML, CSV,
-  - Document: txt, markdown, latex, typst
-- **Output next to source** — converted file lands in the same folder as the input
-- **Batch conversion** — drop multiple files at once
-- **Progress indicator** — lightweight inline progress bar per file, no modal dialogs
-- **Click to reveal** — success label opens the output folder in Finder
+  - Data: JSON, YAML, TOML, CSV
+  - Documents: Markdown, plain text, LaTeX, Typst, PDF (via pandoc)
+- **Output next to source** -- converted file lands in the same folder as the input
+- **Batch conversion** -- drop multiple files at once; common formats shown in a shared toolbar
+- **Progress indicator** -- lightweight inline progress bar per file, no modal dialogs
+- **Click to reveal** -- success label opens the output folder in Finder
+- **Auto-update** -- checks for new releases on startup; installs in the background
+- **Settings panel** -- configure JPEG/AVIF quality and conversion concurrency
 
 
 ## Tech Stack
 
-| Layer              | Technology                                               |
-| ------------------ | -------------------------------------------------------- |
-| App shell          | [Tauri v2](https://tauri.app)                            |
-| Backend logic      | Rust                                                     |
-| Image processing   | [`image`](https://crates.io/crates/image) crate + [`ravif`](https://crates.io/crates/ravif) for AVIF + macOS `sips` for HEIC |
-| Video / audio      | System `ffmpeg` (auto-installed via Homebrew if missing) |
-| Data serialization | `serde_json`, `serde_yaml`, `toml`, `csv` crates         |
-| Frontend UI        | TypeScript + [Vite](https://vitejs.dev)                  |
-| Global hotkeys     | `tauri-plugin-global-shortcut`                           |
-| System tray        | Tauri built-in tray API                                  |
+| Layer               | Technology                                                                   |
+| ------------------- | ---------------------------------------------------------------------------- |
+| App shell           | [Tauri v2](https://tauri.app)                                                |
+| Backend logic       | Rust                                                                         |
+| Image processing    | [`image`](https://crates.io/crates/image) crate + [`ravif`](https://crates.io/crates/ravif) for AVIF + macOS `sips` for HEIC |
+| Video / audio       | System `ffmpeg` (auto-installed via Homebrew if missing)                     |
+| Document conversion | System `pandoc` (auto-installed via Homebrew / winget if missing)            |
+| Data serialization  | `serde_json`, `serde_yaml`, `toml`, `csv` crates                             |
+| Frontend UI         | TypeScript + [Vite](https://vitejs.dev) (plain DOM, no framework)            |
+| Global hotkeys      | `tauri-plugin-global-shortcut`                                               |
+| System tray         | Tauri built-in tray API                                                      |
+| Auto-update         | `tauri-plugin-updater`                                                       |
 
 
 ## Architecture Overview
@@ -40,54 +45,58 @@ A featherweight, always-on file converter that lives in your menu bar. Drop any 
 swift-shifter/
 ├── swift-shifter/           # Rust/Tauri workspace member
 │   ├── src/
-│   │   ├── main.rs          # Tauri app entry point, window + tray setup
-│   │   ├── converter/
-│   │   │   ├── mod.rs       # Dispatcher: routes files to the right converter
-│   │   │   ├── image.rs     # image crate + ravif (AVIF) + sips (HEIC)
-│   │   │   ├── media.rs     # ffmpeg subprocess wrapper
-│   │   │   └── data.rs      # JSON/YAML/TOML/CSV converters
+│   │   ├── main.rs          # Tauri app entry point, window + tray + menu setup
+│   │   ├── config.rs        # Persisted settings (quality, concurrency)
 │   │   ├── hotkey.rs        # Global shortcut registration
-│   │   └── tray.rs          # System tray icon and menu
+│   │   ├── tray.rs          # System tray icon and menu
+│   │   └── converter/
+│   │       ├── mod.rs       # Dispatcher: routes files to the right converter
+│   │       ├── image.rs     # image crate + ravif (AVIF) + sips (HEIC)
+│   │       ├── media.rs     # ffmpeg subprocess wrapper
+│   │       ├── data.rs      # JSON/YAML/TOML/CSV converters
+│   │       └── document.rs  # pandoc subprocess wrapper
 │   ├── capabilities/
 │   │   └── default.json     # Tauri v2 permission grants
 │   ├── Cargo.toml
 │   └── tauri.conf.json
 ├── ui/                      # Frontend (loaded by Tauri webview)
-│   ├── index.html
+│   ├── index.html           # Main drop-zone window
+│   ├── settings.html        # Preferences window
 │   └── src/
 │       ├── main.ts          # Drag-drop, file picker, conversion UI logic
-│       └── style.css        # Adaptive light/dark theme
+│       ├── settings.ts      # Settings panel logic
+│       ├── style.css        # Main window styles (adaptive light/dark)
+│       ├── settings.css     # Settings panel styles
+│       └── tokens.css       # Shared design tokens
 ├── .github/
 │   └── workflows/
-│       └── build.yml        # macOS CI (compile check, no signing required)
+│       ├── build.yml        # Compile check on macOS, Windows, Ubuntu, Fedora, Arch
+│       ├── tag.yml          # Auto-creates v* tag after build passes on main
+│       └── release.yml      # Builds signed installers and publishes GitHub release
+├── scripts/
+│   ├── bump-version.sh      # Syncs version across package.json, Cargo.toml, tauri.conf.json
+│   └── build-icons.sh
 ├── vite.config.ts
 ├── tsconfig.json
 └── package.json
 ```
 
-The Rust backend exposes a small set of Tauri commands:
-- `detect_format(path)` — returns supported output formats for the given file
-- `convert(path, target_format)` — run conversion, stream progress events via `convert:progress`
-- `open_output_folder(path)` — reveal result in Finder
-- `quit()` — exit the app
-
 
 ## Prerequisites
 
-| Tool    | Version         | Notes                                                 |
-| ------- | --------------- | ----------------------------------------------------- |
-| Rust    | stable (≥ 1.78) | via `rustup`                                          |
-| Node.js | ≥ 24            | for Tauri CLI and Vite                                |
-| ffmpeg  | ≥ 6             | for video/audio; auto-installed via `brew` if missing |
+| Tool    | Version         | Notes                                                       |
+| ------- | --------------- | ----------------------------------------------------------- |
+| Rust    | stable (≥ 1.78) | via `rustup`                                                |
+| Node.js | ≥ 24            | for Tauri CLI and Vite                                      |
+| ffmpeg  | ≥ 6             | for video/audio; auto-installed via `brew` if missing       |
+| pandoc  | any             | for document conversion; auto-installed via `brew` / winget |
 
-The Tauri CLI is installed as a local npm dev dependency — no global install needed.
 
-
-## Getting Started
+## Contribute to the Project
 
 ```bash
 # Clone
-git clone https://github.com/yourname/swift-shifter.git
+git clone https://github.com/mtmatt/swift-shifter.git
 cd swift-shifter
 
 # Install dependencies (Tauri CLI + Vite + TypeScript)
@@ -102,6 +111,24 @@ npm run tauri -- build
 
 The release `.app` lands in `swift-shifter/target/release/bundle/`.
 
+### Bumping the version
+
+```bash
+./scripts/bump-version.sh 0.2.0
+git push origin main
+```
+
+This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Pushing to `main` triggers the CI pipeline, which automatically creates the `v0.2.0` tag and kicks off the release build.
+
+
+## CI / Release Pipeline
+
+| Workflow | Trigger | What it does |
+| --- | --- | --- |
+| `build.yml` | Push to `main`, PRs | Compile check on macOS, Windows, Ubuntu, Fedora, Arch |
+| `tag.yml` | `build.yml` passes on `main` | Verifies version files agree, creates `v{version}` tag |
+| `release.yml` | `v*` tag pushed | Builds signed installers on all platforms, publishes GitHub draft release |
+
 
 ## Roadmap
 
@@ -113,14 +140,13 @@ The release `.app` lands in `swift-shifter/target/release/bundle/`.
 - [x] Video/audio via ffmpeg subprocess
 - [x] Progress events streamed to UI
 - [x] Output folder reveal
-- [x] macOS CI
 - [x] Batch conversion with concurrency
 - [x] Config file + settings panel
 - [x] Handle ffmpeg and brew installation automatically
 - [x] Auto-update via Tauri updater plugin
 - [x] Windows and Linux support
-- [x] Windows and Linux builds in CI
-- [x] Support document conversion with pandoc
+- [x] CI/CD pipeline with automatic tagging and signed releases
+- [x] Document conversion via pandoc
 - [ ] Images to PDF
 - [ ] EPUB to PDF
 
@@ -135,16 +161,15 @@ The release `.app` lands in `swift-shifter/target/release/bundle/`.
 
 ### Local AI & Privacy
 
-- [ ] Support ocr conversion (from pdf/image to txt, md, tex, and typst)
+- [ ] OCR conversion (PDF/image → txt, md, tex, typst)
 - [ ] AI Background Removal: Remove image backgrounds locally using RMBG/ONNX models
 - [ ] Super Resolution: Local AI upscaling for low-res images
 - [ ] Privacy Shield: Auto-detect and blur faces or sensitive information (PII) before conversion
-- [ ] Offline LLM Support local model (Llama/Mistral via llama.cpp) for document translation and summarization
+- [ ] Offline LLM Support: Local model (Llama/Mistral via llama.cpp) for document translation and summarization
 
 
 ### Power User & Developer Tools
 
-- [ ] Swift Shifter CLI: A standalone Rust binary for terminal-based conversion using the same engine
 - [ ] Plugin System: Support for user-defined conversion logic via Lua or JavaScript (Rhai/Deno)
 - [ ] Raycast / Alfred Integration: Deep links to trigger conversions via external launchers
 - [ ] Cloud Sync: Synchronize custom presets and workflows across multiple machines
