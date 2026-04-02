@@ -36,6 +36,25 @@
 
             <div class="divider"></div>
 
+            <h2 class="section-label">pdf</h2>
+            <div class="group">
+                <div class="row">
+                    <label for="use-marker">use marker</label>
+                    <input type="checkbox" id="use-marker" />
+                </div>
+                <div class="row" id="marker-hint" hidden>
+                    <span id="marker-status" class="hint"></span>
+                    <button id="btn-install-marker" class="btn-inline" hidden>install</button>
+                </div>
+                <div id="marker-progress-wrap" hidden>
+                    <div id="marker-progress-track">
+                        <div id="marker-progress-fill"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
             <h2 class="section-label">concurrency</h2>
             <div class="group">
                 <div class="row">

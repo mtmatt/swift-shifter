@@ -15,6 +15,10 @@ pub struct Config {
     /// Maximum files to convert concurrently.
     #[serde(default = "default_max_concurrent")]
     pub max_concurrent: usize,
+    /// Use marker-pdf (ML-based) for PDF → EPUB conversion when installed.
+    /// Falls back to pdftohtml if marker is not found on PATH.
+    #[serde(default)]
+    pub use_marker_pdf: bool,
 }
 
 fn default_jpeg_quality() -> u8 { 75 }
@@ -28,6 +32,7 @@ impl Default for Config {
             jpeg_quality:   default_jpeg_quality(),
             avif_quality:   default_avif_quality(),
             max_concurrent: default_max_concurrent(),
+            use_marker_pdf: false,
         }
     }
 }

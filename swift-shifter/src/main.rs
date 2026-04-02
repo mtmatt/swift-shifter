@@ -94,6 +94,7 @@ fn main() {
                 if event.id() == "preferences" {
                     // Focus existing settings window if already open
                     if let Some(win) = menu_handle.get_webview_window("settings") {
+                        let _ = win.show();
                         let _ = win.set_focus();
                         return;
                     }
@@ -103,8 +104,9 @@ fn main() {
                         tauri::WebviewUrl::App("settings.html".into()),
                     )
                     .title("Preferences")
-                    .inner_size(360.0, 300.0)
+                    .inner_size(480.0, 540.0)
                     .resizable(false)
+                    .always_on_top(true)
                     .center()
                     .build();
                 }
@@ -128,6 +130,15 @@ fn main() {
                 }
             });
 
+            // Check for pdftohtml (poppler) at startup — needed for PDF → EPUB
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = converter::document::ensure_pdftohtml(&handle).await {
+                    eprintln!("pdftohtml setup warning: {e}");
+                    handle.emit("pdftohtml:failed", e).ok();
+                }
+            });
+
             // Check for app updates in the background
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -148,6 +159,8 @@ fn main() {
             convert_batch,
             get_config,
             set_config,
+            check_marker,
+            install_marker,
             open_output_folder,
             check_update,
             install_update,
@@ -275,10 +288,21 @@ fn set_config(state: tauri::State<'_, AppState>, new_config: config::Config) -> 
         jpeg_quality: new_config.jpeg_quality.clamp(1, 100),
         avif_quality: new_config.avif_quality.clamp(1, 100),
         max_concurrent: new_config.max_concurrent.clamp(1, 8),
+        use_marker_pdf: new_config.use_marker_pdf,
     };
     config::save(&validated)?;
     *state.config.lock().unwrap() = validated;
     Ok(())
+}
+
+#[tauri::command]
+fn check_marker() -> bool {
+    converter::document::marker_available()
+}
+
+#[tauri::command]
+async fn install_marker(app: tauri::AppHandle) -> Result<(), String> {
+    converter::document::install_marker(&app).await
 }
 
 #[tauri::command]

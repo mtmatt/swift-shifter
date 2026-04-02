@@ -5,3 +5,4 @@ memory/
 node_modules/
 *.js
 .env
+.DS_Store

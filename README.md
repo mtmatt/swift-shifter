@@ -147,8 +147,9 @@ This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Push
 - [x] Windows and Linux support
 - [x] CI/CD pipeline with automatic tagging and signed releases
 - [x] Document conversion via pandoc
-- [ ] Images to PDF
-- [ ] EPUB to PDF
+- [x] Images to PDF
+- [x] EPUB <-> PDF
+- [ ] MOBI <-> PDF
 
 
 ### Workflow & Automation
