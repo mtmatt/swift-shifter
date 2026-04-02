@@ -35,7 +35,6 @@ let cfg: Config = {
 };
 
 let markerInstalled = false;
-let isInstalling = false;
 
 // Show/hide the hint row based on toggle state and install status.
 // The hint is invisible when the toggle is off — no ambient noise.
