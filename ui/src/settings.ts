@@ -101,7 +101,6 @@ installBtn.addEventListener("click", async () => {
   installBtn.textContent = "installing…";
   markerStatus.textContent = "Starting…";
   markerStatus.className = "hint hint--installing";
-  isInstalling = true;
   markerProgressWrap.hidden = false;
   setFill(0);
 
@@ -125,7 +124,6 @@ installBtn.addEventListener("click", async () => {
     markerProgressWrap.hidden = true;
     markerStatus.textContent = `Failed to set up listeners: ${err}`;
     markerStatus.className = "hint hint--error";
-    isInstalling = false;
     installBtn.disabled = false;
     installBtn.textContent = "install";
     return;
@@ -146,7 +144,6 @@ installBtn.addEventListener("click", async () => {
     markerStatus.textContent = String(err);
     markerStatus.className = "hint hint--error";
   } finally {
-    isInstalling = false;
     unlistenClose?.();
     unlisten?.();
     installBtn.disabled = false;

@@ -45,7 +45,7 @@ pub fn detect_output_formats(path: &str) -> Result<Vec<String>, String> {
 
     Ok(formats
         .iter()
-        .filter(|&&f| f != ext.as_str() && !(ext == "jpg" && f == "jpg"))
+        .filter(|&&f| f != ext.as_str() && !(ext == "jpg" && f == "jpg") && !(ext == "jpeg" && f == "jpg") && !(ext == "jpeg" && f == "jpeg"))
         .map(|s| s.to_string())
         .collect())
 }

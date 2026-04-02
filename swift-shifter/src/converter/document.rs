@@ -448,63 +448,47 @@ async fn run_silent(program: &PathBuf, args: &[&str]) -> Result<(), String> {
 ///   3. `pipx install marker-pdf`
 ///   4. Fall back to `pip install --user marker-pdf` if pipx failed
 pub async fn install_marker(app: &tauri::AppHandle) -> Result<(), String> {
-    eprintln!("[marker] install_marker started");
-
     // ── Step 1: get pipx ───────────────────────────────────────────────────
     let pipx = if let Some(p) = find_any_binary(&["pipx"]) {
-        eprintln!("[marker] found pipx at {}", p.display());
         Some(p)
     } else if let Some(brew) = find_brew_binary() {
-        eprintln!("[marker] pipx not found, installing via brew");
         marker_step(app, "Setting up package installer…");
         run_silent(&brew, &["install", "pipx"]).await.ok();
-        let p = find_any_binary(&["pipx"]);
-        eprintln!("[marker] pipx after brew install: {:?}", p);
-        p
+        find_any_binary(&["pipx"])
     } else {
-        eprintln!("[marker] pipx not found and brew not available");
         None
     };
 
     // ── Step 2: install marker-pdf via pipx ────────────────────────────────
     if let Some(ref pipx) = pipx {
-        eprintln!("[marker] running: {} install marker-pdf", pipx.display());
         marker_step(app, "Downloading marker-pdf — this may take a few minutes…");
         match run_silent(pipx, &["install", "marker-pdf"]).await {
             Ok(()) => {
-                eprintln!("[marker] pipx install succeeded, injecting psutil");
                 run_silent(pipx, &["inject", "marker-pdf", "psutil"]).await.ok();
                 return Ok(());
             }
-            Err(e) => eprintln!("[marker] pipx install failed: {e}"),
+            Err(_) => {}
         }
     }
 
     // ── Step 3: ensure pip / Python ────────────────────────────────────────
     let pip = if let Some(p) = find_any_binary(&["pip3", "pip"]) {
-        eprintln!("[marker] found pip at {}", p.display());
         Some(p)
     } else if let Some(brew) = find_brew_binary() {
-        eprintln!("[marker] pip not found, installing python3 via brew");
         marker_step(app, "Setting up Python…");
         run_silent(&brew, &["install", "python3"]).await.ok();
-        let p = find_any_binary(&["pip3", "pip"]);
-        eprintln!("[marker] pip after brew install: {:?}", p);
-        p
+        find_any_binary(&["pip3", "pip"])
     } else {
-        eprintln!("[marker] pip not found and brew not available");
         None
     };
 
     // ── Step 4: pip install --user ─────────────────────────────────────────
     if let Some(ref pip) = pip {
-        eprintln!("[marker] running: {} install --user marker-pdf psutil", pip.display());
         marker_step(app, "Downloading marker-pdf — this may take a few minutes…");
         return run_silent(pip, &["install", "--user", "marker-pdf", "psutil"]).await
-            .map_err(|e| { eprintln!("[marker] pip install failed: {e}"); format!("Installation failed: {e}") });
+            .map_err(|e| format!("Installation failed: {e}"));
     }
 
-    eprintln!("[marker] no installer found");
     Err("Could not install automatically. Please install Homebrew from brew.sh and try again.".to_string())
 }
 
@@ -607,18 +591,16 @@ pub async fn convert_pdf_with_marker(
                     if let Ok(Some(l)) = line {
                         // Look for "Loaded X pages" or similar patterns in marker output
                         if (l.contains("Loaded") || l.contains("found")) && (l.contains("pages") || l.contains("page")) {
-                            // Extract digits from the line
-                            let digits: String = l.chars().filter(|c| c.is_ascii_digit()).collect();
-                            if let Ok(p) = digits.parse::<u32>() {
+                            // Extract the first contiguous run of digits from the line
+                            if let Some(p) = l.split_whitespace().find_map(|tok| tok.parse::<u32>().ok()) {
                                 if p > 0 { total_pages = p; }
                             }
                         }
                         // Looking for progress patterns like [5/12] or "Converting page 5"
                         if l.contains("Converting") || l.contains('[') && l.contains('/') && l.contains(']') {
                              // Try to find current page
-                             let digits: String = l.chars().filter(|c| c.is_ascii_digit()).collect();
-                             if let Ok(p) = digits.parse::<u32>() {
-                                 // If we have total_pages, check if p is likely current_page or combined (e.g. 512 for 5/12)
+                             if let Some(p) = l.split_whitespace().find_map(|tok| tok.parse::<u32>().ok()) {
+                                 // If we have total_pages, check if p is likely current_page
                                  if total_pages > 0 {
                                      // Common pattern: "Converting page 5" -> p=5
                                      if p > 0 && p <= total_pages {
