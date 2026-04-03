@@ -4,6 +4,7 @@ use tauri::Emitter;
 
 static PANDOC_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
 static PDFTOHTML_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
+static EBOOK_CONVERT_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
 static RE_NUM: OnceLock<regex::Regex> = OnceLock::new();
 static RE_MERGE: OnceLock<regex::Regex> = OnceLock::new();
 static RE_STYLE_BLOCK: OnceLock<regex::Regex> = OnceLock::new();
@@ -69,6 +70,71 @@ fn find_pandoc_binary() -> Option<PathBuf> {
     None
 }
 
+/// Run `brew install <args>`, automatically clearing stale `.incomplete` lock
+/// files left by a previous interrupted download before retrying.
+///
+/// Returns `true` on success, `false` on failure.
+#[cfg(target_os = "macos")]
+async fn brew_install(brew: &PathBuf, args: &[&str]) -> bool {
+    let out = tokio::process::Command::new(brew)
+        .args(args)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await;
+
+    let out = match out {
+        Ok(o) => o,
+        Err(_) => return false,
+    };
+
+    if out.status.success() {
+        return true;
+    }
+
+    let stderr = String::from_utf8_lossy(&out.stderr);
+
+    // Brew leaves a .incomplete lock file when a download is interrupted (e.g.
+    // the app was quit mid-install). Detect this, remove the stale file, and
+    // retry once so the user doesn't have to intervene manually.
+    if stderr.contains("has already locked") {
+        if let Some(lock_path) = extract_brew_incomplete_path(&stderr) {
+            let _ = std::fs::remove_file(&lock_path);
+        }
+        // Retry after clearing the lock
+        return tokio::process::Command::new(brew)
+            .args(args)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .await
+            .map(|s| s.success())
+            .unwrap_or(false);
+    }
+
+    false
+}
+
+/// Extract the `.incomplete` lock file path from a brew "has already locked"
+/// error message.
+///
+/// Example input: "A `brew install --cask calibre` process has already locked
+/// /path/to/file.dmg.incomplete.\nPlease wait…"
+#[cfg(target_os = "macos")]
+fn extract_brew_incomplete_path(stderr: &str) -> Option<String> {
+    let marker = "has already locked ";
+    let start = stderr.find(marker)? + marker.len();
+    let rest = &stderr[start..];
+    let end = rest.find('\n').unwrap_or(rest.len());
+    // The sentence ends with a period; strip it
+    let path = rest[..end].trim().trim_end_matches('.');
+    if path.ends_with(".incomplete") {
+        Some(path.to_string())
+    } else {
+        None
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn find_brew_binary() -> Option<PathBuf> {
     if let Ok(p) = which::which("brew") {
@@ -99,12 +165,7 @@ pub async fn ensure_pandoc(app: &tauri::AppHandle) -> Result<(), String> {
     {
         if let Some(brew) = find_brew_binary() {
             app.emit("pandoc:installing", ()).ok();
-            let ok = tokio::process::Command::new(&brew)
-                .args(["install", "pandoc"])
-                .status()
-                .await
-                .map(|s| s.success())
-                .unwrap_or(false);
+            let ok = brew_install(&brew, &["install", "pandoc"]).await;
 
             if ok {
                 if let Some(path) = find_pandoc_binary() {
@@ -184,6 +245,145 @@ pub async fn ensure_pandoc(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+fn find_ebook_convert_binary() -> Option<PathBuf> {
+    if let Ok(p) = which::which("ebook-convert") {
+        return Some(p);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        // Calibre.app bundle (primary install location)
+        let app_bin = PathBuf::from("/Applications/calibre.app/Contents/MacOS/ebook-convert");
+        if app_bin.exists() {
+            return Some(app_bin);
+        }
+        for dir in BREW_PATHS {
+            let candidate = PathBuf::from(dir).join("ebook-convert");
+            if candidate.exists() {
+                return Some(candidate);
+            }
+        }
+    }
+    #[cfg(target_os = "windows")]
+    for dir in &[
+        r"C:\Program Files\Calibre2",
+        r"C:\Program Files (x86)\Calibre2",
+    ] {
+        let candidate = PathBuf::from(dir).join("ebook-convert.exe");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    #[cfg(target_os = "linux")]
+    for path in &["/usr/bin/ebook-convert", "/usr/local/bin/ebook-convert"] {
+        let candidate = PathBuf::from(path);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+pub async fn ensure_ebook_convert(app: &tauri::AppHandle) -> Result<(), String> {
+    if EBOOK_CONVERT_PATH.get().is_some() {
+        return Ok(());
+    }
+    if let Some(path) = find_ebook_convert_binary() {
+        EBOOK_CONVERT_PATH.set(Some(path)).ok();
+        return Ok(());
+    }
+
+    app.emit("ebook-convert:missing", ()).ok();
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(brew) = find_brew_binary() {
+            app.emit("ebook-convert:installing", ()).ok();
+            let ok = brew_install(&brew, &["install", "--cask", "calibre"]).await;
+            if ok {
+                if let Some(path) = find_ebook_convert_binary() {
+                    EBOOK_CONVERT_PATH.set(Some(path)).ok();
+                    app.emit("ebook-convert:installed", ()).ok();
+                    return Ok(());
+                }
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        app.emit("ebook-convert:installing", ()).ok();
+        let ok = if which::which("winget").is_ok() {
+            tokio::process::Command::new("winget")
+                .args(["install", "--id", "calibre.calibre", "-e", "--silent"])
+                .status()
+                .await
+                .map(|s| s.success())
+                .unwrap_or(false)
+        } else {
+            false
+        };
+        if ok {
+            if let Some(path) = find_ebook_convert_binary() {
+                EBOOK_CONVERT_PATH.set(Some(path)).ok();
+                app.emit("ebook-convert:installed", ()).ok();
+                return Ok(());
+            }
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        app.emit("ebook-convert:installing", ()).ok();
+        let installed = if which::which("dnf").is_ok() {
+            tokio::process::Command::new("pkexec")
+                .args(["dnf", "install", "-y", "calibre"])
+                .status()
+                .await
+                .map(|s| s.success())
+                .unwrap_or(false)
+        } else if which::which("pacman").is_ok() {
+            tokio::process::Command::new("pkexec")
+                .args(["pacman", "-S", "--noconfirm", "calibre"])
+                .status()
+                .await
+                .map(|s| s.success())
+                .unwrap_or(false)
+        } else if which::which("apt-get").is_ok() {
+            tokio::process::Command::new("pkexec")
+                .args(["apt-get", "install", "-y", "calibre"])
+                .status()
+                .await
+                .map(|s| s.success())
+                .unwrap_or(false)
+        } else {
+            false
+        };
+        if installed {
+            if let Some(path) = find_ebook_convert_binary() {
+                EBOOK_CONVERT_PATH.set(Some(path)).ok();
+                app.emit("ebook-convert:installed", ()).ok();
+                return Ok(());
+            }
+        }
+    }
+
+    EBOOK_CONVERT_PATH.set(None).ok();
+    Ok(())
+}
+
+fn get_ebook_convert() -> Result<PathBuf, String> {
+    match EBOOK_CONVERT_PATH.get() {
+        Some(Some(p)) => Ok(p.clone()),
+        _ => find_ebook_convert_binary().ok_or_else(|| {
+            "ebook-convert not found — install Calibre to enable MOBI conversion".to_string()
+        }),
+    }
+}
+
+pub fn ebook_convert_available() -> bool {
+    find_ebook_convert_binary().is_some()
+}
+
 fn find_pdftohtml_binary() -> Option<PathBuf> {
     if let Ok(p) = which::which("pdftohtml") {
         return Some(p);
@@ -221,12 +421,7 @@ pub async fn ensure_pdftohtml(app: &tauri::AppHandle) -> Result<(), String> {
     {
         if let Some(brew) = find_brew_binary() {
             app.emit("pdftohtml:installing", ()).ok();
-            let ok = tokio::process::Command::new(&brew)
-                .args(["install", "poppler"])
-                .status()
-                .await
-                .map(|s| s.success())
-                .unwrap_or(false);
+            let ok = brew_install(&brew, &["install", "poppler"]).await;
 
             if ok {
                 if let Some(path) = find_pdftohtml_binary() {
@@ -524,6 +719,27 @@ pub async fn install_marker(app: &tauri::AppHandle) -> Result<(), String> {
     Err("Could not install marker-pdf automatically. Please install pipx or pip and try again.".to_string())
 }
 
+/// Recursively copy everything under `src_dir` into `dst_dir`, skipping `skip`.
+/// Subdirectories are recreated with the same name so relative paths in the
+/// markdown (e.g. `images/_page_4_Figure_7.jpeg`) keep working.
+fn copy_dir_contents_except(src_dir: &Path, dst_dir: &Path, skip: &Path) {
+    let Ok(entries) = std::fs::read_dir(src_dir) else { return };
+    for entry in entries.flatten() {
+        let src = entry.path();
+        if src == skip {
+            continue;
+        }
+        let Some(name) = src.file_name() else { continue };
+        let dst = dst_dir.join(name);
+        if src.is_dir() {
+            let _ = std::fs::create_dir_all(&dst);
+            copy_dir_contents_except(&src, &dst, skip);
+        } else if src.is_file() {
+            let _ = std::fs::copy(&src, &dst);
+        }
+    }
+}
+
 /// Recursively find the first `.md` file under `dir`.
 fn find_md_file(dir: &Path) -> Option<PathBuf> {
     for entry in std::fs::read_dir(dir).ok()?.flatten() {
@@ -556,7 +772,10 @@ pub async fn convert_pdf_with_marker(
         .ok_or_else(|| "marker not found — install with: pip install marker-pdf".to_string())?;
     let pandoc = get_pandoc()?;
 
-    let out = output_path(path, "epub", output_dir)?;
+    // Save before it is shadowed by the internal temp-dir variable below.
+    let user_output_dir = output_dir;
+
+    let out = output_path(path, "epub", user_output_dir)?;
 
     app.emit(
         "convert:progress",
@@ -581,7 +800,10 @@ pub async fn convert_pdf_with_marker(
     std::fs::copy(path, &tmp_pdf)
         .map_err(|e| format!("Failed to copy PDF: {e}"))?;
 
-    // Build the marker command — newer API vs older `marker_single` API
+    // Build the marker command.
+    // Always pass the PDF file directly — some marker versions (2.x) do not
+    // accept a directory as the positional argument and silently produce no
+    // output when given one.
     let marker_name = marker.file_name().unwrap_or_default().to_string_lossy().to_string();
     let mut cmd = tokio::process::Command::new(&marker);
     if marker_name.contains("marker_single") {
@@ -610,74 +832,105 @@ pub async fn convert_pdf_with_marker(
         let mut reader = BufReader::new(stdout).lines();
         let mut err_reader = BufReader::new(stderr).lines();
 
-        let mut total_pages = 0;
-        let mut current_page = 0;
-        let mut current_pct = 2.0;
+        // Named pipeline stages and the progress % they represent when first seen.
+        // Keep keywords specific enough that they don't fire on marker's startup
+        // "Output directory: …" line (which would jump straight to 90%).
+        let stages: &[(&str, f32)] = &[
+            // Model loading
+            ("load model",          5.0),
+            ("detection model",     8.0),
+            ("texify",             12.0),
+            ("recognition model",  12.0),
+            ("surya",              14.0),
+            // PDF parsing
+            ("reading pdf",        18.0),
+            ("pdf loaded",         20.0),
+            // Layout / OCR
+            ("running layout",     28.0),
+            ("layout detection",   28.0),
+            ("running ocr",        38.0),
+            ("text extraction",    40.0),
+            ("running line",       44.0),
+            // Post-processing
+            ("post-processing",    60.0),
+            ("ordering blocks",    65.0),
+            ("merging lines",      68.0),
+            ("cleaning text",      72.0),
+            ("formatting",         75.0),
+            // Saving
+            ("saving output",      88.0),
+            ("writing markdown",   88.0),
+            ("saved to",           90.0),
+        ];
 
-        // Emit initial progress
+        let mut current_pct: f32 = 2.0;
+        let mut stdout_done = false;
+        let mut stderr_done = false;
+
         app_handle.emit("convert:progress", ProgressPayload { path: path_str.clone(), percent: current_pct }).ok();
 
-        loop {
-            tokio::select! {
-                line = reader.next_line() => {
-                    if let Ok(Some(l)) = line {
-                        // Look for "Loaded X pages" or similar patterns in marker output
-                        if (l.contains("Loaded") || l.contains("found")) && (l.contains("pages") || l.contains("page")) {
-                            // Extract the first contiguous run of digits from the line
-                            if let Some(p) = l.split_whitespace().find_map(|tok| tok.parse::<u32>().ok()) {
-                                if p > 0 { total_pages = p; }
-                            }
-                        }
-                        // Looking for progress patterns like [5/12] or "Converting page 5"
-                        if l.contains("Converting") || l.contains('[') && l.contains('/') && l.contains(']') {
-                             // Try to find current page
-                             if let Some(p) = l.split_whitespace().find_map(|tok| tok.parse::<u32>().ok()) {
-                                 // If we have total_pages, check if p is likely current_page
-                                 if total_pages > 0 {
-                                     // Common pattern: "Converting page 5" -> p=5
-                                     if p > 0 && p <= total_pages {
-                                         current_page = p;
-                                     }
-                                 }
-                             }
-                        }
+        /// Advance progress if the line matches a known stage keyword.
+        /// Returns the new percentage (unchanged if no match).
+        fn advance_from_line(line: &str, stages: &[(&str, f32)], current: f32) -> f32 {
+            let lower = line.to_lowercase();
+            let mut best = current;
+            for (kw, pct) in stages {
+                if *pct > current && lower.contains(kw) {
+                    if *pct > best { best = *pct; }
+                }
+            }
+            best
+        }
 
-                        if total_pages > 0 && current_page > 0 {
-                            let pct = 5.0 + (current_page as f32 / total_pages as f32) * 75.0;
-                            if pct > current_pct {
-                                current_pct = pct;
-                                app_handle.emit("convert:progress", ProgressPayload { path: path_str.clone(), percent: current_pct }).ok();
+        /// Try to parse a tqdm-style percentage from a line, e.g. " 42%|█…".
+        fn tqdm_percent(line: &str) -> Option<f32> {
+            let pos = line.find('%')?;
+            // Scan backwards up to 4 chars for digits
+            let start = pos.saturating_sub(4);
+            let num_str = line[start..pos].trim_start_matches(|c: char| !c.is_ascii_digit());
+            num_str.parse::<f32>().ok()
+        }
+
+        loop {
+            if stdout_done && stderr_done { break; }
+
+            tokio::select! {
+                line = reader.next_line(), if !stdout_done => {
+                    match line {
+                        Ok(Some(l)) => {
+                            // tqdm percentage on stdout
+                            if let Some(p) = tqdm_percent(&l) {
+                                let mapped = 20.0 + (p / 100.0) * 68.0;
+                                if mapped > current_pct { current_pct = mapped; }
+                            } else {
+                                let new_pct = advance_from_line(&l, stages, current_pct);
+                                if new_pct > current_pct { current_pct = new_pct; }
                             }
-                        } else if current_pct < 80.0 {
-                            // Slow creep while waiting for explicit page updates
-                            current_pct += 0.2;
                             app_handle.emit("convert:progress", ProgressPayload { path: path_str.clone(), percent: current_pct }).ok();
                         }
-                    } else { break; }
+                        _ => { stdout_done = true; }
+                    }
                 }
-                line = err_reader.next_line() => {
-                    if let Ok(Some(l)) = line {
-                         // Some progress info might be on stderr (tqdm-style progress bars often use stderr)
-                         if l.contains('%') || l.contains('|') {
-                             // Try to find percentage
-                             if let Some(pos) = l.find('%') {
-                                 if pos > 2 {
-                                     let sub = &l[pos-3..pos].trim();
-                                     if let Ok(p) = sub.parse::<f32>() {
-                                         let pct = 5.0 + (p / 100.0) * 75.0;
-                                         if pct > current_pct {
-                                             current_pct = pct;
-                                             app_handle.emit("convert:progress", ProgressPayload { path: path_str.clone(), percent: current_pct }).ok();
-                                         }
-                                     }
-                                 }
-                             }
-                         }
-                    } else { break; }
+                line = err_reader.next_line(), if !stderr_done => {
+                    match line {
+                        Ok(Some(l)) => {
+                            // tqdm bars go to stderr; try percentage first
+                            if let Some(p) = tqdm_percent(&l) {
+                                let mapped = 20.0 + (p / 100.0) * 68.0;
+                                if mapped > current_pct { current_pct = mapped; }
+                            } else {
+                                let new_pct = advance_from_line(&l, stages, current_pct);
+                                if new_pct > current_pct { current_pct = new_pct; }
+                            }
+                            app_handle.emit("convert:progress", ProgressPayload { path: path_str.clone(), percent: current_pct }).ok();
+                        }
+                        _ => { stderr_done = true; }
+                    }
                 }
-                _ = tokio::time::sleep(tokio::time::Duration::from_millis(500)) => {
-                    if current_pct < 80.0 {
-                        current_pct += 0.1;
+                _ = tokio::time::sleep(tokio::time::Duration::from_millis(800)) => {
+                    // Slow creep so the bar never looks frozen
+                    if current_pct < 85.0 {
+                        current_pct += 0.3;
                         app_handle.emit("convert:progress", ProgressPayload { path: path_str.clone(), percent: current_pct }).ok();
                     }
                 }
@@ -689,14 +942,14 @@ pub async fn convert_pdf_with_marker(
         .map_err(|e| format!("marker wait error: {e}"))?;
     let _ = progress_task.await;
 
-    if !status.success() {
+    // On failure or missing output, fall back to the pdftohtml pipeline rather
+    // than surfacing a confusing marker-specific error to the user.
+    if !status.success() || find_md_file(&output_dir).is_none() {
         let _ = std::fs::remove_dir_all(&tmp_base);
-        return Err(format!("marker exited with code {}", status.code().unwrap_or(-1)));
+        return convert_pdf_to_epub(app, path, user_output_dir).await;
     }
 
-    // marker may place the .md in a subdirectory named after the input stem
-    let md_file = find_md_file(&output_dir)
-        .ok_or_else(|| "marker did not produce a markdown file".to_string())?;
+    let md_file = find_md_file(&output_dir).unwrap();
     
     // Fix tag mismatch error in generated markdown (e.g. unclosed <sup> or <sub>)
     if let Ok(mut content) = tokio::fs::read_to_string(&md_file).await {
@@ -733,11 +986,43 @@ pub async fn convert_pdf_with_marker(
         .to_string_lossy()
         .to_string();
 
+    // Write a small CSS file into the temp dir so pandoc can embed it.
+    // This preserves whitespace in code blocks and ensures math isn't crushed.
+    // Only pass --css to pandoc if the file was actually written successfully;
+    // a silently-missing file causes pandoc to ignore or error on the flag.
+    static EPUB_CSS: &str = concat!(
+        "code, pre, kbd, samp {\n",
+        "  white-space: pre;\n",
+        "  font-family: monospace;\n",
+        "}\n",
+        "pre {\n",
+        "  overflow-x: auto;\n",
+        "  padding: 0.5em;\n",
+        "}\n",
+        ".math, .MathML, math {\n",
+        "  white-space: pre;\n",
+        "}\n",
+    );
+    let epub_css_path: Option<String> = {
+        let p = md_dir.join("_swift_shifter_epub.css");
+        if std::fs::write(&p, EPUB_CSS).is_ok() {
+            p.to_str().map(|s| s.to_string())
+        } else {
+            None
+        }
+    };
+
     let mut pandoc_cmd = tokio::process::Command::new(&pandoc);
     pandoc_cmd.current_dir(md_dir);
     pandoc_cmd.args([
-        "-f", "markdown+footnotes+superscript+subscript",
+        "-f", "markdown+footnotes+superscript+subscript+tex_math_dollars+tex_math_single_backslash",
         "-t", "epub3",
+        "--mathml",
+    ]);
+    if let Some(ref css_str) = epub_css_path {
+        pandoc_cmd.args(["--css", css_str]);
+    }
+    pandoc_cmd.args([
         "--metadata", &format!("title={}", file_title),
         "-o", out.to_str().unwrap_or(""),
         md_file.file_name().unwrap_or_default().to_str().unwrap_or(""),
@@ -1240,5 +1525,394 @@ pub async fn convert_pdf_to_epub(
     )
     .ok();
 
+    Ok(out.to_string_lossy().to_string())
+}
+
+// ── ebook-convert (Calibre) helpers ──────────────────────────────────────────
+
+/// Run `ebook-convert input output` for any format Calibre supports.
+async fn run_ebook_convert(
+    app: &tauri::AppHandle,
+    input: &str,
+    output: &PathBuf,
+) -> Result<(), String> {
+    let ec = get_ebook_convert()?;
+    app.emit(
+        "convert:progress",
+        ProgressPayload { path: input.to_string(), percent: 0.0 },
+    )
+    .ok();
+
+    let result = tokio::process::Command::new(&ec)
+        .args([
+            input,
+            output.to_str().unwrap_or(""),
+            // Strip any dark background/color styling baked into the source document
+            "--filter-css", "background-color,background,color",
+            // Then impose a clean white-on-black stylesheet
+            "--extra-css", "body, html { background-color: white !important; color: black !important; }",
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn ebook-convert: {e}"))?;
+
+    if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        return Err(if stderr.trim().is_empty() {
+            format!("ebook-convert exited with code {}", result.status.code().unwrap_or(-1))
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+
+    app.emit(
+        "convert:progress",
+        ProgressPayload { path: input.to_string(), percent: 100.0 },
+    )
+    .ok();
+    Ok(())
+}
+
+/// Convert a MOBI file to pdf, epub, html, or md.
+pub async fn convert_mobi(
+    app: &tauri::AppHandle,
+    path: &str,
+    target_format: &str,
+    output_dir: Option<&str>,
+) -> Result<String, String> {
+    match target_format {
+        "pdf" | "epub" | "html" => {
+            let out = output_path(path, target_format, output_dir)?;
+            run_ebook_convert(app, path, &out).await?;
+            Ok(out.to_string_lossy().to_string())
+        }
+        "md" => {
+            // MOBI → temp EPUB → pandoc markdown
+            let pandoc = get_pandoc()?;
+            let out = output_path(path, "md", output_dir)?;
+            let timestamp = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis();
+            let tmp_epub =
+                std::env::temp_dir().join(format!("swift_shifter_mobi_{timestamp}.epub"));
+            run_ebook_convert(app, path, &tmp_epub).await?;
+
+            app.emit(
+                "convert:progress",
+                ProgressPayload { path: path.to_string(), percent: 50.0 },
+            )
+            .ok();
+
+            let status = tokio::process::Command::new(&pandoc)
+                .args([
+                    "-f", "epub",
+                    "-t", "markdown",
+                    "-o", out.to_str().unwrap_or(""),
+                    tmp_epub.to_str().unwrap_or(""),
+                ])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .await
+                .map_err(|e| format!("Failed to spawn pandoc: {e}"))?;
+
+            let _ = std::fs::remove_file(&tmp_epub);
+
+            if !status.success() {
+                return Err(format!("pandoc exited with code {}", status.code().unwrap_or(-1)));
+            }
+
+            app.emit(
+                "convert:progress",
+                ProgressPayload { path: path.to_string(), percent: 100.0 },
+            )
+            .ok();
+            Ok(out.to_string_lossy().to_string())
+        }
+        _ => Err(format!("Unsupported MOBI target format: {target_format}")),
+    }
+}
+
+/// Convert an EPUB to MOBI via ebook-convert.
+pub async fn convert_epub_to_mobi(
+    app: &tauri::AppHandle,
+    path: &str,
+    output_dir: Option<&str>,
+) -> Result<String, String> {
+    let out = output_path(path, "mobi", output_dir)?;
+    run_ebook_convert(app, path, &out).await?;
+    Ok(out.to_string_lossy().to_string())
+}
+
+/// Convert a PDF to MOBI.
+/// When `use_marker` is true and marker-pdf is available, the pipeline is
+/// PDF→EPUB (via marker) → MOBI (via ebook-convert), which preserves images
+/// and structure better than a direct PDF→MOBI via ebook-convert alone.
+pub async fn convert_pdf_to_mobi(
+    app: &tauri::AppHandle,
+    path: &str,
+    output_dir: Option<&str>,
+    use_marker: bool,
+) -> Result<String, String> {
+    let out = output_path(path, "mobi", output_dir)?;
+
+    if use_marker && marker_available() {
+        // Build a temp EPUB via the marker pipeline, then convert to MOBI.
+        let tmp_epub = std::env::temp_dir().join(format!(
+            "swift_shifter_marker_mobi_{}.epub",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+        ));
+        // convert_pdf_with_marker writes to output_dir; pass the temp file's
+        // parent so the EPUB lands where we expect it.
+        let tmp_epub_dir = tmp_epub.parent().map(|p| p.to_string_lossy().to_string());
+        let epub_path = convert_pdf_with_marker(
+            app,
+            path,
+            tmp_epub_dir.as_deref(),
+        ).await?;
+        // The returned path may differ in stem; rename to our known tmp path.
+        if std::path::Path::new(&epub_path) != tmp_epub {
+            let _ = std::fs::rename(&epub_path, &tmp_epub);
+        }
+        run_ebook_convert(app, tmp_epub.to_str().unwrap_or(path), &out).await?;
+        let _ = std::fs::remove_file(&tmp_epub);
+    } else {
+        run_ebook_convert(app, path, &out).await?;
+    }
+
+    Ok(out.to_string_lossy().to_string())
+}
+
+// ── PDF → HTML / MD ──────────────────────────────────────────────────────────
+
+/// Convert a PDF to a standalone HTML file via pdftohtml.
+/// Companion image files land in the same directory as the HTML.
+pub async fn convert_pdf_to_html(
+    app: &tauri::AppHandle,
+    path: &str,
+    output_dir: Option<&str>,
+) -> Result<String, String> {
+    let pdftohtml = get_pdftohtml()?;
+    let out = output_path(path, "html", output_dir)?;
+    // pdftohtml appends ".html" to the stem argument; strip the extension we added.
+    let out_stem = out.with_extension("");
+
+    app.emit(
+        "convert:progress",
+        ProgressPayload { path: path.to_string(), percent: 0.0 },
+    )
+    .ok();
+
+    let result = tokio::process::Command::new(&pdftohtml)
+        .args(["-noframes", "-nodrm", "-fmt", "png", path, out_stem.to_str().unwrap_or("")])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn pdftohtml: {e}"))?;
+
+    if !result.status.success() {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        return Err(if stderr.trim().is_empty() {
+            format!("pdftohtml exited with code {}", result.status.code().unwrap_or(-1))
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+
+    app.emit(
+        "convert:progress",
+        ProgressPayload { path: path.to_string(), percent: 100.0 },
+    )
+    .ok();
+    Ok(out.to_string_lossy().to_string())
+}
+
+/// Convert a PDF to Markdown using the pdftohtml → pandoc pipeline.
+async fn convert_pdf_to_md_via_pdftohtml(
+    app: &tauri::AppHandle,
+    path: &str,
+    output_dir: Option<&str>,
+) -> Result<String, String> {
+    let pdftohtml = get_pdftohtml()?;
+    let pandoc = get_pandoc()?;
+    let out = output_path(path, "md", output_dir)?;
+
+    app.emit(
+        "convert:progress",
+        ProgressPayload { path: path.to_string(), percent: 0.0 },
+    )
+    .ok();
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let tmp_dir = std::env::temp_dir().join(format!("swift_shifter_pdf_md_{timestamp}"));
+    std::fs::create_dir_all(&tmp_dir)
+        .map_err(|e| format!("Failed to create temp dir: {e}"))?;
+
+    let tmp_pdf = tmp_dir.join("input.pdf");
+    std::fs::copy(path, &tmp_pdf)
+        .map_err(|e| format!("Failed to copy PDF: {e}"))?;
+
+    let html_result = tokio::process::Command::new(&pdftohtml)
+        .current_dir(&tmp_dir)
+        .args(["-noframes", "-nodrm", "-fmt", "png", "input.pdf", "doc"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn pdftohtml: {e}"))?;
+
+    if !html_result.status.success() {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        let stderr = String::from_utf8_lossy(&html_result.stderr);
+        return Err(if stderr.trim().is_empty() {
+            format!("pdftohtml exited with code {}", html_result.status.code().unwrap_or(-1))
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+
+    app.emit(
+        "convert:progress",
+        ProgressPayload { path: path.to_string(), percent: 50.0 },
+    )
+    .ok();
+
+    let md_result = tokio::process::Command::new(&pandoc)
+        .current_dir(&tmp_dir)
+        .args(["-f", "html", "-t", "markdown", "-o", out.to_str().unwrap_or(""), "doc.html"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn pandoc: {e}"))?;
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+
+    if !md_result.status.success() {
+        let stderr = String::from_utf8_lossy(&md_result.stderr);
+        return Err(if stderr.trim().is_empty() {
+            format!("pandoc exited with code {}", md_result.status.code().unwrap_or(-1))
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+
+    app.emit(
+        "convert:progress",
+        ProgressPayload { path: path.to_string(), percent: 100.0 },
+    )
+    .ok();
+    Ok(out.to_string_lossy().to_string())
+}
+
+/// Convert a PDF to Markdown.
+/// Uses marker-pdf (ML) if `use_marker` is true and marker is installed;
+/// otherwise falls back to pdftohtml → pandoc markdown.
+pub async fn convert_pdf_to_md(
+    app: &tauri::AppHandle,
+    path: &str,
+    output_dir: Option<&str>,
+    use_marker: bool,
+) -> Result<String, String> {
+    if use_marker && marker_available() {
+        return convert_pdf_with_marker_to_md(app, path, output_dir).await;
+    }
+    convert_pdf_to_md_via_pdftohtml(app, path, output_dir).await
+}
+
+/// Run marker on a PDF and copy the resulting .md file to the output location.
+async fn convert_pdf_with_marker_to_md(
+    app: &tauri::AppHandle,
+    path: &str,
+    output_dir: Option<&str>,
+) -> Result<String, String> {
+    let marker = find_marker_binary()
+        .ok_or_else(|| "marker not found — install with: pip install marker-pdf".to_string())?;
+    let out = output_path(path, "md", output_dir)?;
+
+    app.emit(
+        "convert:progress",
+        ProgressPayload { path: path.to_string(), percent: 0.0 },
+    )
+    .ok();
+
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let tmp_base = std::env::temp_dir().join(format!("swift_shifter_marker_md_{timestamp}"));
+    let input_dir = tmp_base.join("input");
+    let output_dir_tmp = tmp_base.join("output");
+
+    std::fs::create_dir_all(&input_dir)
+        .map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    std::fs::create_dir_all(&output_dir_tmp)
+        .map_err(|e| format!("Failed to create temp dir: {e}"))?;
+
+    let tmp_pdf = input_dir.join("input.pdf");
+    std::fs::copy(path, &tmp_pdf)
+        .map_err(|e| format!("Failed to copy PDF: {e}"))?;
+
+    let marker_name = marker.file_name().unwrap_or_default().to_string_lossy().to_string();
+    let mut cmd = tokio::process::Command::new(&marker);
+    if marker_name.contains("marker_single") {
+        cmd.args([tmp_pdf.to_str().unwrap_or(""), output_dir_tmp.to_str().unwrap_or("")]);
+    } else {
+        cmd.args([
+            input_dir.to_str().unwrap_or(""),
+            "--output_dir",
+            output_dir_tmp.to_str().unwrap_or(""),
+        ]);
+    }
+    cmd.stdout(std::process::Stdio::null());
+    cmd.stderr(std::process::Stdio::null());
+
+    let status = cmd
+        .status()
+        .await
+        .map_err(|e| format!("Failed to spawn marker: {e}"))?;
+
+    // On failure or missing output, fall back to the pdftohtml pipeline.
+    if !status.success() || find_md_file(&output_dir_tmp).is_none() {
+        let _ = std::fs::remove_dir_all(&tmp_base);
+        return convert_pdf_to_md_via_pdftohtml(app, path, output_dir).await;
+    }
+
+    app.emit(
+        "convert:progress",
+        ProgressPayload { path: path.to_string(), percent: 90.0 },
+    )
+    .ok();
+
+    let md_file = find_md_file(&output_dir_tmp).unwrap();
+
+    std::fs::copy(&md_file, &out)
+        .map_err(|e| format!("Failed to copy marker output: {e}"))?;
+
+    // Copy all assets (images, subdirs) that sit alongside the .md so that
+    // relative image references (e.g. `![](images/_page_4_Figure_7.jpeg)`)
+    // resolve correctly next to the output file.
+    let out_dir = out.parent().unwrap_or_else(|| std::path::Path::new("."));
+    if let Some(md_parent) = md_file.parent() {
+        copy_dir_contents_except(md_parent, out_dir, &md_file);
+    }
+
+    let _ = std::fs::remove_dir_all(&tmp_base);
+
+    app.emit(
+        "convert:progress",
+        ProgressPayload { path: path.to_string(), percent: 100.0 },
+    )
+    .ok();
     Ok(out.to_string_lossy().to_string())
 }

@@ -35,6 +35,7 @@ interface BatchResult {
 // ─── Element refs ─────────────────────────────────────────────────────────
 
 const files = new Map<string, FileEntry>();
+const progressUnlisteners = new Map<string, () => void>();
 const dropZone = document.getElementById("drop-zone") as HTMLDivElement;
 const fileList = document.getElementById("file-list") as HTMLDivElement;
 const installPanel = document.getElementById("install-panel") as HTMLDivElement;
@@ -56,6 +57,34 @@ const btnClearAll = document.getElementById(
 ) as HTMLButtonElement;
 
 const appWindow = getCurrentWindow();
+
+// ─── Dep install tracking ─────────────────────────────────────────────────
+
+/** Set of dep keys currently being installed in the background. */
+const depsInstalling = new Set<string>();
+
+const DEP_DISPLAY: Record<string, string> = {
+  ffmpeg: "ffmpeg",
+  pandoc: "pandoc",
+  pdftohtml: "poppler",
+  "ebook-convert": "Calibre",
+};
+
+/** Map error substrings → dep key, for friendly "installing" messages. */
+const DEP_ERROR_FRAGMENTS: [string, string][] = [
+  ["pandoc not found", "pandoc"],
+  ["pdftohtml not found", "pdftohtml"],
+  ["ebook-convert not found", "ebook-convert"],
+  ["ffmpeg not found", "ffmpeg"],
+];
+
+function installingDepForError(msg: string): string | null {
+  const lower = msg.toLowerCase();
+  for (const [fragment, dep] of DEP_ERROR_FRAGMENTS) {
+    if (lower.includes(fragment) && depsInstalling.has(dep)) return dep;
+  }
+  return null;
+}
 
 // ─── Clear all ────────────────────────────────────────────────────────────
 
@@ -222,12 +251,14 @@ async function startConversion(
   progressFill.style.width = "0%";
   progressLabel.textContent = "0%";
 
+  progressUnlisteners.get(path)?.();
   const unlisten = await listen<ProgressPayload>("convert:progress", (ev) => {
     if (ev.payload.path !== path) return;
     const pct = Math.round(ev.payload.percent);
     progressFill.style.width = `${pct}%`;
     progressLabel.textContent = `${pct}%`;
   });
+  progressUnlisteners.set(path, unlisten);
 
   try {
     const outputPath = await invoke<string>("convert", { path, targetFormat });
@@ -251,14 +282,22 @@ async function startConversion(
   } catch (err) {
     progressRow.remove();
     const status = document.createElement("span");
-    status.className = "file-status error";
-    status.textContent = `✗ ${String(err)}`;
+    const errStr = String(err);
+    const installingDep = installingDepForError(errStr);
+    if (installingDep) {
+      status.className = "file-status warning";
+      status.textContent = `⏳ Installing ${DEP_DISPLAY[installingDep]}, please try again…`;
+    } else {
+      status.className = "file-status error";
+      status.textContent = `✗ ${errStr}`;
+    }
     item.appendChild(status);
     item
       .querySelectorAll<HTMLButtonElement>(".fmt-btn")
       .forEach((b) => (b.disabled = false));
   } finally {
     unlisten();
+    progressUnlisteners.delete(path);
   }
 }
 
@@ -392,8 +431,15 @@ async function startBatchConversion(targetFormat: string): Promise<void> {
       } else {
         pr?.remove();
         const status = document.createElement("span");
-        status.className = "file-status error";
-        status.textContent = `✗ ${result.error ?? "Unknown error"}`;
+        const errStr = result.error ?? "Unknown error";
+        const installingDep = installingDepForError(errStr);
+        if (installingDep) {
+          status.className = "file-status warning";
+          status.textContent = `⏳ Installing ${DEP_DISPLAY[installingDep]}, please try again…`;
+        } else {
+          status.className = "file-status error";
+          status.textContent = `✗ ${errStr}`;
+        }
         item.appendChild(status);
         item
           .querySelectorAll<HTMLButtonElement>(".fmt-btn")
@@ -460,11 +506,13 @@ listen("brew:installed", () => {
 }).catch(console.error);
 
 listen("ffmpeg:missing", () => {
+  depsInstalling.add("ffmpeg");
   bottomStatus.className = "warning";
   bottomStatus.textContent = "ffmpeg not found — installing…";
 }).catch(console.error);
 
 listen("ffmpeg:installing", () => {
+  depsInstalling.add("ffmpeg");
   showInstallPanel(
     "Installing ffmpeg",
     "required for video & audio conversion",
@@ -474,6 +522,7 @@ listen("ffmpeg:installing", () => {
 }).catch(console.error);
 
 listen("ffmpeg:installed", () => {
+  depsInstalling.delete("ffmpeg");
   installPanel.hidden = true;
   bottomStatus.className = "ok";
   bottomStatus.textContent = "ffmpeg installed ✓";
@@ -486,6 +535,7 @@ listen("ffmpeg:installed", () => {
 }).catch(console.error);
 
 listen("ffmpeg:failed", (ev) => {
+  depsInstalling.delete("ffmpeg");
   installTitle.textContent = "Installation failed";
   installSubtitle.textContent = String(ev.payload);
   installLogWrap.classList.add("visible");
@@ -493,6 +543,46 @@ listen("ffmpeg:failed", (ev) => {
   bottomStatus.className = "warning";
   bottomStatus.textContent = "ffmpeg unavailable";
 }).catch(console.error);
+
+// ─── Background dep install status (pandoc, poppler, Calibre) ─────────────
+
+const BACKGROUND_DEPS: [string, string][] = [
+  ["pandoc", "pandoc"],
+  ["pdftohtml", "poppler"],
+  ["ebook-convert", "Calibre"],
+];
+
+for (const [dep, label] of BACKGROUND_DEPS) {
+  listen(`${dep}:missing`, () => {
+    depsInstalling.add(dep);
+    bottomStatus.className = "warning";
+    bottomStatus.textContent = `installing ${label}…`;
+  }).catch(console.error);
+
+  listen(`${dep}:installing`, () => {
+    depsInstalling.add(dep);
+    bottomStatus.className = "warning";
+    bottomStatus.textContent = `installing ${label}…`;
+  }).catch(console.error);
+
+  listen(`${dep}:installed`, () => {
+    depsInstalling.delete(dep);
+    bottomStatus.className = "ok";
+    bottomStatus.textContent = `${label} installed ✓`;
+    setTimeout(() => {
+      if (bottomStatus.textContent === `${label} installed ✓`) {
+        bottomStatus.textContent = "";
+        bottomStatus.className = "";
+      }
+    }, 4000);
+  }).catch(console.error);
+
+  listen(`${dep}:failed`, () => {
+    depsInstalling.delete(dep);
+    bottomStatus.className = "warning";
+    bottomStatus.textContent = `${label} unavailable`;
+  }).catch(console.error);
+}
 
 // Buffer log lines silently — only visible if an error occurs
 listen<InstallLogPayload>("install:log", (ev) => {

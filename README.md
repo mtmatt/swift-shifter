@@ -14,7 +14,7 @@ A featherweight, always-on file converter that lives in your menu bar. Drop any 
   - Video: MP4, MOV, MKV, WebM, AVI, GIF (video-to-GIF and GIF-to-video)
   - Audio: MP3, AAC, FLAC, OGG, WAV, OPUS
   - Data: JSON, YAML, TOML, CSV
-  - Documents: Markdown, plain text, LaTeX, Typst, PDF, EPUB (via pandoc + pdftohtml/marker-pdf)
+  - Documents: Markdown, plain text, HTML, LaTeX, Typst, PDF, EPUB, MOBI (via pandoc + pdftohtml/marker-pdf/Calibre)
 - **Output next to source** -- converted file lands in the same folder as the input (configurable)
 - **Batch conversion** -- drop multiple files at once; common formats shown in a shared toolbar
 - **Progress indicator** -- lightweight inline progress bar per file, no modal dialogs
@@ -32,7 +32,8 @@ A featherweight, always-on file converter that lives in your menu bar. Drop any 
 | Image processing    | [`image`](https://crates.io/crates/image) crate + [`ravif`](https://crates.io/crates/ravif) for AVIF + macOS `sips` for HEIC |
 | Video / audio       | System `ffmpeg` (auto-installed via Homebrew if missing)                     |
 | Document conversion | System `pandoc` (auto-installed via Homebrew / winget / apt if missing)      |
-| PDF ↔ EPUB          | System `pdftohtml` / poppler (auto-installed); optional ML engine via `marker-pdf` |
+| PDF ↔ EPUB / HTML / MD | System `pdftohtml` / poppler (auto-installed); optional ML engine via `marker-pdf` |
+| MOBI conversion     | System `ebook-convert` / Calibre (auto-installed via Homebrew cask / winget / apt) |
 | Data serialization  | `serde_json`, `serde_yaml`, `toml`, `csv` crates                             |
 | Frontend UI         | TypeScript + [Vite](https://vitejs.dev) (plain DOM, no framework)            |
 | Global hotkeys      | `tauri-plugin-global-shortcut`                                               |
@@ -90,8 +91,9 @@ swift-shifter/
 | Rust    | stable (≥ 1.78) | via `rustup`                                                      |
 | Node.js | ≥ 24            | for Tauri CLI and Vite                                            |
 | ffmpeg  | ≥ 6             | for video/audio; auto-installed via `brew` if missing             |
-| pandoc  | any             | for document conversion; auto-installed via `brew` / winget / apt |
-| poppler | any             | for PDF ↔ EPUB; auto-installed via `brew` / winget / apt          |
+| pandoc  | any             | for document conversion; auto-installed via `brew` / winget / apt    |
+| poppler | any             | for PDF ↔ EPUB/HTML/MD; auto-installed via `brew` / winget / apt    |
+| Calibre | any             | for MOBI conversion; auto-installed via `brew` / winget / apt        |
 
 
 ## Contribute to the Project
@@ -151,7 +153,8 @@ This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Push
 - [x] Document conversion via pandoc
 - [x] Images to PDF
 - [x] EPUB <-> PDF
-- [ ] MOBI <-> PDF
+- [x] MOBI <-> PDF/EPUB/HTML/MD
+- [x] PDF/EPUB/MOBI -> HTML and Markdown
 
 
 ### Workflow & Automation
