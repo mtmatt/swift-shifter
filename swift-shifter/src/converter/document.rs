@@ -451,12 +451,28 @@ pub async fn install_marker(app: &tauri::AppHandle) -> Result<(), String> {
     // ── Step 1: get pipx ───────────────────────────────────────────────────
     let pipx = if let Some(p) = find_any_binary(&["pipx"]) {
         Some(p)
-    } else if let Some(brew) = find_brew_binary() {
-        marker_step(app, "Setting up package installer…");
-        run_silent(&brew, &["install", "pipx"]).await.ok();
-        find_any_binary(&["pipx"])
     } else {
-        None
+        marker_step(app, "Setting up package installer…");
+        #[cfg(target_os = "macos")]
+        if let Some(brew) = find_brew_binary() {
+            run_silent(&brew, &["install", "pipx"]).await.ok();
+        }
+        #[cfg(target_os = "windows")]
+        if which::which("winget").is_ok() {
+            run_silent(
+                &PathBuf::from("winget"),
+                &["install", "--id", "pypa.pipx", "-e", "--silent"],
+            ).await.ok();
+        }
+        #[cfg(target_os = "linux")]
+        if which::which("dnf").is_ok() {
+            run_silent(&PathBuf::from("pkexec"), &["dnf", "install", "-y", "pipx"]).await.ok();
+        } else if which::which("pacman").is_ok() {
+            run_silent(&PathBuf::from("pkexec"), &["pacman", "-S", "--noconfirm", "python-pipx"]).await.ok();
+        } else if which::which("apt-get").is_ok() {
+            run_silent(&PathBuf::from("pkexec"), &["apt-get", "install", "-y", "pipx"]).await.ok();
+        }
+        find_any_binary(&["pipx"])
     };
 
     // ── Step 2: install marker-pdf via pipx ────────────────────────────────
@@ -474,12 +490,28 @@ pub async fn install_marker(app: &tauri::AppHandle) -> Result<(), String> {
     // ── Step 3: ensure pip / Python ────────────────────────────────────────
     let pip = if let Some(p) = find_any_binary(&["pip3", "pip"]) {
         Some(p)
-    } else if let Some(brew) = find_brew_binary() {
-        marker_step(app, "Setting up Python…");
-        run_silent(&brew, &["install", "python3"]).await.ok();
-        find_any_binary(&["pip3", "pip"])
     } else {
-        None
+        marker_step(app, "Setting up Python…");
+        #[cfg(target_os = "macos")]
+        if let Some(brew) = find_brew_binary() {
+            run_silent(&brew, &["install", "python3"]).await.ok();
+        }
+        #[cfg(target_os = "windows")]
+        if which::which("winget").is_ok() {
+            run_silent(
+                &PathBuf::from("winget"),
+                &["install", "--id", "Python.Python.3", "-e", "--silent"],
+            ).await.ok();
+        }
+        #[cfg(target_os = "linux")]
+        if which::which("dnf").is_ok() {
+            run_silent(&PathBuf::from("pkexec"), &["dnf", "install", "-y", "python3-pip"]).await.ok();
+        } else if which::which("pacman").is_ok() {
+            run_silent(&PathBuf::from("pkexec"), &["pacman", "-S", "--noconfirm", "python-pip"]).await.ok();
+        } else if which::which("apt-get").is_ok() {
+            run_silent(&PathBuf::from("pkexec"), &["apt-get", "install", "-y", "python3-pip"]).await.ok();
+        }
+        find_any_binary(&["pip3", "pip"])
     };
 
     // ── Step 4: pip install --user ─────────────────────────────────────────
@@ -489,7 +521,7 @@ pub async fn install_marker(app: &tauri::AppHandle) -> Result<(), String> {
             .map_err(|e| format!("Installation failed: {e}"));
     }
 
-    Err("Could not install automatically. Please install Homebrew from brew.sh and try again.".to_string())
+    Err("Could not install marker-pdf automatically. Please install pipx or pip and try again.".to_string())
 }
 
 /// Recursively find the first `.md` file under `dir`.
