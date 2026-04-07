@@ -111,6 +111,26 @@ input[type="checkbox"] {
     cursor: pointer;
 }
 
+/* ─── Text input row ─────────────────────────────────────────────────── */
+.text-input {
+    flex: 1;
+    font-family: inherit;
+    font-size: 13px;
+    background: transparent;
+    border: 0.5px solid var(--border-hi);
+    color: var(--text-2);
+    padding: 4px 8px;
+    border-radius: 4px;
+    outline: none;
+    letter-spacing: 0.02em;
+}
+
+.text-input:focus {
+    border-color: var(--accent);
+    color: var(--text);
+    box-shadow: 0 0 6px var(--accent-glow);
+}
+
 /* ─── Hint line (marker status) ───────────────────────────────────────── */
 .hint {
     font-size: 12px;
@@ -119,6 +139,7 @@ input[type="checkbox"] {
 }
 
 .hint--ok         { color: var(--accent); }
+.hint--success    { color: var(--accent); }
 .hint--warn       { color: var(--text-3); }
 .hint--installing {
     color: var(--text-2);
@@ -133,7 +154,7 @@ input[type="checkbox"] {
 .hint--error      { color: var(--danger); }
 
 /* ─── Marker install progress bar ────────────────────────────────────── */
-#marker-progress-wrap {
+#marker-progress-wrap, #llm-progress-wrap {
     padding: 2px 0;
 }
 
@@ -145,7 +166,7 @@ input[type="checkbox"] {
     overflow: hidden;
 }
 
-#marker-progress-fill {
+#marker-progress-fill, #llm-progress-fill {
     height: 100%;
     width: 0%;
     background: var(--accent);

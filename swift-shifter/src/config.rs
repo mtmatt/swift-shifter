@@ -19,11 +19,22 @@ pub struct Config {
     /// Falls back to pdftohtml if marker is not found on PATH.
     #[serde(default)]
     pub use_marker_pdf: bool,
+    /// Use local LLM (Ollama) for post-processing PDF → EPUB/MD output.
+    #[serde(default)]
+    pub use_local_llm: bool,
+    /// Ollama model name (e.g. gemma4:e2b).
+    #[serde(default = "default_local_llm_model")]
+    pub local_llm_model: String,
+    /// Ollama HTTP base URL.
+    #[serde(default = "default_local_llm_url")]
+    pub local_llm_url: String,
 }
 
 fn default_jpeg_quality() -> u8 { 75 }
 fn default_avif_quality() -> u8 { 65 }
 fn default_max_concurrent() -> usize { 4 }
+fn default_local_llm_model() -> String { "gemma4:e2b".to_string() }
+fn default_local_llm_url() -> String { "http://localhost:11434".to_string() }
 
 impl Default for Config {
     fn default() -> Self {
@@ -33,12 +44,16 @@ impl Default for Config {
             avif_quality:   default_avif_quality(),
             max_concurrent: default_max_concurrent(),
             use_marker_pdf: false,
+            use_local_llm:  false,
+            local_llm_model: default_local_llm_model(),
+            local_llm_url:   default_local_llm_url(),
         }
     }
 }
 
 pub struct AppState {
     pub config: std::sync::Mutex<Config>,
+    pub ollama_process: std::sync::Mutex<Option<tokio::process::Child>>,
 }
 
 fn config_path() -> Option<PathBuf> {

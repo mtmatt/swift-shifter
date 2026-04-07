@@ -106,15 +106,22 @@ pub async fn convert_file(
             "mobi" => document::convert_epub_to_mobi(app, path, out_dir).await,
             _ => document::convert_document(app, path, target_format, out_dir).await,
         },
-        "pdf" => match target_format {
-            "mobi" => document::convert_pdf_to_mobi(app, path, out_dir, config.use_marker_pdf).await,
-            "html" => document::convert_pdf_to_html(app, path, out_dir).await,
-            "md" => document::convert_pdf_to_md(app, path, out_dir, config.use_marker_pdf).await,
-            _ => {
-                if config.use_marker_pdf && document::marker_available() {
-                    document::convert_pdf_with_marker(app, path, out_dir).await
-                } else {
-                    document::convert_pdf_to_epub(app, path, out_dir).await
+        "pdf" => {
+            let llm = document::LlmCfg {
+                enabled: config.use_local_llm,
+                model:   config.local_llm_model.clone(),
+                url:     config.local_llm_url.clone(),
+            };
+            match target_format {
+                "mobi" => document::convert_pdf_to_mobi(app, path, out_dir, config.use_marker_pdf, llm).await,
+                "html" => document::convert_pdf_to_html(app, path, out_dir).await,
+                "md" => document::convert_pdf_to_md(app, path, out_dir, config.use_marker_pdf, llm).await,
+                _ => {
+                    if config.use_marker_pdf && document::marker_available() {
+                        document::convert_pdf_with_marker(app, path, out_dir, llm).await
+                    } else {
+                        document::convert_pdf_to_epub(app, path, out_dir, llm).await
+                    }
                 }
             }
         },
