@@ -481,7 +481,7 @@ pub async fn convert_pdf_to_epub(
     app: &tauri::AppHandle,
     path: &str,
     output_dir: Option<&str>,
-    _llm: LlmCfg,
+    llm: LlmCfg,
 ) -> Result<String, String> {
     let pdftohtml = get_pdftohtml()?;
     let pandoc = get_pandoc()?;
@@ -600,6 +600,33 @@ pub async fn convert_pdf_to_epub(
         let _ = tokio::fs::write(&tmp_html, html_content).await;
     }
 
+    // When LLM is enabled: convert HTML → MD, fix with LLM, then package MD → EPUB.
+    // When disabled: convert HTML → EPUB directly (faster, no extra pandoc step).
+    let (pandoc_input_fmt, pandoc_input_file) = if llm.enabled {
+        let tmp_md = tmp_dir.join("doc.md");
+        let md_result = tokio::process::Command::new(&pandoc)
+            .current_dir(&tmp_dir)
+            .args(["-f", "html", "-t", "markdown", "-o", "doc.md", "doc.html"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .output()
+            .await
+            .map_err(|e| format!("Failed to convert HTML to MD for LLM: {e}"))?;
+
+        if md_result.status.success() {
+            if let Ok(content) = tokio::fs::read_to_string(&tmp_md).await {
+                let fixed = llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
+                let _ = tokio::fs::write(&tmp_md, fixed).await;
+            }
+            ("markdown", "doc.md")
+        } else {
+            // LLM intermediate step failed — fall back to direct HTML → EPUB
+            ("html", "doc.html")
+        }
+    } else {
+        ("html", "doc.html")
+    };
+
     app.emit(
         "convert:progress",
         ProgressPayload {
@@ -619,14 +646,14 @@ pub async fn convert_pdf_to_epub(
     cmd.current_dir(&tmp_dir);
     cmd.args([
         "-f",
-        "html",
+        pandoc_input_fmt,
         "-t",
         "epub",
         "--metadata",
         &format!("title={}", file_title),
         "-o",
         out.to_str().unwrap_or(""),
-        "doc.html",
+        pandoc_input_file,
     ]);
     cmd.stdout(std::process::Stdio::null());
     cmd.stderr(std::process::Stdio::piped());

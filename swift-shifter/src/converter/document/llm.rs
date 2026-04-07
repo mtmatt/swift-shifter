@@ -39,19 +39,42 @@ pub async fn ollama_list_models(base_url: &str) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Instruct a local LLM to fix indentation, rejoin hyphenated line-breaks,
-/// and repair math notation in the generated Markdown.
-pub async fn llm_postprocess_markdown(
+/// Split markdown into chunks of at most `max_chars` characters, breaking
+/// only at paragraph boundaries (double newlines).
+fn split_markdown_chunks(text: &str, max_chars: usize) -> Vec<String> {
+    if text.chars().count() <= max_chars {
+        return vec![text.to_string()];
+    }
+    let mut chunks: Vec<String> = Vec::new();
+    let mut current = String::new();
+    for paragraph in text.split("\n\n") {
+        if !current.is_empty()
+            && current.chars().count() + paragraph.chars().count() + 2 > max_chars
+        {
+            chunks.push(current.trim().to_string());
+            current = paragraph.to_string();
+        } else {
+            if !current.is_empty() {
+                current.push_str("\n\n");
+            }
+            current.push_str(paragraph);
+        }
+    }
+    if !current.trim().is_empty() {
+        chunks.push(current.trim().to_string());
+    }
+    chunks
+}
+
+/// Send one chunk to the LLM and return the fixed text.  Falls back to the
+/// original chunk on any network or API error.
+async fn llm_fix_chunk(
     app: &tauri::AppHandle,
-    markdown: String,
+    chunk: String,
     input_path: &str,
     base_url: &str,
     model: &str,
 ) -> String {
-    if markdown.chars().count() > 12_000 {
-        return markdown;
-    }
-
     let client = OLLAMA_CLIENT.get_or_init(|| {
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(300))
@@ -59,34 +82,25 @@ pub async fn llm_postprocess_markdown(
             .expect("reqwest client with timeout should always build")
     });
 
-    let prompt = build_llm_prompt(&markdown);
+    let prompt = build_llm_prompt(&chunk);
     let url = format!("{}/api/generate", base_url.trim_end_matches('/'));
-
-    let payload = serde_json::json!({
-        "model": model,
-        "prompt": prompt,
-        "stream": true,
-    });
+    let payload = serde_json::json!({ "model": model, "prompt": prompt, "stream": true });
 
     let resp = match client.post(url).json(&payload).send().await {
-        Ok(r) => r,
-        Err(_) => return markdown,
+        Ok(r) if r.status().is_success() => r,
+        _ => return chunk,
     };
-
-    if !resp.status().is_success() {
-        return markdown;
-    }
 
     use futures_util::StreamExt;
     let mut stream = resp.bytes_stream();
-    let mut full_response = String::new();
+    let mut out = String::new();
 
     while let Some(item) = stream.next().await {
-        let Ok(chunk) = item else { break };
-        for line in String::from_utf8_lossy(&chunk).lines() {
+        let Ok(bytes) = item else { break };
+        for line in String::from_utf8_lossy(&bytes).lines() {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
                 if let Some(token) = json["response"].as_str() {
-                    full_response.push_str(token);
+                    out.push_str(token);
                     app.emit("llm:progress", serde_json::json!({
                         "path": input_path,
                         "token": token,
@@ -99,17 +113,36 @@ pub async fn llm_postprocess_markdown(
         }
     }
 
-    if full_response.trim().is_empty() {
-        return markdown;
+    if out.trim().is_empty() {
+        return chunk;
     }
-
-    full_response
-        .trim()
+    out.trim()
         .trim_start_matches("```markdown")
         .trim_start_matches("```")
         .trim_end_matches("```")
         .trim()
         .to_string()
+}
+
+/// Instruct a local LLM to fix indentation, rejoin hyphenated line-breaks,
+/// and repair math notation in the generated Markdown.  Large documents are
+/// split into ≤8 000-character chunks at paragraph boundaries so that the
+/// entire document is always processed.
+pub async fn llm_postprocess_markdown(
+    app: &tauri::AppHandle,
+    markdown: String,
+    input_path: &str,
+    base_url: &str,
+    model: &str,
+) -> String {
+    const CHUNK_SIZE: usize = 8_000;
+    let chunks = split_markdown_chunks(&markdown, CHUNK_SIZE);
+    let mut results = Vec::with_capacity(chunks.len());
+    for chunk in chunks {
+        let fixed = llm_fix_chunk(app, chunk, input_path, base_url, model).await;
+        results.push(fixed);
+    }
+    results.join("\n\n")
 }
 
 pub fn build_llm_prompt(markdown: &str) -> String {
