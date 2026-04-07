@@ -66,8 +66,9 @@ fn split_markdown_chunks(text: &str, max_chars: usize) -> Vec<String> {
     chunks
 }
 
-/// Send one chunk to the LLM and return the fixed text.  Falls back to the
-/// original chunk on any network or API error.
+/// Send one chunk to the LLM and return the fixed text.
+/// Falls back to the original chunk on any network/API error or if the
+/// output is suspiciously large (> 2× the input — sign of hallucination).
 async fn llm_fix_chunk(
     app: &tauri::AppHandle,
     chunk: String,
@@ -75,6 +76,7 @@ async fn llm_fix_chunk(
     base_url: &str,
     model: &str,
 ) -> String {
+    let input_chars = chunk.chars().count();
     let client = OLLAMA_CLIENT.get_or_init(|| {
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(300))
@@ -82,9 +84,16 @@ async fn llm_fix_chunk(
             .expect("reqwest client with timeout should always build")
     });
 
-    let prompt = build_llm_prompt(&chunk);
     let url = format!("{}/api/generate", base_url.trim_end_matches('/'));
-    let payload = serde_json::json!({ "model": model, "prompt": prompt, "stream": true });
+    // Cap generation at 2× the input token budget to prevent runaway output.
+    let max_tokens = (input_chars * 2).max(256) as u64;
+    let payload = serde_json::json!({
+        "model": model,
+        "system": "You are a Markdown formatter. Output ONLY corrected Markdown text. Never summarize, explain, or add any commentary.",
+        "prompt": build_llm_prompt(&chunk),
+        "stream": true,
+        "options": { "num_predict": max_tokens },
+    });
 
     let resp = match client.post(url).json(&payload).send().await {
         Ok(r) if r.status().is_success() => r,
@@ -113,20 +122,28 @@ async fn llm_fix_chunk(
         }
     }
 
-    if out.trim().is_empty() {
-        return chunk;
-    }
-    out.trim()
+    let trimmed = out.trim()
         .trim_start_matches("```markdown")
         .trim_start_matches("```")
         .trim_end_matches("```")
-        .trim()
-        .to_string()
+        .trim();
+
+    // Sanity check: output should be roughly the same size as input.
+    // Bail out if empty, ballooned (hallucination), or suspiciously short (truncation).
+    let output_chars = trimmed.chars().count();
+    if output_chars == 0
+        || output_chars > input_chars * 2
+        || output_chars < input_chars * 3 / 10
+    {
+        return chunk;
+    }
+
+    trimmed.to_string()
 }
 
 /// Instruct a local LLM to fix indentation, rejoin hyphenated line-breaks,
 /// and repair math notation in the generated Markdown.  Large documents are
-/// split into ≤8 000-character chunks at paragraph boundaries so that the
+/// split into ≤3 000-character chunks at paragraph boundaries so that the
 /// entire document is always processed.
 pub async fn llm_postprocess_markdown(
     app: &tauri::AppHandle,
@@ -135,7 +152,7 @@ pub async fn llm_postprocess_markdown(
     base_url: &str,
     model: &str,
 ) -> String {
-    const CHUNK_SIZE: usize = 8_000;
+    const CHUNK_SIZE: usize = 3_000;
     let chunks = split_markdown_chunks(&markdown, CHUNK_SIZE);
     let mut results = Vec::with_capacity(chunks.len());
     for chunk in chunks {
@@ -147,19 +164,14 @@ pub async fn llm_postprocess_markdown(
 
 pub fn build_llm_prompt(markdown: &str) -> String {
     format!(
-"Fix the following Markdown document. 
+"Fix only these 3 issues in the Markdown below. Preserve every line exactly unless it needs one of these fixes:
+1. Wrap detected code blocks in ``` fences with the right language tag and fix indentation.
+2. Rejoin hyphenated line-break words (e.g. 'auto-\\nmatic' → 'automatic').
+3. Wrap bare LaTeX math in $...$ (inline) or $$...$$ (block).
 
-Instructions:
-1. Output ONLY the corrected Markdown. No commentary, no preamble, no 'Here is the fix'.
-2. Preserve all content exactly. Do not summarize, reorder, or remove any text.
-3. Fix code block indentation. If a code block is flat, indent nested blocks (e.g. inside functions/classes) with 4 spaces per level.
-4. Rejoin hyphenated line-break words (e.g. 'auto-matic' at the end of a line should become 'automatic').
-5. Ensure LaTeX math is correctly wrapped in $...$ for inline or $$...$$ for blocks.
-
-Document:
-```markdown
 {}
-```", markdown)
+
+Fixed:", markdown)
 }
 
 pub async fn install_ollama_and_model(
