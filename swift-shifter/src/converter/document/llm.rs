@@ -40,15 +40,25 @@ pub async fn ollama_list_models(base_url: &str) -> Vec<String> {
 }
 
 /// Split markdown into chunks of at most `max_chars` characters, breaking
-/// only at paragraph boundaries (double newlines).
+/// only at paragraph boundaries (double newlines) and never inside a code fence.
 fn split_markdown_chunks(text: &str, max_chars: usize) -> Vec<String> {
     if text.chars().count() <= max_chars {
         return vec![text.to_string()];
     }
     let mut chunks: Vec<String> = Vec::new();
     let mut current = String::new();
+    let mut in_fence = false;
+
     for paragraph in text.split("\n\n") {
-        if !current.is_empty()
+        // Count fence toggles in this paragraph.
+        for line in paragraph.lines() {
+            if line.trim_start().starts_with("```") {
+                in_fence = !in_fence;
+            }
+        }
+
+        if !in_fence
+            && !current.is_empty()
             && current.chars().count() + paragraph.chars().count() + 2 > max_chars
         {
             chunks.push(current.trim().to_string());
@@ -127,6 +137,10 @@ async fn llm_fix_chunk(
         .trim_start_matches("```")
         .trim_end_matches("```")
         .trim();
+    let trimmed = trimmed
+        .strip_prefix("Fixed:")
+        .unwrap_or(trimmed)
+        .trim();
 
     // Sanity check: output should be roughly the same size as input.
     // Bail out if empty, ballooned (hallucination), or suspiciously short (truncation).
@@ -164,10 +178,11 @@ pub async fn llm_postprocess_markdown(
 
 pub fn build_llm_prompt(markdown: &str) -> String {
     format!(
-"Fix only these 3 issues in the Markdown below. Preserve every line exactly unless it needs one of these fixes:
-1. Wrap detected code blocks in ``` fences with the right language tag and fix indentation.
-2. Rejoin hyphenated line-break words (e.g. 'auto-\\nmatic' → 'automatic').
-3. Wrap bare LaTeX math in $...$ (inline) or $$...$$ (block).
+"Fix only these issues in the Markdown below. Preserve every line exactly unless it needs one of these fixes:
+1. Fix heading levels: a line like `# 1 Title` (single integer) stays `#`; `# 1.1 Title` → `## 1.1 Title`; `# 1.1.1 Title` → `### 1.1.1 Title`.
+2. Wrap detected code blocks in ``` fences with the correct language tag and fix indentation. Remove any stray bare language-name lines (e.g. a line containing only `rust` or `python`) that are broken fence markers.
+3. Rejoin hyphenated line-break words (e.g. 'auto-\\nmatic' → 'automatic').
+4. Wrap bare LaTeX math in $...$ (inline) or $$...$$ (block).
 
 {}
 
