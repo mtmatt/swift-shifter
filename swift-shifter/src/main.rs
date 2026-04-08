@@ -131,12 +131,12 @@ fn main() {
                 }
             });
 
-            // Check for pdftohtml (poppler) at startup — needed for PDF → EPUB/HTML/MD
+            // Check for pymupdf4llm at startup — needed for PDF → EPUB/HTML/MD
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
-                if let Err(e) = converter::document::ensure_pdftohtml(&handle).await {
-                    eprintln!("pdftohtml setup warning: {e}");
-                    handle.emit("pdftohtml:failed", e).ok();
+                if let Err(e) = converter::document::ensure_pymupdf4llm(&handle).await {
+                    eprintln!("pymupdf4llm setup warning: {e}");
+                    handle.emit("pymupdf:failed", e).ok();
                 }
             });
 

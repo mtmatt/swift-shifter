@@ -1,15 +1,4 @@
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
-use regex::Regex;
-
-pub static RE_NUM: OnceLock<Regex> = OnceLock::new();
-pub static RE_MERGE: OnceLock<Regex> = OnceLock::new();
-pub static RE_STYLE_BLOCK: OnceLock<Regex> = OnceLock::new();
-pub static RE_CSS_POS: OnceLock<Regex> = OnceLock::new();
-pub static RE_CSS_TOP: OnceLock<Regex> = OnceLock::new();
-pub static RE_CSS_LEFT: OnceLock<Regex> = OnceLock::new();
-pub static RE_CSS_HEIGHT: OnceLock<Regex> = OnceLock::new();
-pub static RE_SVG_SRC: OnceLock<Regex> = OnceLock::new();
 
 pub fn output_path(input: &str, ext: &str, output_dir: Option<&str>) -> Result<PathBuf, String> {
     let p = Path::new(input);
@@ -61,46 +50,6 @@ pub fn find_md_file(dir: &Path) -> Option<PathBuf> {
         }
     }
     None
-}
-
-/// Try to convert an SVG file to PNG using `rsvg-convert` or ImageMagick.
-/// Returns the PNG path on success, None if no suitable tool is found.
-pub async fn convert_svg_to_png(svg_path: &Path) -> Option<PathBuf> {
-    let png_path = svg_path.with_extension("png");
-
-    // Prefer rsvg-convert (brew install librsvg) — lossless, no Ghostscript needed
-    if let Ok(rsvg) = which::which("rsvg-convert") {
-        let ok = tokio::process::Command::new(&rsvg)
-            .args(["-o", png_path.to_str()?, svg_path.to_str()?])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .await
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if ok && png_path.exists() {
-            return Some(png_path);
-        }
-    }
-
-    // Fall back to ImageMagick 7 (`magick`) or 6 (`convert`)
-    let magick = which::which("magick")
-        .or_else(|_| which::which("convert"))
-        .ok()?;
-    let ok = tokio::process::Command::new(&magick)
-        .args([svg_path.to_str()?, png_path.to_str()?])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .status()
-        .await
-        .map(|s| s.success())
-        .unwrap_or(false);
-
-    if ok && png_path.exists() {
-        Some(png_path)
-    } else {
-        None
-    }
 }
 
 /// Map a file extension to the pandoc format name used on the command line.

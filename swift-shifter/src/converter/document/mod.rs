@@ -13,6 +13,6 @@ pub use llm::*;
 pub use conversion::*;
 
 pub static PANDOC_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
-pub static PDFTOHTML_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
 pub static EBOOK_CONVERT_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
+pub static PYMUPDF4LLM_PYTHON: OnceLock<Option<PathBuf>> = OnceLock::new();
 pub static OLLAMA_CLIENT: OnceLock<reqwest::Client> = OnceLock::new();

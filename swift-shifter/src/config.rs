@@ -16,7 +16,7 @@ pub struct Config {
     #[serde(default = "default_max_concurrent")]
     pub max_concurrent: usize,
     /// Use marker-pdf (ML-based) for PDF → EPUB conversion when installed.
-    /// Falls back to pdftohtml if marker is not found on PATH.
+    /// Falls back to pymupdf4llm if marker is not found on PATH.
     #[serde(default)]
     pub use_marker_pdf: bool,
     /// Use local LLM (Ollama) for post-processing PDF → EPUB/MD output.

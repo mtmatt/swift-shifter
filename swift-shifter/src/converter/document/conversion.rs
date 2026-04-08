@@ -483,219 +483,129 @@ pub async fn convert_pdf_to_epub(
     output_dir: Option<&str>,
     llm: LlmCfg,
 ) -> Result<String, String> {
-    let pdftohtml = get_pdftohtml()?;
+    let python = get_pymupdf4llm_python()?;
     let pandoc = get_pandoc()?;
-
     let out = output_path(path, "epub", output_dir)?;
 
     app.emit(
         "convert:progress",
-        ProgressPayload {
-            path: path.to_string(),
-            percent: 0.0,
-        },
+        ProgressPayload { path: path.to_string(), percent: 0.0 },
     )
     .ok();
 
-    let tmp_dir = std::env::temp_dir().join(format!("swift_shifter_{}", unique_tmp_suffix()));
+    let tmp_dir = std::env::temp_dir().join(format!(
+        "swift_shifter_epub_{}",
+        unique_tmp_suffix()
+    ));
     std::fs::create_dir_all(&tmp_dir)
-        .map_err(|e| format!("Failed to create temp directory: {e}"))?;
+        .map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    let tmp_md = tmp_dir.join("output.md");
 
-    let tmp_pdf = tmp_dir.join("input.pdf");
-    std::fs::copy(path, &tmp_pdf)
-        .map_err(|e| format!("Failed to copy PDF to temp dir: {e}"))?;
+    let tmp_md_str = tmp_md
+        .to_str()
+        .ok_or_else(|| "Temp path contains non-UTF-8 characters".to_string())?;
 
-    let tmp_html = tmp_dir.join("doc.html");
-
-    let pdftohtml_out = tokio::process::Command::new(&pdftohtml)
-        .current_dir(&tmp_dir)
-        .args(["-noframes", "-nodrm", "-fmt", "png", "input.pdf", "doc"])
+    // Step 1: PDF → Markdown via pymupdf4llm
+    let result = tokio::process::Command::new(&python)
+        .args([
+            "-c",
+            "import pymupdf4llm, sys; open(sys.argv[2], 'w', encoding='utf-8').write(pymupdf4llm.to_markdown(sys.argv[1]))",
+            path,
+            tmp_md_str,
+        ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .output()
         .await
-        .map_err(|e| format!("Failed to spawn pdftohtml: {e}"))?;
+        .map_err(|e| format!("Failed to spawn pymupdf4llm: {e}"))?;
 
-    if !pdftohtml_out.status.success() {
+    if !result.status.success() {
         let _ = std::fs::remove_dir_all(&tmp_dir);
-        let stderr = String::from_utf8_lossy(&pdftohtml_out.stderr);
-        let msg = if stderr.trim().is_empty() {
+        let stderr = String::from_utf8_lossy(&result.stderr);
+        return Err(if stderr.trim().is_empty() {
             format!(
-                "pdftohtml exited with code {}",
-                pdftohtml_out.status.code().unwrap_or(-1)
+                "pymupdf4llm exited with code {}",
+                result.status.code().unwrap_or(-1)
             )
         } else {
             stderr.trim().to_string()
-        };
-        return Err(msg);
+        });
     }
 
-    if let Ok(mut html_content) = tokio::fs::read_to_string(&tmp_html).await {
-        let re_style_block = RE_STYLE_BLOCK.get_or_init(|| {
-            regex::Regex::new(r"(?s)<style\b[^>]*>.*?</style>").expect("valid static regex")
-        });
-        html_content = re_style_block.replace_all(&html_content, "").to_string();
-
-        let re_pos = RE_CSS_POS.get_or_init(|| {
-            regex::Regex::new(r"position\s*:\s*(?:absolute|relative)\s*;?\s*").expect("valid static regex")
-        });
-        html_content = re_pos.replace_all(&html_content, "").to_string();
-
-        let re_top = RE_CSS_TOP.get_or_init(|| {
-            regex::Regex::new(r"top\s*:\s*-?\d+(?:\.\d+)?px\s*;?\s*").expect("valid static regex")
-        });
-        html_content = re_top.replace_all(&html_content, "").to_string();
-
-        let re_left = RE_CSS_LEFT.get_or_init(|| {
-            regex::Regex::new(r"left\s*:\s*-?\d+(?:\.\d+)?px\s*;?\s*").expect("valid static regex")
-        });
-        html_content = re_left.replace_all(&html_content, "").to_string();
-
-        let re_height = RE_CSS_HEIGHT.get_or_init(|| {
-            regex::Regex::new(r"height\s*:\s*\d+(?:\.\d+)?px\s*;?\s*").expect("valid static regex")
-        });
-        html_content = re_height.replace_all(&html_content, "").to_string();
-
-        let re_num = RE_NUM.get_or_init(|| {
-            regex::Regex::new(r"(?m)^\s*(?:<a name=\d+></a>)?\s*\d+\s*<br/>\s*\r?\n?").expect("valid static regex")
-        });
-        html_content = re_num.replace_all(&html_content, "").to_string();
-
-        let re_merge = RE_MERGE.get_or_init(|| {
-            regex::Regex::new(r"([a-zA-Z,\-]|&#160;)\s*<br/>\s*\r?\n?\s*(?:&#160;)*([a-z])")
-                .expect("valid static regex")
-        });
-        html_content = re_merge.replace_all(&html_content, "${1} ${2}").to_string();
-
-        let re_svg = RE_SVG_SRC.get_or_init(|| {
-            regex::Regex::new(r#"(?i)src="([^"]+\.svg)""#).expect("valid static regex")
-        });
-        let svg_names: Vec<String> = re_svg
-            .captures_iter(&html_content)
-            .map(|c| c[1].to_string())
-            .collect::<std::collections::HashSet<_>>()
-            .into_iter()
-            .collect();
-
-        for svg_name in svg_names {
-            let svg_path = tmp_dir.join(&svg_name);
-            if let Some(png_path) = convert_svg_to_png(&svg_path).await {
-                let png_name = png_path
-                    .file_name()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
-                html_content = html_content
-                    .replace(&format!(r#"src="{}""#, svg_name), &format!(r#"src="{}""#, png_name));
-            } else {
-                if let Ok(re_img) = regex::Regex::new(&format!(
-                    r#"(?i)<img\b[^>]*\bsrc="{}"[^>]*/?>[ \t]*"#,
-                    regex::escape(&svg_name)
-                )) {
-                    html_content = re_img.replace_all(&html_content, "").to_string();
-                }
-            }
-        }
-
-        let _ = tokio::fs::write(&tmp_html, html_content).await;
+    if !tmp_md.exists() {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err("pymupdf4llm succeeded but produced no output file".to_string());
     }
-
-    // When LLM is enabled: convert HTML → MD, fix with LLM, then package MD → EPUB.
-    // When disabled: convert HTML → EPUB directly (faster, no extra pandoc step).
-    let (pandoc_input_fmt, pandoc_input_file) = if llm.enabled {
-        let tmp_md = tmp_dir.join("doc.md");
-        let md_result = tokio::process::Command::new(&pandoc)
-            .current_dir(&tmp_dir)
-            .args(["-f", "html", "-t", "markdown", "-o", "doc.md", "doc.html"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
-            .output()
-            .await
-            .map_err(|e| format!("Failed to convert HTML to MD for LLM: {e}"))?;
-
-        if md_result.status.success() {
-            if let Ok(content) = tokio::fs::read_to_string(&tmp_md).await {
-                let fixed = llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
-                let _ = tokio::fs::write(&tmp_md, fixed).await;
-            }
-            ("markdown", "doc.md")
-        } else {
-            // LLM intermediate step failed — fall back to direct HTML → EPUB
-            ("html", "doc.html")
-        }
-    } else {
-        ("html", "doc.html")
-    };
 
     app.emit(
         "convert:progress",
-        ProgressPayload {
-            path: path.to_string(),
-            percent: 50.0,
-        },
+        ProgressPayload { path: path.to_string(), percent: 40.0 },
     )
     .ok();
 
-    let file_title = Path::new(path)
+    // Optional LLM post-processing
+    if llm.enabled {
+        if let Ok(content) = tokio::fs::read_to_string(&tmp_md).await {
+            let processed =
+                llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
+            let _ = tokio::fs::write(&tmp_md, processed).await;
+        }
+    }
+
+    app.emit(
+        "convert:progress",
+        ProgressPayload { path: path.to_string(), percent: 70.0 },
+    )
+    .ok();
+
+    // Step 2: Markdown → EPUB via pandoc
+    let file_title = std::path::Path::new(path)
         .file_stem()
         .unwrap_or_default()
         .to_string_lossy()
         .to_string();
 
-    let mut cmd = tokio::process::Command::new(&pandoc);
-    cmd.current_dir(&tmp_dir);
-    cmd.args([
-        "-f",
-        pandoc_input_fmt,
-        "-t",
-        "epub",
-        "--metadata",
-        &format!("title={}", file_title),
-        "-o",
-        out.to_str().unwrap_or(""),
-        pandoc_input_file,
-    ]);
-    cmd.stdout(std::process::Stdio::null());
-    cmd.stderr(std::process::Stdio::piped());
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to spawn pandoc: {e}"))?;
-
-    let stderr_out = if let Some(stderr) = child.stderr.take() {
-        use tokio::io::{AsyncReadExt, BufReader};
-        let mut buf = String::new();
-        BufReader::new(stderr).read_to_string(&mut buf).await.ok();
-        buf
-    } else {
-        String::new()
-    };
-
-    let status = child
-        .wait()
+    let pandoc_result = tokio::process::Command::new(&pandoc)
+        .current_dir(&tmp_dir)
+        .args([
+            "-f",
+            "markdown",
+            "-t",
+            "epub",
+            "--metadata",
+            &format!("title={}", file_title),
+            "-o",
+            out.to_str().unwrap_or(""),
+            tmp_md_str,
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
         .await
-        .map_err(|e| format!("pandoc wait error: {e}"))?;
+        .map_err(|e| {
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+            format!("Failed to spawn pandoc: {e}")
+        })?;
 
     let _ = std::fs::remove_dir_all(&tmp_dir);
 
-    if !status.success() {
-        let msg = if stderr_out.trim().is_empty() {
-            format!("pandoc exited with code {}", status.code().unwrap_or(-1))
+    if !pandoc_result.status.success() {
+        let stderr = String::from_utf8_lossy(&pandoc_result.stderr);
+        return Err(if stderr.trim().is_empty() {
+            format!(
+                "pandoc exited with code {}",
+                pandoc_result.status.code().unwrap_or(-1)
+            )
         } else {
-            stderr_out.trim().to_string()
-        };
-        return Err(msg);
+            stderr.trim().to_string()
+        });
     }
 
     app.emit(
         "convert:progress",
-        ProgressPayload {
-            path: path.to_string(),
-            percent: 100.0,
-        },
+        ProgressPayload { path: path.to_string(), percent: 100.0 },
     )
     .ok();
-
     Ok(out.to_string_lossy().to_string())
 }
 
@@ -844,9 +754,9 @@ pub async fn convert_pdf_to_html(
     path: &str,
     output_dir: Option<&str>,
 ) -> Result<String, String> {
-    let pdftohtml = get_pdftohtml()?;
+    let python = get_pymupdf4llm_python()?;
+    let pandoc = get_pandoc()?;
     let out = output_path(path, "html", output_dir)?;
-    let out_stem = out.with_extension("");
 
     app.emit(
         "convert:progress",
@@ -854,18 +764,85 @@ pub async fn convert_pdf_to_html(
     )
     .ok();
 
-    let result = tokio::process::Command::new(&pdftohtml)
-        .args(["-noframes", "-nodrm", "-fmt", "png", path, out_stem.to_str().unwrap_or("")])
+    let tmp_dir = std::env::temp_dir().join(format!(
+        "swift_shifter_html_{}",
+        unique_tmp_suffix()
+    ));
+    std::fs::create_dir_all(&tmp_dir)
+        .map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    let tmp_md = tmp_dir.join("output.md");
+
+    let tmp_md_str = tmp_md
+        .to_str()
+        .ok_or_else(|| "Temp path contains non-UTF-8 characters".to_string())?;
+
+    // Step 1: PDF → Markdown via pymupdf4llm
+    let result = tokio::process::Command::new(&python)
+        .args([
+            "-c",
+            "import pymupdf4llm, sys; open(sys.argv[2], 'w', encoding='utf-8').write(pymupdf4llm.to_markdown(sys.argv[1]))",
+            path,
+            tmp_md_str,
+        ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .output()
         .await
-        .map_err(|e| format!("Failed to spawn pdftohtml: {e}"))?;
+        .map_err(|e| format!("Failed to spawn pymupdf4llm: {e}"))?;
 
     if !result.status.success() {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
         let stderr = String::from_utf8_lossy(&result.stderr);
         return Err(if stderr.trim().is_empty() {
-            format!("pdftohtml exited with code {}", result.status.code().unwrap_or(-1))
+            format!(
+                "pymupdf4llm exited with code {}",
+                result.status.code().unwrap_or(-1)
+            )
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+
+    if !tmp_md.exists() {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err("pymupdf4llm succeeded but produced no output file".to_string());
+    }
+
+    app.emit(
+        "convert:progress",
+        ProgressPayload { path: path.to_string(), percent: 50.0 },
+    )
+    .ok();
+
+    // Step 2: Markdown → HTML via pandoc
+    let pandoc_result = tokio::process::Command::new(&pandoc)
+        .args([
+            "-f",
+            "markdown",
+            "-t",
+            "html",
+            "-o",
+            out.to_str().unwrap_or(""),
+            tmp_md_str,
+        ])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| {
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+            format!("Failed to spawn pandoc: {e}")
+        })?;
+
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+
+    if !pandoc_result.status.success() {
+        let stderr = String::from_utf8_lossy(&pandoc_result.stderr);
+        return Err(if stderr.trim().is_empty() {
+            format!(
+                "pandoc exited with code {}",
+                pandoc_result.status.code().unwrap_or(-1)
+            )
         } else {
             stderr.trim().to_string()
         });
@@ -879,14 +856,13 @@ pub async fn convert_pdf_to_html(
     Ok(out.to_string_lossy().to_string())
 }
 
-async fn convert_pdf_to_md_via_pdftohtml(
+async fn convert_pdf_to_md_via_pymupdf4llm(
     app: &tauri::AppHandle,
     path: &str,
     output_dir: Option<&str>,
     llm: LlmCfg,
 ) -> Result<String, String> {
-    let pdftohtml = get_pdftohtml()?;
-    let pandoc = get_pandoc()?;
+    let python = get_pymupdf4llm_python()?;
     let out = output_path(path, "md", output_dir)?;
 
     app.emit(
@@ -895,31 +871,47 @@ async fn convert_pdf_to_md_via_pdftohtml(
     )
     .ok();
 
-    let tmp_dir = std::env::temp_dir().join(format!("swift_shifter_pdf_md_{}", unique_tmp_suffix()));
+    let tmp_dir = std::env::temp_dir().join(format!(
+        "swift_shifter_pdf_md_{}",
+        unique_tmp_suffix()
+    ));
     std::fs::create_dir_all(&tmp_dir)
         .map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    let tmp_md = tmp_dir.join("output.md");
 
-    let tmp_pdf = tmp_dir.join("input.pdf");
-    std::fs::copy(path, &tmp_pdf)
-        .map_err(|e| format!("Failed to copy PDF: {e}"))?;
+    let tmp_md_str = tmp_md
+        .to_str()
+        .ok_or_else(|| "Temp path contains non-UTF-8 characters".to_string())?;
 
-    let html_result = tokio::process::Command::new(&pdftohtml)
-        .current_dir(&tmp_dir)
-        .args(["-noframes", "-nodrm", "-fmt", "png", "input.pdf", "doc"])
-        .stdout(std::process::Stdio::piped())
+    let result = tokio::process::Command::new(&python)
+        .args([
+            "-c",
+            "import pymupdf4llm, sys; open(sys.argv[2], 'w', encoding='utf-8').write(pymupdf4llm.to_markdown(sys.argv[1]))",
+            path,
+            tmp_md_str,
+        ])
+        .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .output()
         .await
-        .map_err(|e| format!("Failed to spawn pdftohtml: {e}"))?;
+        .map_err(|e| format!("Failed to spawn pymupdf4llm: {e}"))?;
 
-    if !html_result.status.success() {
+    if !result.status.success() {
         let _ = std::fs::remove_dir_all(&tmp_dir);
-        let stderr = String::from_utf8_lossy(&html_result.stderr);
+        let stderr = String::from_utf8_lossy(&result.stderr);
         return Err(if stderr.trim().is_empty() {
-            format!("pdftohtml exited with code {}", html_result.status.code().unwrap_or(-1))
+            format!(
+                "pymupdf4llm exited with code {}",
+                result.status.code().unwrap_or(-1)
+            )
         } else {
             stderr.trim().to_string()
         });
+    }
+
+    if !tmp_md.exists() {
+        let _ = std::fs::remove_dir_all(&tmp_dir);
+        return Err("pymupdf4llm succeeded but produced no output file".to_string());
     }
 
     app.emit(
@@ -928,35 +920,17 @@ async fn convert_pdf_to_md_via_pdftohtml(
     )
     .ok();
 
-    let tmp_md = tmp_dir.join("doc.md");
-    let md_result = tokio::process::Command::new(&pandoc)
-        .current_dir(&tmp_dir)
-        .args(["-f", "html", "-t", "markdown", "-o", "doc.md", "doc.html"])
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| format!("Failed to spawn pandoc: {e}"))?;
-
-    if !md_result.status.success() {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
-        let stderr = String::from_utf8_lossy(&md_result.stderr);
-        return Err(if stderr.trim().is_empty() {
-            format!("pandoc exited with code {}", md_result.status.code().unwrap_or(-1))
-        } else {
-            stderr.trim().to_string()
-        });
-    }
-
     if llm.enabled {
         if let Ok(content) = tokio::fs::read_to_string(&tmp_md).await {
-            let processed = llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
+            let processed =
+                llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
             let _ = tokio::fs::write(&tmp_md, processed).await;
         }
     }
 
-    std::fs::copy(&tmp_md, &out).map_err(|e| format!("Failed to copy output: {e}"))?;
+    let copy_result = std::fs::copy(&tmp_md, &out);
     let _ = std::fs::remove_dir_all(&tmp_dir);
+    copy_result.map_err(|e| format!("Failed to copy output: {e}"))?;
 
     app.emit(
         "convert:progress",
@@ -976,7 +950,7 @@ pub async fn convert_pdf_to_md(
     if use_marker && marker_available() {
         return convert_pdf_with_marker_to_md(app, path, output_dir, llm).await;
     }
-    convert_pdf_to_md_via_pdftohtml(app, path, output_dir, llm).await
+    convert_pdf_to_md_via_pymupdf4llm(app, path, output_dir, llm).await
 }
 
 pub(crate) async fn convert_pdf_with_marker_to_md(
@@ -1029,7 +1003,7 @@ pub(crate) async fn convert_pdf_with_marker_to_md(
 
     if !status.success() || find_md_file(&output_dir_tmp).is_none() {
         let _ = std::fs::remove_dir_all(&tmp_base);
-        return convert_pdf_to_md_via_pdftohtml(app, path, output_dir, llm).await;
+        return convert_pdf_to_md_via_pymupdf4llm(app, path, output_dir, llm).await;
     }
 
     app.emit(

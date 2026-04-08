@@ -66,14 +66,14 @@ const depsInstalling = new Set<string>();
 const DEP_DISPLAY: Record<string, string> = {
   ffmpeg: "ffmpeg",
   pandoc: "pandoc",
-  pdftohtml: "poppler",
+  pymupdf: "PyMuPDF",
   "ebook-convert": "Calibre",
 };
 
 /** Map error substrings → dep key, for friendly "installing" messages. */
 const DEP_ERROR_FRAGMENTS: [string, string][] = [
   ["pandoc not found", "pandoc"],
-  ["pdftohtml not found", "pdftohtml"],
+  ["pymupdf4llm not found", "pymupdf"],
   ["ebook-convert not found", "ebook-convert"],
   ["ffmpeg not found", "ffmpeg"],
 ];
@@ -544,11 +544,11 @@ listen("ffmpeg:failed", (ev) => {
   bottomStatus.textContent = "ffmpeg unavailable";
 }).catch(console.error);
 
-// ─── Background dep install status (pandoc, poppler, Calibre) ─────────────
+// ─── Background dep install status (pandoc, PyMuPDF, Calibre) ─────────────
 
 const BACKGROUND_DEPS: [string, string][] = [
   ["pandoc", "pandoc"],
-  ["pdftohtml", "poppler"],
+  ["pymupdf", "PyMuPDF"],
   ["ebook-convert", "Calibre"],
 ];
 

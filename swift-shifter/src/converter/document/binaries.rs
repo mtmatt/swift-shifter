@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use tauri::Emitter;
-use crate::converter::document::{PANDOC_PATH, PDFTOHTML_PATH, EBOOK_CONVERT_PATH};
+use crate::converter::document::{PANDOC_PATH, EBOOK_CONVERT_PATH, PYMUPDF4LLM_PYTHON};
 
 #[cfg(target_os = "macos")]
 pub const BREW_PATHS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
@@ -338,145 +338,137 @@ pub fn ebook_convert_available() -> bool {
     find_ebook_convert_binary().is_some()
 }
 
-pub fn find_pdftohtml_binary() -> Option<PathBuf> {
-    if let Ok(p) = which::which("pdftohtml") {
-        return Some(p);
-    }
-    #[cfg(target_os = "macos")]
-    for dir in BREW_PATHS {
-        let candidate = PathBuf::from(dir).join("pdftohtml");
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-    #[cfg(target_os = "windows")]
-    {
-        // Chocolatey install path
-        let candidate = PathBuf::from(r"C:\ProgramData\chocolatey\bin\pdftohtml.exe");
-        if candidate.exists() {
-            return Some(candidate);
-        }
-        // Scoop or manual poppler install
-        let candidate = PathBuf::from(r"C:\tools\poppler\Library\bin\pdftohtml.exe");
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-    #[cfg(target_os = "linux")]
-    for path in &["/usr/bin/pdftohtml", "/usr/local/bin/pdftohtml"] {
-        let candidate = PathBuf::from(path);
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-    None
+fn python_has_pymupdf4llm(python: &PathBuf) -> bool {
+    std::process::Command::new(python)
+        .args(["-c", "import pymupdf4llm"])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
 }
 
-pub async fn ensure_pdftohtml(app: &tauri::AppHandle) -> Result<(), String> {
-    if PDFTOHTML_PATH.get().is_some() {
-        return Ok(());
-    }
+pub fn find_pymupdf4llm_python() -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
 
-    if let Some(path) = find_pdftohtml_binary() {
-        PDFTOHTML_PATH.set(Some(path)).ok();
-        return Ok(());
+    for name in &["python3", "python"] {
+        if let Ok(p) = which::which(name) {
+            candidates.push(p);
+        }
     }
-
-    app.emit("pdftohtml:missing", ()).ok();
 
     #[cfg(target_os = "macos")]
-    {
-        if let Some(brew) = find_brew_binary() {
-            app.emit("pdftohtml:installing", ()).ok();
-            let ok = brew_install(&brew, &["install", "poppler"]).await;
+    for dir in BREW_PATHS {
+        for name in &["python3", "python"] {
+            let p = PathBuf::from(dir).join(name);
+            if p.exists() {
+                candidates.push(p);
+            }
+        }
+    }
 
+    #[cfg(target_os = "linux")]
+    for path in &["/usr/bin/python3", "/usr/local/bin/python3", "/usr/bin/python"] {
+        candidates.push(PathBuf::from(path));
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        if let Ok(p) = which::which("py") {
+            candidates.push(p);
+        }
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            for ver in &["Python313", "Python312", "Python311", "Python310"] {
+                let candidate = PathBuf::from(&local)
+                    .join("Programs")
+                    .join("Python")
+                    .join(ver)
+                    .join("python.exe");
+                if candidate.exists() {
+                    candidates.push(candidate);
+                }
+            }
+        }
+    }
+
+    // Deduplicate while preserving priority order
+    let mut seen = std::collections::HashSet::new();
+    candidates.retain(|p| seen.insert(p.clone()));
+
+    candidates.into_iter().find(|p| python_has_pymupdf4llm(p))
+}
+
+pub async fn ensure_pymupdf4llm(app: &tauri::AppHandle) -> Result<(), String> {
+    if PYMUPDF4LLM_PYTHON.get().is_some() {
+        return Ok(());
+    }
+
+    if let Some(path) = find_pymupdf4llm_python() {
+        PYMUPDF4LLM_PYTHON.set(Some(path)).ok();
+        return Ok(());
+    }
+
+    app.emit("pymupdf:missing", ()).ok();
+    app.emit("pymupdf:installing", ()).ok();
+
+    // Try standalone pip tools first
+    for pip_name in &["pip3", "pip"] {
+        if let Ok(pip_path) = which::which(pip_name) {
+            let ok = tokio::process::Command::new(&pip_path)
+                .args(["install", "pymupdf4llm"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .await
+                .map(|s| s.success())
+                .unwrap_or(false);
             if ok {
-                if let Some(path) = find_pdftohtml_binary() {
-                    PDFTOHTML_PATH.set(Some(path)).ok();
-                    app.emit("pdftohtml:installed", ()).ok();
+                if let Some(path) = find_pymupdf4llm_python() {
+                    PYMUPDF4LLM_PYTHON.set(Some(path)).ok();
+                    app.emit("pymupdf:installed", ()).ok();
                     return Ok(());
                 }
             }
         }
     }
 
+    // Fall back to python -m pip
+    #[cfg(not(target_os = "windows"))]
+    let python_names = vec!["python3", "python"];
     #[cfg(target_os = "windows")]
-    {
-        app.emit("pdftohtml:installing", ()).ok();
-        let ok = if which::which("choco").is_ok() {
-            tokio::process::Command::new("choco")
-                .args(["install", "poppler", "-y"])
-                .status()
-                .await
-                .map(|s| s.success())
-                .unwrap_or(false)
-        } else if which::which("winget").is_ok() {
-            // Use the community package (winget has no official poppler entry)
-            tokio::process::Command::new("winget")
-                .args(["install", "--id", "oschwartz10612.poppler", "-e", "--silent"])
-                .status()
-                .await
-                .map(|s| s.success())
-                .unwrap_or(false)
-        } else {
-            false
-        };
+    let python_names = vec!["python3", "python", "py"];
 
-        if ok {
-            if let Some(path) = find_pdftohtml_binary() {
-                PDFTOHTML_PATH.set(Some(path)).ok();
-                app.emit("pdftohtml:installed", ()).ok();
-                return Ok(());
+    for python_name in &python_names {
+        if let Ok(python_path) = which::which(python_name) {
+            let ok = tokio::process::Command::new(&python_path)
+                .args(["-m", "pip", "install", "pymupdf4llm"])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .await
+                .map(|s| s.success())
+                .unwrap_or(false);
+            if ok {
+                if let Some(path) = find_pymupdf4llm_python() {
+                    PYMUPDF4LLM_PYTHON.set(Some(path)).ok();
+                    app.emit("pymupdf:installed", ()).ok();
+                    return Ok(());
+                }
             }
         }
     }
 
-    #[cfg(target_os = "linux")]
-    {
-        app.emit("pdftohtml:installing", ()).ok();
-        let installed = if which::which("dnf").is_ok() {
-            tokio::process::Command::new("pkexec")
-                .args(["dnf", "install", "-y", "poppler-utils"])
-                .status()
-                .await
-                .map(|s| s.success())
-                .unwrap_or(false)
-        } else if which::which("pacman").is_ok() {
-            tokio::process::Command::new("pkexec")
-                .args(["pacman", "-S", "--noconfirm", "poppler"])
-                .status()
-                .await
-                .map(|s| s.success())
-                .unwrap_or(false)
-        } else if which::which("apt-get").is_ok() {
-            tokio::process::Command::new("pkexec")
-                .args(["apt-get", "install", "-y", "poppler-utils"])
-                .status()
-                .await
-                .map(|s| s.success())
-                .unwrap_or(false)
-        } else {
-            false
-        };
-
-        if installed {
-            if let Some(path) = find_pdftohtml_binary() {
-                PDFTOHTML_PATH.set(Some(path)).ok();
-                app.emit("pdftohtml:installed", ()).ok();
-                return Ok(());
-            }
-        }
-    }
-
-    PDFTOHTML_PATH.set(None).ok();
+    let err = "pymupdf4llm not found — install with: pip install pymupdf4llm".to_string();
+    PYMUPDF4LLM_PYTHON.set(None).ok();
+    app.emit("pymupdf:failed", err).ok();
     Ok(())
 }
 
-pub fn get_pdftohtml() -> Result<PathBuf, String> {
-    match PDFTOHTML_PATH.get() {
+pub fn get_pymupdf4llm_python() -> Result<PathBuf, String> {
+    match PYMUPDF4LLM_PYTHON.get() {
         Some(Some(p)) => Ok(p.clone()),
-        _ => find_pdftohtml_binary().ok_or_else(|| {
-            "pdftohtml not found — install poppler to enable PDF → EPUB conversion".to_string()
+        _ => find_pymupdf4llm_python().ok_or_else(|| {
+            "pymupdf4llm not found — install with: pip install pymupdf4llm".to_string()
         }),
     }
 }
