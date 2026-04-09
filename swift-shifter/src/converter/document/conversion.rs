@@ -78,7 +78,12 @@ pub async fn convert_pdf_with_marker(
     let marker_name = marker.file_name().unwrap_or_default().to_string_lossy().to_string();
     let mut cmd = tokio::process::Command::new(&marker);
     if marker_name.contains("marker_single") {
-        cmd.args([tmp_pdf.to_str().unwrap_or(""), output_dir.to_str().unwrap_or("")]);
+        // v1.x+ CLI: marker_single FPATH --output_dir DIR
+        cmd.args([
+            tmp_pdf.to_str().unwrap_or(""),
+            "--output_dir",
+            output_dir.to_str().unwrap_or(""),
+        ]);
     } else {
         cmd.args([
             input_dir.to_str().unwrap_or(""),
