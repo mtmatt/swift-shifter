@@ -208,30 +208,28 @@ pub async fn convert_pdf_with_marker(
         .ok_or_else(|| "marker produced no Markdown file".to_string())?;
 
     if let Ok(mut content) = tokio::fs::read_to_string(&md_file).await {
-        let mut changed = false;
+        // Sanitize <br> — EPUB content is XHTML, bare <br> is invalid XML
+        content = sanitize_br_tags(&content);
+
         let tags = ["sup", "sub"];
         for tag in tags {
             let open = format!("<{}>", tag);
             let close = format!("</{}>", tag);
             let open_count = content.matches(&open).count();
             let close_count = content.matches(&close).count();
-            
+
             if open_count > close_count {
                 for _ in 0..(open_count - close_count) {
                     content.push_str(&close);
                 }
-                changed = true;
             }
         }
 
         if llm.enabled {
             content = llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
-            changed = true;
         }
 
-        if changed {
-            let _ = tokio::fs::write(&md_file, content).await;
-        }
+        let _ = tokio::fs::write(&md_file, content).await;
     }
 
     app.emit(
