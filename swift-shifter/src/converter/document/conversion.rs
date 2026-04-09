@@ -19,6 +19,18 @@ const EPUB_CSS: &str = concat!(
     "}\n",
 );
 
+/// Replace `<br>` variants with a space so pandoc produces valid XHTML (needed for EPUB)
+/// and browsers don't encounter unclosed void elements in HTML output.
+fn sanitize_br_tags(content: &str) -> String {
+    content
+        .replace("<br/>", " ")
+        .replace("<br />", " ")
+        .replace("<BR/>", " ")
+        .replace("<BR />", " ")
+        .replace("<br>", " ")
+        .replace("<BR>", " ")
+}
+
 fn unique_tmp_suffix() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let ms = SystemTime::now()
@@ -543,6 +555,11 @@ pub async fn convert_pdf_to_epub(
     )
     .ok();
 
+    // Sanitize <br> tags — EPUB content is XHTML, bare <br> is invalid XML
+    if let Ok(content) = tokio::fs::read_to_string(&tmp_md).await {
+        let _ = tokio::fs::write(&tmp_md, sanitize_br_tags(&content)).await;
+    }
+
     // Optional LLM post-processing
     if llm.enabled {
         if let Ok(content) = tokio::fs::read_to_string(&tmp_md).await {
@@ -808,6 +825,11 @@ pub async fn convert_pdf_to_html(
         return Err("pymupdf4llm succeeded but produced no output file".to_string());
     }
 
+    // Sanitize <br> tags before pandoc — HTML output uses --standalone but EPUB is strict XHTML
+    if let Ok(content) = tokio::fs::read_to_string(&tmp_md).await {
+        let _ = tokio::fs::write(&tmp_md, sanitize_br_tags(&content)).await;
+    }
+
     app.emit(
         "convert:progress",
         ProgressPayload { path: path.to_string(), percent: 50.0 },
@@ -815,12 +837,14 @@ pub async fn convert_pdf_to_html(
     .ok();
 
     // Step 2: Markdown → HTML via pandoc
+    // --standalone adds <!DOCTYPE html> so browsers use HTML5 parsing (fixes <br> in tables)
     let pandoc_result = tokio::process::Command::new(&pandoc)
         .args([
             "-f",
             "markdown",
             "-t",
             "html",
+            "--standalone",
             "-o",
             out.to_str().unwrap_or(""),
             tmp_md_str,
