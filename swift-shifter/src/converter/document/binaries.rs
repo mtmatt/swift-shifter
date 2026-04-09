@@ -351,6 +351,31 @@ fn python_has_pymupdf4llm(python: &PathBuf) -> bool {
 pub fn find_pymupdf4llm_python() -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
 
+    // Check pipx venv first — this is the preferred install location
+    // Default PIPX_HOME is ~/.local/pipx (not ~/.local/share/pipx)
+    let pipx_home = std::env::var_os("PIPX_HOME")
+        .map(PathBuf::from)
+        .or_else(|| {
+            dirs::home_dir().map(|h| h.join(".local").join("pipx"))
+        });
+    if let Some(pipx_home) = pipx_home {
+        #[cfg(not(target_os = "windows"))]
+        let venv_python = pipx_home
+            .join("venvs")
+            .join("pymupdf4llm")
+            .join("bin")
+            .join("python");
+        #[cfg(target_os = "windows")]
+        let venv_python = pipx_home
+            .join("venvs")
+            .join("pymupdf4llm")
+            .join("Scripts")
+            .join("python.exe");
+        if venv_python.exists() {
+            candidates.push(venv_python);
+        }
+    }
+
     for name in &["python3", "python"] {
         if let Ok(p) = which::which(name) {
             candidates.push(p);
@@ -411,54 +436,27 @@ pub async fn ensure_pymupdf4llm(app: &tauri::AppHandle) -> Result<(), String> {
     app.emit("pymupdf:missing", ()).ok();
     app.emit("pymupdf:installing", ()).ok();
 
-    // Try standalone pip tools first
-    for pip_name in &["pip3", "pip"] {
-        if let Ok(pip_path) = which::which(pip_name) {
-            let ok = tokio::process::Command::new(&pip_path)
-                .args(["install", "pymupdf4llm"])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .await
-                .map(|s| s.success())
-                .unwrap_or(false);
-            if ok {
-                if let Some(path) = find_pymupdf4llm_python() {
-                    PYMUPDF4LLM_PYTHON.set(Some(path)).ok();
-                    app.emit("pymupdf:installed", ()).ok();
-                    return Ok(());
-                }
+    // Install via pipx (isolated venv, works with externally-managed Python)
+    // --include-deps is required because pymupdf4llm exposes no CLI entry points itself
+    if let Ok(pipx_path) = which::which("pipx") {
+        let ok = tokio::process::Command::new(&pipx_path)
+            .args(["install", "pymupdf4llm", "--include-deps"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .await
+            .map(|s| s.success())
+            .unwrap_or(false);
+        if ok {
+            if let Some(path) = find_pymupdf4llm_python() {
+                PYMUPDF4LLM_PYTHON.set(Some(path)).ok();
+                app.emit("pymupdf:installed", ()).ok();
+                return Ok(());
             }
         }
     }
 
-    // Fall back to python -m pip
-    #[cfg(not(target_os = "windows"))]
-    let python_names = vec!["python3", "python"];
-    #[cfg(target_os = "windows")]
-    let python_names = vec!["python3", "python", "py"];
-
-    for python_name in &python_names {
-        if let Ok(python_path) = which::which(python_name) {
-            let ok = tokio::process::Command::new(&python_path)
-                .args(["-m", "pip", "install", "pymupdf4llm"])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .await
-                .map(|s| s.success())
-                .unwrap_or(false);
-            if ok {
-                if let Some(path) = find_pymupdf4llm_python() {
-                    PYMUPDF4LLM_PYTHON.set(Some(path)).ok();
-                    app.emit("pymupdf:installed", ()).ok();
-                    return Ok(());
-                }
-            }
-        }
-    }
-
-    let err = "pymupdf4llm not found — install with: pip install pymupdf4llm".to_string();
+    let err = "pymupdf4llm not found — install with: pipx install pymupdf4llm".to_string();
     PYMUPDF4LLM_PYTHON.set(None).ok();
     app.emit("pymupdf:failed", err).ok();
     Ok(())

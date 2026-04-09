@@ -109,8 +109,8 @@ cargo check --manifest-path swift-shifter/Cargo.toml
 
 ### pymupdf4llm is a runtime dep, not compile-time
 - Required for PDF → EPUB, PDF → HTML, and PDF → MD conversion paths.
-- Python library; auto-installed via pip (`pip install pymupdf4llm`) on first use.
-- Detection: probes `python3`/`python` candidates for importability (`python -c "import pymupdf4llm"`).
+- Python library; auto-installed via pipx (`pipx install pymupdf4llm`) on first use.
+- Detection: probes pipx venv python first, then `python3`/`python` candidates, for importability (`python -c "import pymupdf4llm"`).
 - Emits events during detection/install: `pymupdf:missing`, `pymupdf:installing`, `pymupdf:installed`, `pymupdf:failed`.
 - If install fails, PDF→EPUB/HTML/MD formats are silently disabled.
 
