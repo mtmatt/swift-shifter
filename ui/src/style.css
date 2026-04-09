@@ -405,6 +405,9 @@ body {
 .file-status.error {
     color: var(--danger);
 }
+.file-status.warning {
+    color: var(--warn);
+}
 .file-status.success {
     color: var(--success);
     cursor: pointer;
