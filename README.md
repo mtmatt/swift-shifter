@@ -2,7 +2,9 @@
 
 A featherweight, always-on file converter that lives in your menu bar. Drop any file onto the floating window, or select files and hit a hotkey, and get instant format conversion without opening a browser or bulky software.
 
-![](docs/assets/example.png)
+<center>
+<img src="docs/assets/example.png" alt="Description of the image">
+</center>
 
 ## Features
 
