@@ -16,13 +16,14 @@ A featherweight, always-on file converter that lives in your menu bar. Drop any 
   - Video: MP4, MOV, MKV, WebM, AVI, GIF (video-to-GIF and GIF-to-video)
   - Audio: MP3, AAC, FLAC, OGG, WAV, OPUS
   - Data: JSON, YAML, TOML, CSV
-  - Documents: Markdown, plain text, HTML, LaTeX, Typst, PDF, EPUB, MOBI (via pandoc + pdftohtml/marker-pdf/Calibre)
+  - Documents: Markdown, plain text, HTML, LaTeX, Typst, PDF, EPUB, MOBI (via pandoc + pymupdf4llm/marker-pdf/Calibre)
+- **Local LLM post-processing** -- optional Ollama integration cleans up extracted PDF text (configurable model and endpoint)
 - **Output next to source** -- converted file lands in the same folder as the input (configurable)
 - **Batch conversion** -- drop multiple files at once; common formats shown in a shared toolbar
 - **Progress indicator** -- lightweight inline progress bar per file, no modal dialogs
 - **Click to reveal** -- success label opens the output folder in Finder
 - **Auto-update** -- checks for new releases on startup; installs in the background
-- **Settings panel** -- configure output folder, JPEG/AVIF quality, concurrency, and PDF conversion engine
+- **Settings panel** -- configure output folder, JPEG/AVIF quality, concurrency, PDF conversion engine, and local LLM
 
 
 ## Tech Stack
@@ -34,8 +35,9 @@ A featherweight, always-on file converter that lives in your menu bar. Drop any 
 | Image processing    | [`image`](https://crates.io/crates/image) crate + [`ravif`](https://crates.io/crates/ravif) for AVIF + macOS `sips` for HEIC |
 | Video / audio       | System `ffmpeg` (auto-installed via Homebrew if missing)                     |
 | Document conversion | System `pandoc` (auto-installed via Homebrew / winget / apt if missing)      |
-| PDF ↔ EPUB / HTML / MD | System `pdftohtml` / poppler (auto-installed); optional ML engine via `marker-pdf` |
+| PDF ↔ EPUB / HTML / MD | `pymupdf4llm` (auto-installed via pipx); optional ML engine via `marker-pdf`     |
 | MOBI conversion     | System `ebook-convert` / Calibre (auto-installed via Homebrew cask / winget / apt) |
+| Local LLM           | [Ollama](https://ollama.com) (optional); cleans up PDF extraction output            |
 | Data serialization  | `serde_json`, `serde_yaml`, `toml`, `csv` crates                             |
 | Frontend UI         | TypeScript + [Vite](https://vitejs.dev) (plain DOM, no framework)            |
 | Global hotkeys      | `tauri-plugin-global-shortcut`                                               |
@@ -58,7 +60,13 @@ swift-shifter/
 │   │       ├── image.rs     # image crate + ravif (AVIF) + sips (HEIC)
 │   │       ├── media.rs     # ffmpeg subprocess wrapper
 │   │       ├── data.rs      # JSON/YAML/TOML/CSV converters
-│   │       └── document.rs  # pandoc + pdftohtml + marker-pdf (md/txt/pdf/epub/tex/typst)
+│   │       └── document/    # pandoc + pymupdf4llm + marker-pdf + Calibre (md/txt/html/pdf/epub/mobi/tex/typst)
+│   │           ├── mod.rs
+│   │           ├── binaries.rs  # dependency detection and auto-install
+│   │           ├── conversion.rs # conversion logic per format
+│   │           ├── llm.rs       # Ollama LLM post-processing
+│   │           ├── types.rs
+│   │           └── utils.rs
 │   ├── capabilities/
 │   │   └── default.json     # Tauri v2 permission grants
 │   ├── Cargo.toml
@@ -94,8 +102,9 @@ swift-shifter/
 | Node.js | ≥ 24            | for Tauri CLI and Vite                                            |
 | ffmpeg  | ≥ 6             | for video/audio; auto-installed via `brew` if missing             |
 | pandoc  | any             | for document conversion; auto-installed via `brew` / winget / apt    |
-| poppler | any             | for PDF ↔ EPUB/HTML/MD; auto-installed via `brew` / winget / apt    |
+| pymupdf4llm | any         | for PDF extraction; auto-installed via `pipx` if missing             |
 | Calibre | any             | for MOBI conversion; auto-installed via `brew` / winget / apt        |
+| Ollama  | any             | optional; for LLM post-processing of PDF text (user-installed)       |
 
 
 ## Contribute to the Project
@@ -157,6 +166,7 @@ This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Push
 - [x] EPUB <-> PDF
 - [x] MOBI <-> PDF/EPUB/HTML/MD
 - [x] PDF/EPUB/MOBI -> HTML and Markdown
+- [x] Local LLM post-processing for PDF conversions (Ollama)
 
 
 ### Workflow & Automation
@@ -173,7 +183,8 @@ This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Push
 - [ ] AI Background Removal: Remove image backgrounds locally using RMBG/ONNX models
 - [ ] Super Resolution: Local AI upscaling for low-res images
 - [ ] Privacy Shield: Auto-detect and blur faces or sensitive information (PII) before conversion
-- [ ] Offline LLM Support: Local model (Llama/Mistral via llama.cpp) for document translation and summarization
+- [x] Offline LLM Support: Ollama integration for local LLM post-processing of PDF text
+- [ ] Deeper LLM integration: document translation and summarization via local models
 
 
 ### Power User & Developer Tools
