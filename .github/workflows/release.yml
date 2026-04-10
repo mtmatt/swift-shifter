@@ -4,9 +4,16 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v0.2.0) — tag must already exist'
+        required: true
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # For push events this is the tag name; for manual dispatch it comes from the input.
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
   # Lets linuxdeploy (itself an AppImage) extract+run without FUSE in CI.
   # Has no effect on macOS/Windows.
   APPIMAGE_EXTRACT_AND_RUN: 1
@@ -165,8 +172,8 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         with:
-          tagName: ${{ github.ref_name }}
-          releaseName: Swift Shifter ${{ github.ref_name }}
+          tagName: ${{ env.RELEASE_TAG }}
+          releaseName: Swift Shifter ${{ env.RELEASE_TAG }}
           releaseBody: |
             See the assets below to download this release.
           releaseDraft: true
@@ -193,7 +200,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RUST_TARGET: ${{ matrix.rust-target }}
-          TAG: ${{ github.ref_name }}
+          TAG: ${{ env.RELEASE_TAG }}
         run: |
           if [[ "$RUNNER_OS" == "Windows" ]]; then
             ARCHIVE="swift-shifter-${RUST_TARGET}.zip"
