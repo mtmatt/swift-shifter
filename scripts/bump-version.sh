@@ -20,12 +20,13 @@ cd "$REPO_ROOT"
 npm version "$VERSION" --no-git-tag-version --allow-same-version
 
 # --- swift-shifter/Cargo.toml ---
-# Replace only the [package] version line (first occurrence) to avoid
-# accidentally touching dependency version strings.
+# Replace the [package] version line. Dependency versions are all written as
+# `crate = { version = "..." }` (not at the start of a line), so ^version =
+# only matches the package declaration.
 if [[ "$(uname)" == "Darwin" ]]; then
-  sed -i '' "0,/^version = \"[^\"]*\"/s//version = \"$VERSION\"/" swift-shifter/Cargo.toml
+  sed -i '' "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" swift-shifter/Cargo.toml
 else
-  sed -i "0,/^version = \"[^\"]*\"/s//version = \"$VERSION\"/" swift-shifter/Cargo.toml
+  sed -i "s/^version = \"[^\"]*\"/version = \"$VERSION\"/" swift-shifter/Cargo.toml
 fi
 
 # --- swift-shifter/tauri.conf.json ---
