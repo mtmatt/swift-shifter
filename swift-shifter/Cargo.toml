@@ -24,8 +24,17 @@ rgb = "0.8"
 tokio = { version = "1", features = ["full"] }
 which = "7"
 dirs = "5"
-reqwest = { version = "0.12", features = ["stream"] }
+reqwest = { version = "0.12", features = ["stream", "json"] }
 futures-util = "0.3"
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/{ name }-{ target }{ archive-suffix }"
+bin-dir = "{ bin }{ binary-ext }"
+pkg-fmt = "tgz"
+disabled-strategies = ["quick-install", "compile"]
+
+[package.metadata.binstall.overrides.'cfg(target_os = "windows")']
+pkg-fmt = "zip"
 
 [profile.release]
 opt-level = "z"

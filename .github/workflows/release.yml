@@ -21,16 +21,21 @@ jobs:
         include:
           - os: macos-latest
             name: macOS
+            rust-target: aarch64-apple-darwin
+            updaterJsonKeepUniversal: true
           - os: windows-latest
             name: Windows
+            rust-target: x86_64-pc-windows-msvc
           - os: ubuntu-latest
             name: Ubuntu
+            rust-target: x86_64-unknown-linux-gnu
             # AppImage is the portable Linux binary; deb for Debian/Ubuntu users.
             bundles: deb,appimage
           - os: ubuntu-latest
             name: Fedora
             container: fedora:latest
             # RPM only — AppImage requires FUSE which is unavailable inside Docker.
+            # No binstall archive - same target as Ubuntu.
             bundles: rpm
 
     name: Release (${{ matrix.name }})
@@ -168,3 +173,31 @@ jobs:
           prerelease: false
           updaterJsonKeepUniversal: ${{ matrix.updaterJsonKeepUniversal || false }}
           args: ${{ matrix.bundles && format('--bundles {0}', matrix.bundles) || '' }}
+
+      - name: Package raw binary for cargo binstall
+        if: matrix.rust-target != ''
+        shell: bash
+        env:
+          RUST_TARGET: ${{ matrix.rust-target }}
+        run: |
+          cd swift-shifter/target/release
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            7z a "$GITHUB_WORKSPACE/swift-shifter-${RUST_TARGET}.zip" swift-shifter.exe
+          else
+            tar czf "$GITHUB_WORKSPACE/swift-shifter-${RUST_TARGET}.tar.gz" swift-shifter
+          fi
+
+      - name: Upload binary archive to release
+        if: matrix.rust-target != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUST_TARGET: ${{ matrix.rust-target }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if [[ "$RUNNER_OS" == "Windows" ]]; then
+            ARCHIVE="swift-shifter-${RUST_TARGET}.zip"
+          else
+            ARCHIVE="swift-shifter-${RUST_TARGET}.tar.gz"
+          fi
+          gh release upload "$TAG" "$ARCHIVE" --clobber

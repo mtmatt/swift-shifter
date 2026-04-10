@@ -1,7 +1,9 @@
+import { resolve } from "path";
 import { defineConfig } from "vite";
 
 // https://vitejs.dev/config/
 export default defineConfig({
+  root: "ui",
   // Prevent Vite from obscuring Rust errors
   clearScreen: false,
   server: {
@@ -25,8 +27,8 @@ export default defineConfig({
     outDir: "dist",
     rollupOptions: {
       input: {
-        main: "index.html",
-        settings: "settings.html",
+        main: resolve(__dirname, "ui/index.html"),
+        settings: resolve(__dirname, "ui/settings.html"),
       },
     },
   },

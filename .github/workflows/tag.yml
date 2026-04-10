@@ -1,29 +1,30 @@
 name: Tag
 
-# Waits for the Build workflow to pass on main, then creates a v{version} tag
-# if the version in package.json hasn't been tagged yet.
-# Using a PAT (TAG_TOKEN) so the pushed tag triggers the Release workflow —
+# Triggers on any push to the `release` branch and creates a v{version} tag
+# from the version already in the version files (package.json / Cargo.toml /
+# tauri.conf.json). Run `scripts/bump-version.sh <version>` locally, commit,
+# and push to `release` to cut a release.
+#
+# Uses TAG_TOKEN (a PAT) so the pushed tag triggers the Release workflow —
 # GITHUB_TOKEN pushes are intentionally blocked from triggering further workflows.
 on:
-  workflow_run:
-    workflows: [Build]
-    types: [completed]
-    branches: [main]
+  push:
+    branches: [release]
 
 jobs:
   tag:
-    # Only run when the build passed
-    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: write
 
     steps:
+      # GITHUB_TOKEN is always available and sufficient for fetch/checkout.
+      # TAG_TOKEN (a PAT) is used only for the push so that the resulting tag
+      # event triggers the Release workflow — GITHUB_TOKEN pushes are blocked
+      # from triggering further workflows.
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0  # needed to check existing tags
-          ref: ${{ github.event.workflow_run.head_sha }}
-          token: ${{ secrets.TAG_TOKEN }}
 
       - name: Read version from package.json
         id: pkg
@@ -48,6 +49,8 @@ jobs:
       - name: Create tag if it does not exist
         env:
           VERSION: ${{ steps.pkg.outputs.version }}
+          TAG_TOKEN: ${{ secrets.TAG_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
           TAG="v$VERSION"
           if git rev-parse "$TAG" >/dev/null 2>&1; then
@@ -56,6 +59,7 @@ jobs:
             git config user.name  "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git tag "$TAG"
-            git push origin "$TAG"
+            # Push via PAT so the tag event triggers the Release workflow.
+            git push "https://x-access-token:${TAG_TOKEN}@github.com/${REPO}.git" "$TAG"
             echo "Created and pushed $TAG"
           fi

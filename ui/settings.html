@@ -36,6 +36,54 @@
 
             <div class="divider"></div>
 
+            <h2 class="section-label">pdf</h2>
+            <div class="group">
+                <div class="row">
+                    <label for="use-marker">use marker</label>
+                    <input type="checkbox" id="use-marker" />
+                </div>
+                <div class="row" id="marker-hint" hidden>
+                    <span id="marker-status" class="hint"></span>
+                    <button id="btn-install-marker" class="btn-inline" hidden>install</button>
+                </div>
+                <div id="marker-progress-wrap" hidden>
+                    <div id="marker-progress-track">
+                        <div id="marker-progress-fill"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
+            <h2 class="section-label">local llm</h2>
+            <div class="group">
+                <div class="row">
+                    <label for="use-llm">use ollama</label>
+                    <input type="checkbox" id="use-llm" />
+                </div>
+                <div class="row" id="llm-hint" hidden>
+                    <span id="llm-status" class="hint"></span>
+                    <button id="btn-test-ollama" class="btn-inline" hidden>test</button>
+                    <button id="btn-install-ollama" class="btn-inline" hidden>install / pull</button>
+                </div>
+                <div id="llm-progress-wrap" hidden>
+                    <div id="marker-progress-track">
+                        <div id="llm-progress-fill"></div>
+                    </div>
+                </div>
+                <div class="row" id="llm-model-row" hidden>
+                    <label for="llm-model">model</label>
+                    <input type="text" id="llm-model" class="text-input" value="gemma4:e2b" list="llm-models-list" />
+                    <datalist id="llm-models-list"></datalist>
+                </div>
+                <div class="row" id="llm-url-row" hidden>
+                    <label for="llm-url">url</label>
+                    <input type="text" id="llm-url" class="text-input" value="http://localhost:11434" />
+                </div>
+            </div>
+
+            <div class="divider"></div>
+
             <h2 class="section-label">concurrency</h2>
             <div class="group">
                 <div class="row">

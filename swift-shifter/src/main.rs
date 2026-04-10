@@ -63,6 +63,7 @@ fn main() {
             let cfg = config::load();
             app.manage(AppState {
                 config: std::sync::Mutex::new(cfg),
+                ollama_process: std::sync::Mutex::new(None),
             });
 
             tray::setup_tray(app)?;
@@ -94,6 +95,7 @@ fn main() {
                 if event.id() == "preferences" {
                     // Focus existing settings window if already open
                     if let Some(win) = menu_handle.get_webview_window("settings") {
+                        let _ = win.show();
                         let _ = win.set_focus();
                         return;
                     }
@@ -103,8 +105,9 @@ fn main() {
                         tauri::WebviewUrl::App("settings.html".into()),
                     )
                     .title("Preferences")
-                    .inner_size(360.0, 300.0)
+                    .inner_size(480.0, 660.0)
                     .resizable(false)
+                    .always_on_top(true)
                     .center()
                     .build();
                 }
@@ -128,6 +131,45 @@ fn main() {
                 }
             });
 
+            // Check for pymupdf4llm at startup — needed for PDF → EPUB/HTML/MD
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = converter::document::ensure_pymupdf4llm(&handle).await {
+                    eprintln!("pymupdf4llm setup warning: {e}");
+                    handle.emit("pymupdf:failed", e).ok();
+                }
+            });
+
+            // Check for ebook-convert (Calibre) at startup — needed for MOBI conversion
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = converter::document::ensure_ebook_convert(&handle).await {
+                    eprintln!("ebook-convert setup warning: {e}");
+                    handle.emit("ebook-convert:failed", e).ok();
+                }
+            });
+
+            // Check for Ollama reachability at startup
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                use tauri::Manager;
+                let cfg = handle.state::<AppState>().config.lock().unwrap().clone();
+                let url = cfg.local_llm_url.clone();
+                let model = cfg.local_llm_model.clone();
+                
+                if cfg.use_local_llm {
+                    // Try to start Ollama if it's not reachable
+                    if !converter::document::ollama_reachable(&url).await {
+                        if let Ok(Some(child)) = converter::document::install_ollama_and_model(&handle, &url, &model).await {
+                            *handle.state::<AppState>().ollama_process.lock().unwrap() = Some(child);
+                        }
+                    }
+                }
+
+                let ok = converter::document::ollama_reachable(&url).await;
+                handle.emit("ollama:status", ok).ok();
+            });
+
             // Check for app updates in the background
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -148,13 +190,28 @@ fn main() {
             convert_batch,
             get_config,
             set_config,
+            check_marker,
+            install_marker,
+            check_ebook_convert,
+            check_ollama,
+            check_ollama_url,
+            list_ollama_models,
+            install_ollama_and_model,
             open_output_folder,
             check_update,
             install_update,
             quit,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| match event {
+            tauri::RunEvent::ExitRequested { .. } => {
+                if let Some(mut child) = _app_handle.state::<AppState>().ollama_process.lock().unwrap().take() {
+                    let _ = child.start_kill();
+                }
+            }
+            _ => {}
+        });
 }
 
 #[tauri::command]
@@ -270,15 +327,75 @@ fn get_config(state: tauri::State<'_, AppState>) -> config::Config {
 
 #[tauri::command]
 fn set_config(state: tauri::State<'_, AppState>, new_config: config::Config) -> Result<(), String> {
+    // Validate local_llm_url is a well-formed HTTP/HTTPS URL
+    let llm_url = new_config.local_llm_url.trim().to_string();
+    if !llm_url.is_empty()
+        && !llm_url.starts_with("http://")
+        && !llm_url.starts_with("https://")
+    {
+        return Err(format!(
+            "Invalid local LLM URL '{}': must start with http:// or https://",
+            llm_url
+        ));
+    }
+
     let validated = config::Config {
         output_dir: new_config.output_dir,
         jpeg_quality: new_config.jpeg_quality.clamp(1, 100),
         avif_quality: new_config.avif_quality.clamp(1, 100),
         max_concurrent: new_config.max_concurrent.clamp(1, 8),
+        use_marker_pdf: new_config.use_marker_pdf,
+        use_local_llm:  new_config.use_local_llm,
+        local_llm_model: new_config.local_llm_model,
+        local_llm_url: llm_url,
     };
     config::save(&validated)?;
     *state.config.lock().unwrap() = validated;
     Ok(())
+}
+
+#[tauri::command]
+async fn check_ollama(state: tauri::State<'_, AppState>) -> Result<bool, String> {
+    let url = state.config.lock().unwrap().local_llm_url.clone();
+    Ok(converter::document::ollama_reachable(&url).await)
+}
+
+#[tauri::command]
+async fn check_ollama_url(url: String) -> Result<bool, String> {
+    Ok(converter::document::ollama_reachable(&url).await)
+}
+
+#[tauri::command]
+async fn list_ollama_models(state: tauri::State<'_, AppState>) -> Result<Vec<String>, String> {
+    let url = state.config.lock().unwrap().local_llm_url.clone();
+    Ok(converter::document::ollama_list_models(&url).await)
+}
+
+#[tauri::command]
+async fn install_ollama_and_model(app: tauri::AppHandle, state: tauri::State<'_, AppState>, base_url: String, model: String) -> Result<(), String> {
+    match converter::document::install_ollama_and_model(&app, &base_url, &model).await {
+        Ok(Some(child)) => {
+            *state.ollama_process.lock().unwrap() = Some(child);
+            Ok(())
+        }
+        Ok(None) => Ok(()),
+        Err(e) => Err(e),
+    }
+}
+
+#[tauri::command]
+fn check_marker() -> bool {
+    converter::document::marker_available()
+}
+
+#[tauri::command]
+async fn install_marker(app: tauri::AppHandle) -> Result<(), String> {
+    converter::document::install_marker(&app).await
+}
+
+#[tauri::command]
+fn check_ebook_convert() -> bool {
+    converter::document::ebook_convert_available()
 }
 
 #[tauri::command]
