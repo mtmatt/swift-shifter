@@ -67,7 +67,9 @@ fn main() {
             });
 
             tray::setup_tray(app)?;
-            hotkey::register_shortcut(app)?;
+            if let Err(e) = hotkey::register_shortcut(app) {
+                eprintln!("Hotkey registration failed (non-fatal): {e}");
+            }
 
             // Native macOS menu bar
             let about = PredefinedMenuItem::about(app, None::<&str>, None)?;
