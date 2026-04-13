@@ -179,19 +179,38 @@ This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Push
 
 ### Local AI & Privacy
 
-- [ ] OCR conversion (PDF/image → txt, md, tex, typst)
+- [x] OCR conversion (PDF/image → txt, md, tex, typst)
 - [ ] AI Background Removal: Remove image backgrounds locally using RMBG/ONNX models
 - [ ] Super Resolution: Local AI upscaling for low-res images
 - [ ] Privacy Shield: Auto-detect and blur faces or sensitive information (PII) before conversion
 - [x] Offline LLM Support: Ollama integration for local LLM post-processing of PDF text
 - [ ] Deeper LLM integration: document translation and summarization via local models
+- [ ] Video/Audio to Markdown, text, or SRT subtitle files using local Whisper.cpp.
+- [ ] Swift Shifter indexes the metadata and AI-generated tags of your recently converted files, allowing you to hit the hotkey and type "that picture of a dog I converted yesterday" to locate it.
+- [ ] Drop an image with an aspect ratio constraint (e.g., "convert to 16:9") and use local Stable Diffusion/Burn to intelligently fill the missing background rather than cropping or stretching.
 
 
-### Power User & Developer Tools
+### Advanced Media & Spatial Processing
 
-- [ ] Plugin System: Support for user-defined conversion logic via Lua or JavaScript (Rhai/Deno)
-- [ ] Raycast / Alfred Integration: Deep links to trigger conversions via external launchers
-- [ ] Cloud Sync: Synchronize custom presets and workflows across multiple machines
+- [ ] Local AI splitting of audio tracks into isolated vocals, drums, bass, and instruments (via Demucs/ONNX integration).
+- [ ] Drop an image or video file and output a CSS, JSON, or Tailwind config file containing the dominant color palette and hex codes.
+- [ ] Convert between standard 3D formats (OBJ, FBX, STL) to web and AR-ready formats (GLTF, GLB, USDZ).
+- [ ] Drop a `.rs`, `.ts`, or `.py` file and generate a beautifully syntax-highlighted, customized image for social sharing (similar to Carbon).
+- [ ] Auto-detect subjects in landscape videos and convert them to portrait (9:16) for social media, keeping the primary subject in the frame.
+- [ ] Run SVGs through a Rust-based optimization pipeline (like `usvg`) to strip bloat and standardise paths before dropping them into a project.
+
+
+### Deep OS & Hardware Symbiosis
+
+- [ ] Automatically pause or throttle heavy operations (like video encoding or local LLM tasks) when a laptop switches to battery power or enters low-power mode.
+- [ ] Register Swift Shifter into the native Windows Explorer and macOS Finder right-click context menus for users who prefer mouse-driven workflows over drag-and-drop.
+- [ ] Convert a file and immediately generate a temporary local-network QR code or link to securely download the output on a mobile device without touching the cloud.
+- [ ] Auto-detect Apple Silicon (Metal), Nvidia (CUDA), or Intel (QuickSync) hardware on first boot and dynamically compile or select the optimal ffmpeg and ONNX backend configurations.
+
+### Niche & Retro Conversions
+
+- [ ] Specifically dither and contrast-boost PDFs and images for optimal reading on Remarkable, Kindle, or Boox devices.
+- [ ] Invisibly embed a text file or JSON payload directly into the pixel data of an image output. 
 
 
 ## License
