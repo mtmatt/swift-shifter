@@ -272,41 +272,64 @@ function buildMergeItem(
     const item = document.createElement("div");
     item.className = "file-item";
     item.dataset.path = path;
-    item.draggable = true;
 
-    item.addEventListener("dragstart", (e) => {
+    // Use pointer events instead of HTML5 drag API — Tauri's native
+    // onDragDropEvent intercepts HTML5 drags and prevents drop from firing.
+    item.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return;
+        // Don't intercept clicks on the remove button
+        if ((e.target as HTMLElement).closest(".file-remove")) return;
         dragSrc = item;
-        e.dataTransfer!.effectAllowed = "move";
-        // Defer so the drag image captures the un-faded state
-        setTimeout(() => item.classList.add("dragging"), 0);
+        item.setPointerCapture(e.pointerId);
+        item.classList.add("dragging");
+        e.preventDefault(); // prevent text selection while dragging
     });
-    item.addEventListener("dragend", () => {
-        item.classList.remove("dragging");
-        dragSrc = null;
-    });
-    item.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        if (dragSrc && dragSrc !== item) item.classList.add("drag-over");
-    });
-    item.addEventListener("dragleave", () => {
-        item.classList.remove("drag-over");
-    });
-    item.addEventListener("drop", (e) => {
-        e.preventDefault();
-        item.classList.remove("drag-over");
-        if (!dragSrc || dragSrc === item) return;
-        const children = Array.from(
+    item.addEventListener("pointermove", (e) => {
+        if (dragSrc !== item) return;
+        // Highlight whichever other item the pointer is currently over
+        const items = Array.from(
             fileList.querySelectorAll<HTMLElement>(".file-item"),
         );
-        const srcIdx = children.indexOf(dragSrc);
-        const tgtIdx = children.indexOf(item);
-        if (srcIdx < tgtIdx) {
-            fileList.insertBefore(dragSrc, item.nextSibling);
-        } else {
-            fileList.insertBefore(dragSrc, item);
+        for (const other of items) {
+            if (other === item) { other.classList.remove("drag-over"); continue; }
+            const rect = other.getBoundingClientRect();
+            if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+                other.classList.add("drag-over");
+            } else {
+                other.classList.remove("drag-over");
+            }
         }
-        renumberMergeItems();
-        updateMergeFooter();
+    });
+    item.addEventListener("pointerup", () => {
+        if (dragSrc !== item) return;
+        item.classList.remove("dragging");
+        const dropTarget = fileList.querySelector<HTMLElement>(".file-item.drag-over");
+        if (dropTarget) {
+            const items = Array.from(
+                fileList.querySelectorAll<HTMLElement>(".file-item"),
+            );
+            const srcIdx = items.indexOf(item);
+            const tgtIdx = items.indexOf(dropTarget);
+            if (srcIdx < tgtIdx) {
+                fileList.insertBefore(item, dropTarget.nextSibling);
+            } else {
+                fileList.insertBefore(item, dropTarget);
+            }
+            renumberMergeItems();
+            updateMergeFooter();
+        }
+        fileList.querySelectorAll<HTMLElement>(".drag-over").forEach(
+            (el) => el.classList.remove("drag-over"),
+        );
+        dragSrc = null;
+    });
+    item.addEventListener("pointercancel", () => {
+        if (dragSrc !== item) return;
+        item.classList.remove("dragging");
+        fileList.querySelectorAll<HTMLElement>(".drag-over").forEach(
+            (el) => el.classList.remove("drag-over"),
+        );
+        dragSrc = null;
     });
 
     const row = document.createElement("div");
@@ -363,6 +386,18 @@ function switchMode(newMode: "convert" | "merge"): void {
         updateBatchToolbar();
     } else {
         mergeFooter.hidden = false;
+        // Remove any non-PDF files that were queued in convert mode —
+        // the merge backend only accepts PDFs.
+        files.forEach((entry, path) => {
+            if (!path.toLowerCase().endsWith(".pdf")) {
+                entry.el.remove();
+                files.delete(path);
+            }
+        });
+        if (files.size === 0) {
+            setFileListVisible(false);
+            return;
+        }
         let idx = 0;
         files.forEach((entry) => {
             entry.el = buildMergeItem(entry.path, entry.name, idx++);
