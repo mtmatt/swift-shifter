@@ -1,6 +1,64 @@
 use lopdf::{Dictionary, Document, Object, ObjectId};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
+
+/// Walk the page tree upward from `page_id` and collect attributes that pages
+/// inherit from their parent /Pages nodes (/MediaBox, /Resources, /Rotate,
+/// /CropBox). Returns a Dictionary of inherited values not present on the page.
+fn apply_inherited_to_page(doc: &Document, page_id: ObjectId) -> Dictionary {
+    // Keys that PDF spec says are inheritable (PDF 1.7 §7.7.3.4)
+    const INHERITABLE: &[&[u8]] = &[b"MediaBox", b"Resources", b"Rotate", b"CropBox"];
+
+    // Start from the immediate parent of the page
+    let parent_id = match doc.objects.get(&page_id) {
+        Some(obj) => match obj.as_dict() {
+            Ok(dict) => match dict.get(b"Parent") {
+                Ok(Object::Reference(id)) => *id,
+                _ => return Dictionary::new(),
+            },
+            Err(_) => return Dictionary::new(),
+        },
+        None => return Dictionary::new(),
+    };
+
+    let mut seen_keys: std::collections::HashSet<Vec<u8>> = std::collections::HashSet::new();
+    let mut inherited: Vec<(Vec<u8>, Object)> = Vec::new();
+
+    let mut current_id = parent_id;
+    let mut visited: std::collections::HashSet<ObjectId> = std::collections::HashSet::new();
+    loop {
+        if !visited.insert(current_id) {
+            break; // cycle detected in parent chain
+        }
+        let dict = match doc.objects.get(&current_id) {
+            Some(obj) => match obj.as_dict() {
+                Ok(d) => d,
+                Err(_) => break,
+            },
+            None => break,
+        };
+
+        for key in INHERITABLE {
+            if !seen_keys.contains(*key) {
+                if let Ok(val) = dict.get(*key) {
+                    seen_keys.insert(key.to_vec());
+                    inherited.push((key.to_vec(), val.clone()));
+                }
+            }
+        }
+
+        match dict.get(b"Parent") {
+            Ok(Object::Reference(id)) => current_id = *id,
+            _ => break,
+        }
+    }
+
+    let mut result = Dictionary::new();
+    for (key, val) in inherited {
+        result.set(key, val);
+    }
+    result
+}
 
 /// Renumber all objects in `doc` so that every object ID starts at `base`.
 /// Returns the remapping table (old_id → new_id).
@@ -98,12 +156,35 @@ pub fn merge_pdfs(input_paths: &[String], output_dir: Option<&str>) -> Result<St
         // Collect page ids from the original document before renumbering
         let original_page_ids: Vec<ObjectId> = doc.get_pages().into_values().collect();
 
-        let (new_objects, id_map, new_next) = renumber_objects(doc, next_base);
+        // For each page, collect attributes it would inherit from its parent
+        // /Pages node (e.g. /MediaBox, /Resources). Must happen before
+        // renumbering because the parent chain only exists in the original doc.
+        let inherited_by_page: HashMap<ObjectId, Dictionary> = original_page_ids
+            .iter()
+            .map(|&pid| (pid, apply_inherited_to_page(doc, pid)))
+            .collect();
+
+        let (mut new_objects, id_map, new_next) = renumber_objects(doc, next_base);
 
         // Map the original page ids to their new ids
         for orig_page_id in original_page_ids {
             if let Some(&new_page_id) = id_map.get(&orig_page_id) {
                 all_page_ids.push(new_page_id);
+
+                // Copy inherited attributes onto the page if it doesn't already
+                // define them explicitly. This preserves /MediaBox etc. that
+                // were set on the source /Pages node rather than the page itself.
+                if let Some(inherited) = inherited_by_page.get(&orig_page_id) {
+                    if let Some(obj) = new_objects.get_mut(&new_page_id) {
+                        if let Ok(dict) = obj.as_dict_mut() {
+                            for (key, val) in inherited.iter() {
+                                if dict.get(key.as_slice()).is_err() {
+                                    dict.set(key.clone(), rewrite_refs(val, &id_map));
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 
