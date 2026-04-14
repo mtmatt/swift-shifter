@@ -5,6 +5,7 @@ mod config;
 mod converter;
 mod hotkey;
 mod tray;
+mod util;
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -95,23 +96,7 @@ fn main() {
             let menu_handle = app.handle().clone();
             app.on_menu_event(move |_app, event| {
                 if event.id() == "preferences" {
-                    // Focus existing settings window if already open
-                    if let Some(win) = menu_handle.get_webview_window("settings") {
-                        let _ = win.show();
-                        let _ = win.set_focus();
-                        return;
-                    }
-                    let _ = tauri::WebviewWindowBuilder::new(
-                        &menu_handle,
-                        "settings",
-                        tauri::WebviewUrl::App("settings.html".into()),
-                    )
-                    .title("Preferences")
-                    .inner_size(480.0, 660.0)
-                    .resizable(false)
-                    .always_on_top(true)
-                    .center()
-                    .build();
+                    tray::open_or_focus_settings(&menu_handle);
                 }
             });
 
@@ -181,9 +166,13 @@ fn main() {
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                // Hide instead of close so the app stays in tray
-                window.hide().unwrap_or_default();
-                api.prevent_close();
+                // Only intercept close on the main drop-zone window so it
+                // stays resident in the tray.  The settings window is allowed
+                // to close normally; it will be recreated on next open.
+                if window.label() == "main" {
+                    window.hide().unwrap_or_default();
+                    api.prevent_close();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
