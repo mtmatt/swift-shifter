@@ -123,7 +123,7 @@ pub fn merge_pdfs(input_paths: &[String], output_dir: Option<&str>) -> Result<St
     // Update every page's /Parent to point at the new Pages node
     for &page_id in &all_page_ids {
         if let Some(obj) = out.objects.get_mut(&page_id) {
-            if let Some(dict) = obj.as_dict_mut() {
+            if let Ok(dict) = obj.as_dict_mut() {
                 dict.set("Parent", Object::Reference(pages_id));
             }
         }
