@@ -611,6 +611,7 @@ body {
     user-select: none;
     letter-spacing: -1px;
     transition: color 0.1s;
+    touch-action: none;
 }
 
 .drag-handle:hover {
@@ -619,6 +620,7 @@ body {
 
 .file-item.dragging {
     opacity: 0.4;
+    cursor: grabbing;
 }
 
 .file-item.drag-over {
