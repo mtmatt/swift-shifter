@@ -17,6 +17,7 @@ async fn run_streamed(
 ) -> Result<bool, String> {
     use tokio::io::{AsyncBufReadExt, BufReader};
 
+    crate::no_window!(cmd);
     cmd.stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
 
@@ -220,6 +221,7 @@ pub async fn convert_media(
     let duration_secs = get_duration(&ffmpeg, path).await.unwrap_or(0.0);
 
     let mut cmd = tokio::process::Command::new(&ffmpeg);
+    crate::no_window!(cmd);
     cmd.args(["-y", "-i", path]);
 
     // Format-specific flags
@@ -310,7 +312,9 @@ pub async fn convert_media(
 }
 
 async fn get_duration(ffmpeg: &Path, path: &str) -> Option<f64> {
-    let out = tokio::process::Command::new(ffmpeg)
+    let mut cmd = tokio::process::Command::new(ffmpeg);
+    crate::no_window!(cmd);
+    let out = cmd
         .args(["-i", path, "-hide_banner"])
         .output()
         .await

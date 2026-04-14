@@ -77,6 +77,7 @@ pub async fn convert_pdf_with_marker(
 
     let marker_name = marker.file_name().unwrap_or_default().to_string_lossy().to_string();
     let mut cmd = tokio::process::Command::new(&marker);
+    crate::no_window!(cmd);
     if marker_name.contains("marker_single") {
         // v1.x+ CLI: marker_single FPATH --output_dir DIR
         cmd.args([
@@ -260,6 +261,7 @@ pub async fn convert_pdf_with_marker(
     };
 
     let mut pandoc_cmd = tokio::process::Command::new(&pandoc);
+    crate::no_window!(pandoc_cmd);
     pandoc_cmd.current_dir(md_dir);
     pandoc_cmd.args([
         "-f", "markdown+footnotes+superscript+subscript+tex_math_dollars+tex_math_single_backslash",
@@ -339,6 +341,7 @@ pub async fn convert_document(
     let to_fmt = ext_to_pandoc_format(target_format);
 
     let mut cmd = tokio::process::Command::new(&pandoc);
+    crate::no_window!(cmd);
     cmd.args([
         "-f",
         from_fmt,
@@ -432,6 +435,7 @@ pub async fn convert_image_to_pdf(
         .map_err(|e| format!("Failed to create temp file: {e}"))?;
 
     let mut cmd = tokio::process::Command::new(&pandoc);
+    crate::no_window!(cmd);
     cmd.args([
         "-f",
         "markdown",
@@ -521,7 +525,9 @@ pub async fn convert_pdf_to_epub(
         .ok_or_else(|| "Temp path contains non-UTF-8 characters".to_string())?;
 
     // Step 1: PDF → Markdown via pymupdf4llm
-    let result = tokio::process::Command::new(&python)
+    let mut py_cmd = tokio::process::Command::new(&python);
+    crate::no_window!(py_cmd);
+    let result = py_cmd
         .args([
             "-c",
             "import pymupdf4llm, sys; open(sys.argv[2], 'w', encoding='utf-8').write(pymupdf4llm.to_markdown(sys.argv[1]))",
@@ -585,7 +591,9 @@ pub async fn convert_pdf_to_epub(
         .to_string_lossy()
         .to_string();
 
-    let pandoc_result = tokio::process::Command::new(&pandoc)
+    let mut pandoc_cmd = tokio::process::Command::new(&pandoc);
+    crate::no_window!(pandoc_cmd);
+    let pandoc_result = pandoc_cmd
         .current_dir(&tmp_dir)
         .args([
             "-f",
@@ -641,7 +649,9 @@ async fn run_ebook_convert(
     )
     .ok();
 
-    let result = tokio::process::Command::new(&ec)
+    let mut ec_cmd = tokio::process::Command::new(&ec);
+    crate::no_window!(ec_cmd);
+    let result = ec_cmd
         .args([
             input,
             output.to_str().unwrap_or(""),
@@ -696,7 +706,9 @@ pub async fn convert_mobi(
             )
             .ok();
 
-            let status = tokio::process::Command::new(&pandoc)
+            let mut pandoc_cmd = tokio::process::Command::new(&pandoc);
+            crate::no_window!(pandoc_cmd);
+            let status = pandoc_cmd
                 .args([
                     "-f", "epub",
                     "-t", "markdown",
@@ -797,7 +809,9 @@ pub async fn convert_pdf_to_html(
         .ok_or_else(|| "Temp path contains non-UTF-8 characters".to_string())?;
 
     // Step 1: PDF → Markdown via pymupdf4llm
-    let result = tokio::process::Command::new(&python)
+    let mut py_cmd = tokio::process::Command::new(&python);
+    crate::no_window!(py_cmd);
+    let result = py_cmd
         .args([
             "-c",
             "import pymupdf4llm, sys; open(sys.argv[2], 'w', encoding='utf-8').write(pymupdf4llm.to_markdown(sys.argv[1]))",
@@ -841,7 +855,9 @@ pub async fn convert_pdf_to_html(
 
     // Step 2: Markdown → HTML via pandoc
     // --standalone adds <!DOCTYPE html> so browsers use HTML5 parsing (fixes <br> in tables)
-    let pandoc_result = tokio::process::Command::new(&pandoc)
+    let mut pandoc_cmd = tokio::process::Command::new(&pandoc);
+    crate::no_window!(pandoc_cmd);
+    let pandoc_result = pandoc_cmd
         .args([
             "-f",
             "markdown",
@@ -910,7 +926,9 @@ async fn convert_pdf_to_md_via_pymupdf4llm(
         .to_str()
         .ok_or_else(|| "Temp path contains non-UTF-8 characters".to_string())?;
 
-    let result = tokio::process::Command::new(&python)
+    let mut py_cmd = tokio::process::Command::new(&python);
+    crate::no_window!(py_cmd);
+    let result = py_cmd
         .args([
             "-c",
             "import pymupdf4llm, sys; open(sys.argv[2], 'w', encoding='utf-8').write(pymupdf4llm.to_markdown(sys.argv[1]))",
@@ -1011,6 +1029,7 @@ pub(crate) async fn convert_pdf_with_marker_to_md(
 
     let marker_name = marker.file_name().unwrap_or_default().to_string_lossy().to_string();
     let mut cmd = tokio::process::Command::new(&marker);
+    crate::no_window!(cmd);
     if marker_name.contains("marker_single") {
         cmd.args([tmp_pdf.to_str().unwrap_or(""), output_dir_tmp.to_str().unwrap_or("")]);
     } else {
