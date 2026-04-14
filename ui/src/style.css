@@ -562,3 +562,125 @@ body {
     color: var(--danger);
     background: rgba(248, 113, 113, 0.18);
 }
+
+/* ─── Mode toggle ─────────────────────────────────────────────────────── */
+#mode-toggle {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+    background: var(--surface);
+    border: 0.5px solid var(--border-hi);
+    border-radius: 4px;
+    padding: 1px;
+    flex-shrink: 0;
+}
+
+.mode-btn {
+    font-family: inherit;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    padding: 2px 7px;
+    border: none;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-3);
+    cursor: pointer;
+    transition:
+        background 0.12s,
+        color 0.12s;
+    line-height: 1.6;
+}
+
+.mode-btn.active {
+    background: var(--surface-hi);
+    color: var(--text);
+}
+
+.mode-btn:hover:not(.active) {
+    color: var(--text-2);
+}
+
+/* ─── Drag handle ─────────────────────────────────────────────────────── */
+.drag-handle {
+    color: var(--text-3);
+    font-size: 13px;
+    cursor: grab;
+    padding: 0 2px;
+    flex-shrink: 0;
+    user-select: none;
+    letter-spacing: -1px;
+    transition: color 0.1s;
+    touch-action: none;
+}
+
+.drag-handle:hover {
+    color: var(--text-2);
+}
+
+.file-item.dragging {
+    opacity: 0.4;
+    cursor: grabbing;
+}
+
+.file-item.drag-over {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+}
+
+/* ─── Order badge ─────────────────────────────────────────────────────── */
+.order-badge {
+    font-size: 9px;
+    color: var(--text-3);
+    min-width: 12px;
+    text-align: right;
+    flex-shrink: 0;
+    font-variant-numeric: tabular-nums;
+}
+
+/* ─── Merge footer ────────────────────────────────────────────────────── */
+#merge-footer {
+    flex-shrink: 0;
+    padding: 4px 6px;
+    border-top: 0.5px solid var(--border);
+}
+
+#merge-footer[hidden] {
+    display: none;
+}
+
+#btn-merge-all {
+    width: 100%;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    padding: 6px 10px;
+    border-radius: 5px;
+    border: 0.5px solid var(--accent-mid);
+    background: var(--accent-dim);
+    color: var(--accent);
+    cursor: pointer;
+    transition:
+        background 0.12s,
+        border-color 0.12s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+}
+
+#btn-merge-all:hover {
+    background: rgba(167, 139, 250, 0.18);
+    border-color: var(--accent);
+}
+
+#btn-merge-all:active {
+    background: var(--accent);
+    color: var(--bg);
+}
+
+#btn-merge-all:disabled {
+    opacity: 0.3;
+    cursor: default;
+}

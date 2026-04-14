@@ -6,6 +6,8 @@ mod utils;
 pub mod binaries;
 pub mod llm;
 pub mod conversion;
+pub mod merge;
+pub use merge::*;
 
 pub use types::*;
 pub use binaries::*;

@@ -190,6 +190,7 @@ fn main() {
             detect_format,
             convert,
             convert_batch,
+            merge_pdfs,
             get_config,
             set_config,
             check_marker,
@@ -424,4 +425,17 @@ async fn open_output_folder(path: String) -> Result<(), String> {
         .spawn()
         .map_err(|e| e.to_string())?;
     Ok(())
+}
+
+#[tauri::command]
+async fn merge_pdfs(
+    state: tauri::State<'_, AppState>,
+    paths: Vec<String>,
+) -> Result<String, String> {
+    let cfg = state.config.lock().unwrap().clone();
+    tokio::task::spawn_blocking(move || {
+        converter::merge_pdfs(&paths, cfg.output_dir.as_deref())
+    })
+    .await
+    .map_err(|e| format!("task panicked: {e}"))?
 }
