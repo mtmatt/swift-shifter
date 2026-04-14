@@ -3,6 +3,8 @@ pub mod document;
 pub mod image;
 pub mod media;
 
+pub use document::merge_pdfs;
+
 use std::path::Path;
 
 use crate::config::Config;
