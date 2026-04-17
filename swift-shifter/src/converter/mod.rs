@@ -3,6 +3,8 @@ pub mod document;
 pub mod image;
 pub mod media;
 
+pub use document::merge_pdfs;
+
 use std::path::Path;
 
 use crate::config::Config;
@@ -25,8 +27,8 @@ pub fn detect_output_formats(path: &str) -> Result<Vec<String>, String> {
         // Video
         "mp4" | "mov" | "mkv" | "webm" | "avi" => &["mp4", "mov", "mkv", "webm", "avi", "gif"],
         // Audio
-        "mp3" | "aac" | "flac" | "ogg" | "wav" | "opus" => {
-            &["mp3", "aac", "flac", "ogg", "wav", "opus"]
+        "mp3" | "aac" | "flac" | "ogg" | "wav" | "opus" | "m4a" => {
+            &["mp3", "aac", "flac", "ogg", "wav", "opus", "m4a"]
         }
         // Data
         "json" => &["yaml", "toml", "csv"],
@@ -97,7 +99,7 @@ pub async fn convert_file(
             }
         }
         "mp4" | "mov" | "mkv" | "webm" | "avi" | "mp3" | "aac" | "flac" | "ogg" | "wav"
-        | "opus" => media::convert_media(app, path, target_format, out_dir).await,
+        | "opus" | "m4a" => media::convert_media(app, path, target_format, out_dir).await,
         "json" | "yaml" | "yml" | "toml" | "csv" => {
             data::convert_data(path, target_format, out_dir)
         }

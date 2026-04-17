@@ -56,6 +56,39 @@ const btnClearAll = document.getElementById(
   "btn-clear-all",
 ) as HTMLButtonElement;
 
+const mergeFooter = document.getElementById("merge-footer") as HTMLDivElement;
+const mergeBtnLabel = document.getElementById("merge-btn-label") as HTMLSpanElement;
+const mergeOutputName = document.getElementById("merge-output-name") as HTMLSpanElement;
+const btnMergeAll = document.getElementById("btn-merge-all") as HTMLButtonElement;
+const modeToggle = document.getElementById("mode-toggle") as HTMLDivElement;
+const btnModeConvert = document.getElementById("btn-mode-convert") as HTMLButtonElement;
+const btnModeMerge = document.getElementById("btn-mode-merge") as HTMLButtonElement;
+
+let mode: "convert" | "merge" = "convert";
+let dragSrc: HTMLElement | null = null;
+
+function renumberMergeItems(): void {
+    const items = Array.from(fileList.querySelectorAll<HTMLElement>(".file-item"));
+    items.forEach((item, idx) => {
+        const badge = item.querySelector<HTMLElement>(".order-badge");
+        if (badge) badge.textContent = String(idx + 1);
+    });
+}
+
+function updateMergeFooter(): void {
+    const items = Array.from(fileList.querySelectorAll<HTMLElement>(".file-item"));
+    if (items.length < 2) {
+        btnMergeAll.disabled = true;
+        mergeOutputName.textContent = "merged.pdf";
+        return;
+    }
+    btnMergeAll.disabled = false;
+    const firstPath = items[0].dataset.path ?? "";
+    const firstStem =
+        (firstPath.split("/").pop() ?? "merged").replace(/\.pdf$/i, "");
+    mergeOutputName.textContent = firstStem + "-merged.pdf";
+}
+
 const appWindow = getCurrentWindow();
 
 // ─── Dep install tracking ─────────────────────────────────────────────────
@@ -95,6 +128,10 @@ btnClearAll.addEventListener("click", () => {
   updateBatchToolbar();
 });
 
+btnModeConvert.addEventListener("click", () => switchMode("convert"));
+btnModeMerge.addEventListener("click", () => switchMode("merge"));
+btnMergeAll.addEventListener("click", mergePdfs);
+
 // ─── Drag-drop ────────────────────────────────────────────────────────────
 
 appWindow
@@ -126,6 +163,11 @@ dropZone.addEventListener("click", async () => {
 async function addFile(path: string): Promise<void> {
   if (files.has(path)) return;
 
+  if (mode === "merge" && !path.toLowerCase().endsWith(".pdf")) {
+    showInlineError(path, "Only PDF files can be merged");
+    return;
+  }
+
   let formats: string[];
   try {
     formats = await invoke<string[]>("detect_format", { path });
@@ -135,11 +177,15 @@ async function addFile(path: string): Promise<void> {
   }
 
   const name = path.split("/").pop() ?? path;
-  const el = buildFileItem(path, name, formats);
+  const el =
+      mode === "merge"
+          ? buildMergeItem(path, name, files.size)
+          : buildFileItem(path, name, formats);
   files.set(path, { path, name, formats, el });
   fileList.appendChild(el);
   setFileListVisible(true);
-  updateBatchToolbar();
+  if (mode === "convert") updateBatchToolbar();
+  else updateMergeFooter();
 }
 
 function removeFile(path: string): void {
@@ -148,7 +194,8 @@ function removeFile(path: string): void {
   entry.el.remove();
   files.delete(path);
   if (files.size === 0) setFileListVisible(false);
-  updateBatchToolbar();
+  if (mode === "convert") updateBatchToolbar();
+  else { renumberMergeItems(); updateMergeFooter(); }
 }
 
 function setFileListVisible(visible: boolean): void {
@@ -157,10 +204,14 @@ function setFileListVisible(visible: boolean): void {
     dropZone.hidden = true;
     fileList.hidden = false;
     btnClearAll.hidden = false;
+    modeToggle.hidden = false;
+    mergeFooter.hidden = mode !== "merge";
   } else {
     dropZone.hidden = false;
     fileList.hidden = true;
     btnClearAll.hidden = true;
+    modeToggle.hidden = true;
+    mergeFooter.hidden = true;
   }
 }
 
@@ -211,6 +262,192 @@ function buildFileItem(
   }
   item.appendChild(btnRow);
   return item;
+}
+
+function buildMergeItem(
+    path: string,
+    name: string,
+    idx: number,
+): HTMLElement {
+    const item = document.createElement("div");
+    item.className = "file-item";
+    item.dataset.path = path;
+
+    // Use pointer events instead of HTML5 drag API — Tauri's native
+    // onDragDropEvent intercepts HTML5 drags and prevents drop from firing.
+    item.addEventListener("pointerdown", (e) => {
+        if (e.button !== 0) return;
+        // Don't intercept clicks on the remove button
+        if ((e.target as HTMLElement).closest(".file-remove")) return;
+        dragSrc = item;
+        item.setPointerCapture(e.pointerId);
+        item.classList.add("dragging");
+        e.preventDefault(); // prevent text selection while dragging
+    });
+    item.addEventListener("pointermove", (e) => {
+        if (dragSrc !== item) return;
+        // Highlight whichever other item the pointer is currently over
+        const items = Array.from(
+            fileList.querySelectorAll<HTMLElement>(".file-item"),
+        );
+        for (const other of items) {
+            if (other === item) { other.classList.remove("drag-over"); continue; }
+            const rect = other.getBoundingClientRect();
+            if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+                other.classList.add("drag-over");
+            } else {
+                other.classList.remove("drag-over");
+            }
+        }
+    });
+    item.addEventListener("pointerup", () => {
+        if (dragSrc !== item) return;
+        item.classList.remove("dragging");
+        const dropTarget = fileList.querySelector<HTMLElement>(".file-item.drag-over");
+        if (dropTarget) {
+            const items = Array.from(
+                fileList.querySelectorAll<HTMLElement>(".file-item"),
+            );
+            const srcIdx = items.indexOf(item);
+            const tgtIdx = items.indexOf(dropTarget);
+            if (srcIdx < tgtIdx) {
+                fileList.insertBefore(item, dropTarget.nextSibling);
+            } else {
+                fileList.insertBefore(item, dropTarget);
+            }
+            renumberMergeItems();
+            updateMergeFooter();
+        }
+        fileList.querySelectorAll<HTMLElement>(".drag-over").forEach(
+            (el) => el.classList.remove("drag-over"),
+        );
+        dragSrc = null;
+    });
+    item.addEventListener("pointercancel", () => {
+        if (dragSrc !== item) return;
+        item.classList.remove("dragging");
+        fileList.querySelectorAll<HTMLElement>(".drag-over").forEach(
+            (el) => el.classList.remove("drag-over"),
+        );
+        dragSrc = null;
+    });
+
+    const row = document.createElement("div");
+    row.className = "file-row";
+
+    const handle = document.createElement("span");
+    handle.className = "drag-handle";
+    handle.textContent = "⠿";
+    handle.setAttribute("aria-hidden", "true");
+
+    const badge = document.createElement("span");
+    badge.className = "order-badge";
+    badge.textContent = String(idx + 1);
+
+    const nameEl = document.createElement("span");
+    nameEl.className = "file-name";
+    nameEl.textContent = name;
+    nameEl.title = path;
+
+    const removeBtn = document.createElement("button");
+    removeBtn.className = "file-remove";
+    removeBtn.textContent = "×";
+    removeBtn.title = "Remove";
+    removeBtn.addEventListener("click", () => removeFile(path));
+
+    row.append(handle, badge, nameEl, removeBtn);
+    item.appendChild(row);
+    return item;
+}
+
+function switchMode(newMode: "convert" | "merge"): void {
+    if (mode === newMode) return;
+    mode = newMode;
+
+    btnModeConvert.classList.toggle("active", mode === "convert");
+    btnModeMerge.classList.toggle("active", mode === "merge");
+
+    if (files.size === 0) {
+        mergeFooter.hidden = true;
+        return;
+    }
+
+    // Rebuild all file items for the new mode
+    fileList.querySelectorAll(".file-item").forEach((el) => el.remove());
+    fileList.querySelector(".batch-toolbar")?.remove();
+
+    if (mode === "convert") {
+        mergeFooter.hidden = true;
+        files.forEach((entry) => {
+            entry.el = buildFileItem(entry.path, entry.name, entry.formats);
+            files.set(entry.path, entry);
+            fileList.appendChild(entry.el);
+        });
+        updateBatchToolbar();
+    } else {
+        mergeFooter.hidden = false;
+        // Remove any non-PDF files that were queued in convert mode —
+        // the merge backend only accepts PDFs.
+        files.forEach((entry, path) => {
+            if (!path.toLowerCase().endsWith(".pdf")) {
+                entry.el.remove();
+                files.delete(path);
+            }
+        });
+        if (files.size === 0) {
+            setFileListVisible(false);
+            return;
+        }
+        let idx = 0;
+        files.forEach((entry) => {
+            entry.el = buildMergeItem(entry.path, entry.name, idx++);
+            files.set(entry.path, entry);
+            fileList.appendChild(entry.el);
+        });
+        btnMergeAll.disabled = false;
+        mergeBtnLabel.textContent = "merge all →";
+        updateMergeFooter();
+    }
+}
+
+async function mergePdfs(): Promise<void> {
+    const items = Array.from(
+        fileList.querySelectorAll<HTMLElement>(".file-item"),
+    );
+    const paths = items
+        .map((item) => item.dataset.path)
+        .filter((p): p is string => Boolean(p));
+
+    if (paths.length < 2) return;
+
+    btnMergeAll.disabled = true;
+    mergeBtnLabel.textContent = "merging…";
+
+    try {
+        const outputPath = await invoke<string>("merge_pdfs", { paths });
+        mergeBtnLabel.textContent = "done —";
+        mergeOutputName.textContent = outputPath.split("/").pop() ?? "merged.pdf";
+        bottomStatus.className = "ok";
+        bottomStatus.textContent = "merged ✓";
+        setTimeout(() => {
+            mergeBtnLabel.textContent = "merge all →";
+            bottomStatus.textContent = "";
+            bottomStatus.className = "";
+            btnMergeAll.disabled = false;
+            updateMergeFooter();
+        }, 3000);
+    } catch (err) {
+        mergeBtnLabel.textContent = "merge all →";
+        bottomStatus.className = "warning";
+        bottomStatus.textContent = String(err);
+        btnMergeAll.disabled = false;
+        setTimeout(() => {
+            if (bottomStatus.textContent === String(err)) {
+                bottomStatus.textContent = "";
+                bottomStatus.className = "";
+            }
+        }, 5000);
+    }
 }
 
 // ─── Single-file conversion ───────────────────────────────────────────────
@@ -304,6 +541,7 @@ async function startConversion(
 // ─── Batch toolbar ────────────────────────────────────────────────────────
 
 function updateBatchToolbar(): void {
+  if (mode === "merge") return;
   fileList.querySelector(".batch-toolbar")?.remove();
   if (files.size < 2) return;
 
@@ -475,6 +713,7 @@ function showInlineError(path: string, message: string): void {
   removeBtn.addEventListener("click", () => {
     item.remove();
     if (fileList.children.length === 0) setFileListVisible(false);
+    if (mode === "merge") { renumberMergeItems(); updateMergeFooter(); }
   });
 
   row.appendChild(nameEl);

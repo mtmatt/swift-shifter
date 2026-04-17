@@ -242,6 +242,9 @@ pub async fn convert_media(
         "wav" => {
             cmd.args(["-codec:a", "pcm_s16le"]);
         }
+        "m4a" => {
+            cmd.args(["-vn", "-codec:a", "aac", "-b:a", "192k"]);
+        }
         "gif" => {
             cmd.args([
                 "-vf",

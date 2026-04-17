@@ -63,8 +63,20 @@
                 </div>
             </div>
 
+            <!-- ── Merge footer (merge mode only) ────────────────────────────── -->
+            <div id="merge-footer" hidden>
+                <button id="btn-merge-all">
+                    <span id="merge-btn-label">merge all →</span>
+                    <span id="merge-output-name">merged.pdf</span>
+                </button>
+            </div>
+
             <!-- ── Bottom bar ─────────────────────────────────────────────────── -->
             <div id="bottom-bar">
+                <div id="mode-toggle" hidden>
+                    <button id="btn-mode-convert" class="mode-btn active">convert</button>
+                    <button id="btn-mode-merge" class="mode-btn">merge</button>
+                </div>
                 <span id="bottom-status"></span>
                 <button id="btn-clear-all" hidden>clear all</button>
             </div>
