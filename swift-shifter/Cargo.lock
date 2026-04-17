@@ -4501,7 +4501,7 @@ dependencies = [
 
 [[package]]
 name = "swift-shifter"
-version = "0.2.1"
+version = "0.3.0"
 dependencies = [
  "csv",
  "dirs 5.0.1",
