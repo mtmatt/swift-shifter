@@ -1,6 +1,7 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod clipboard;
 mod config;
 mod converter;
 mod hotkey;
@@ -55,6 +56,7 @@ fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(hotkey::build_plugin())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -187,6 +189,9 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            clipboard::paste_from_clipboard,
+            clipboard::copy_file_to_clipboard,
+            clipboard::remove_temp_file,
             detect_format,
             convert,
             convert_batch,
@@ -329,7 +334,7 @@ fn get_config(state: tauri::State<'_, AppState>) -> config::Config {
 }
 
 #[tauri::command]
-fn set_config(state: tauri::State<'_, AppState>, new_config: config::Config) -> Result<(), String> {
+fn set_config(app: tauri::AppHandle, state: tauri::State<'_, AppState>, new_config: config::Config) -> Result<(), String> {
     // Validate local_llm_url is a well-formed HTTP/HTTPS URL
     let llm_url = new_config.local_llm_url.trim().to_string();
     if !llm_url.is_empty()
@@ -351,9 +356,14 @@ fn set_config(state: tauri::State<'_, AppState>, new_config: config::Config) -> 
         use_local_llm:  new_config.use_local_llm,
         local_llm_model: new_config.local_llm_model,
         local_llm_url: llm_url,
+        clipboard_output_mode: match new_config.clipboard_output_mode.as_str() {
+            "download" => "download".to_string(),
+            _ => "clipboard".to_string(),
+        },
     };
     config::save(&validated)?;
     *state.config.lock().unwrap() = validated;
+    app.emit("config:updated", ()).ok();
     Ok(())
 }
 

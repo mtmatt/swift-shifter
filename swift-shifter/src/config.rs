@@ -28,6 +28,9 @@ pub struct Config {
     /// Ollama HTTP base URL.
     #[serde(default = "default_local_llm_url")]
     pub local_llm_url: String,
+    /// Where clipboard-converted results are sent: "clipboard" (default) or "download" (save to file).
+    #[serde(default = "default_clipboard_output_mode")]
+    pub clipboard_output_mode: String,
 }
 
 fn default_jpeg_quality() -> u8 { 75 }
@@ -35,6 +38,7 @@ fn default_avif_quality() -> u8 { 65 }
 fn default_max_concurrent() -> usize { 4 }
 fn default_local_llm_model() -> String { "gemma4:e2b".to_string() }
 fn default_local_llm_url() -> String { "http://localhost:11434".to_string() }
+fn default_clipboard_output_mode() -> String { "clipboard".to_string() }
 
 impl Default for Config {
     fn default() -> Self {
@@ -47,6 +51,7 @@ impl Default for Config {
             use_local_llm:  false,
             local_llm_model: default_local_llm_model(),
             local_llm_url:   default_local_llm_url(),
+            clipboard_output_mode: default_clipboard_output_mode(),
         }
     }
 }
@@ -72,6 +77,9 @@ pub fn load() -> Config {
     cfg.jpeg_quality = cfg.jpeg_quality.clamp(1, 100);
     cfg.avif_quality = cfg.avif_quality.clamp(1, 100);
     cfg.max_concurrent = cfg.max_concurrent.clamp(1, 8);
+    if !["clipboard", "download"].contains(&cfg.clipboard_output_mode.as_str()) {
+        cfg.clipboard_output_mode = "clipboard".to_string();
+    }
     cfg
 }
 
@@ -82,4 +90,23 @@ pub fn save(config: &Config) -> Result<(), String> {
     }
     let text = toml::to_string_pretty(config).map_err(|e| e.to_string())?;
     std::fs::write(path, text).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_clipboard_mode_is_clipboard() {
+        let cfg = Config::default();
+        assert_eq!(cfg.clipboard_output_mode, "clipboard");
+    }
+
+    #[test]
+    fn config_round_trips_toml() {
+        let cfg = Config::default();
+        let s = toml::to_string_pretty(&cfg).unwrap();
+        let back: Config = toml::from_str(&s).unwrap();
+        assert_eq!(back.clipboard_output_mode, "clipboard");
+    }
 }

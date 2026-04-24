@@ -67,6 +67,29 @@ const btnModeMerge = document.getElementById("btn-mode-merge") as HTMLButtonElem
 let mode: "convert" | "merge" = "convert";
 let dragSrc: HTMLElement | null = null;
 
+/** Paths of files that came from a clipboard paste (⌘V). */
+const clipboardFiles = new Set<string>();
+
+/** Paths of temp files created by clipboard paste — delete after conversion. */
+const tempFiles = new Set<string>();
+
+/** Clipboard output mode: "clipboard" or "download". Loaded from config at startup. */
+let clipboardOutputMode = "clipboard";
+
+(async () => {
+  try {
+    const cfg = await invoke<{ clipboard_output_mode: string }>("get_config");
+    clipboardOutputMode = cfg.clipboard_output_mode;
+  } catch { /* non-fatal — use default "clipboard" */ }
+})();
+
+listen("config:updated", async () => {
+  try {
+    const cfg = await invoke<{ clipboard_output_mode: string }>("get_config");
+    clipboardOutputMode = cfg.clipboard_output_mode;
+  } catch { /* non-fatal */ }
+}).catch(console.error);
+
 function renumberMergeItems(): void {
     const items = Array.from(fileList.querySelectorAll<HTMLElement>(".file-item"));
     items.forEach((item, idx) => {
@@ -150,6 +173,37 @@ appWindow
   })
   .catch(console.error);
 
+// ─── Clipboard paste (⌘V) ────────────────────────────────────────────────
+
+document.addEventListener("keydown", async (e) => {
+  if (!e.metaKey || e.key !== "v") return;
+  const target = e.target as HTMLElement;
+  if (
+    target.tagName === "INPUT" ||
+    target.tagName === "TEXTAREA" ||
+    target.isContentEditable
+  ) return;
+  e.preventDefault();
+  try {
+    const result = await invoke<{ path: string; is_temp: boolean }>(
+      "paste_from_clipboard",
+    );
+    clipboardFiles.add(result.path);
+    if (result.is_temp) tempFiles.add(result.path);
+    await addFile(result.path);
+  } catch (err) {
+    const msg = String(err);
+    bottomStatus.className = "warning";
+    bottomStatus.textContent = msg;
+    setTimeout(() => {
+      if (bottomStatus.textContent === msg) {
+        bottomStatus.textContent = "";
+        bottomStatus.className = "";
+      }
+    }, 3000);
+  }
+});
+
 // Click-to-browse
 dropZone.addEventListener("click", async () => {
   const selected = await openDialog({ multiple: true, directory: false });
@@ -193,6 +247,11 @@ function removeFile(path: string): void {
   if (!entry) return;
   entry.el.remove();
   files.delete(path);
+  clipboardFiles.delete(path);
+  if (tempFiles.has(path)) {
+    invoke("remove_temp_file", { path }).catch(() => {});
+    tempFiles.delete(path);
+  }
   if (files.size === 0) setFileListVisible(false);
   if (mode === "convert") updateBatchToolbar();
   else { renumberMergeItems(); updateMergeFooter(); }
@@ -502,15 +561,50 @@ async function startConversion(
     progressFill.style.width = "100%";
     progressLabel.textContent = "100%";
 
+    // For clipboard-sourced files in clipboard mode, write result back to clipboard.
+    let wroteToClipboard = false;
+    if (clipboardFiles.has(path) && clipboardOutputMode === "clipboard") {
+      try {
+        await invoke("copy_file_to_clipboard", { path: outputPath });
+        wroteToClipboard = true;
+        const okMsg = "Copied to clipboard!";
+        bottomStatus.className = "ok";
+        bottomStatus.textContent = okMsg;
+        setTimeout(() => {
+          if (bottomStatus.textContent === okMsg) {
+            bottomStatus.textContent = "";
+            bottomStatus.className = "";
+          }
+        }, 3000);
+      } catch {
+        // Unsupported output type (e.g. video) — fall through to normal file status
+        const outName = outputPath.split("/").pop() ?? outputPath;
+        const warnMsg = `Clipboard write failed — file saved as ${outName}`;
+        bottomStatus.className = "warning";
+        bottomStatus.textContent = warnMsg;
+        setTimeout(() => {
+          if (bottomStatus.textContent === warnMsg) {
+            bottomStatus.textContent = "";
+            bottomStatus.className = "";
+          }
+        }, 5000);
+      }
+    }
+
     setTimeout(() => {
       progressRow!.remove();
       const status = document.createElement("span");
       status.className = "file-status success";
-      status.textContent = `↗ ${outputPath.split("/").pop()}`;
-      status.title = "Click to reveal in Finder";
-      status.addEventListener("click", () =>
-        invoke("open_output_folder", { path: outputPath }).catch(console.error),
-      );
+      if (wroteToClipboard) {
+        status.textContent = "✓ Copied to clipboard";
+        status.title = outputPath;
+      } else {
+        status.textContent = `↗ ${outputPath.split("/").pop()}`;
+        status.title = "Click to reveal in Finder";
+        status.addEventListener("click", () =>
+          invoke("open_output_folder", { path: outputPath }).catch(console.error),
+        );
+      }
       item.appendChild(status);
       item
         .querySelectorAll<HTMLButtonElement>(".fmt-btn")
@@ -535,6 +629,10 @@ async function startConversion(
   } finally {
     unlisten();
     progressUnlisteners.delete(path);
+    if (tempFiles.has(path)) {
+      invoke("remove_temp_file", { path }).catch(() => {});
+      tempFiles.delete(path);
+    }
   }
 }
 

@@ -12,6 +12,7 @@ interface Config {
   use_local_llm: boolean;
   local_llm_model: string;
   local_llm_url: string;
+  clipboard_output_mode: string;
 }
 
 const win = getCurrentWindow();
@@ -43,6 +44,7 @@ const llmUrlInput = document.getElementById("llm-url") as HTMLInputElement;
 const llmModelsList = document.getElementById("llm-models-list") as HTMLDataListElement;
 
 const statusEl = document.getElementById("status") as HTMLElement;
+const clipboardModeSelect = document.getElementById("clipboard-mode") as HTMLSelectElement;
 
 let cfg: Config = {
   output_dir: null,
@@ -53,6 +55,7 @@ let cfg: Config = {
   use_local_llm: false,
   local_llm_model: "gemma4:e2b",
   local_llm_url: "http://localhost:11434",
+  clipboard_output_mode: "clipboard",
 };
 
 let markerInstalled = false;
@@ -123,6 +126,7 @@ async function refreshOllamaModels() {
   avifVal.textContent = String(cfg.avif_quality);
   maxCSlider.value = String(cfg.max_concurrent);
   maxCVal.textContent = String(cfg.max_concurrent);
+  clipboardModeSelect.value = cfg.clipboard_output_mode;
   
   markerToggle.checked = cfg.use_marker_pdf;
   markerInstalled = await invoke<boolean>("check_marker").catch(() => false);
@@ -309,6 +313,7 @@ document.getElementById("btn-save")!.addEventListener("click", async () => {
     use_local_llm: llmToggle.checked,
     local_llm_model: llmModelInput.value.trim() || "gemma4:e2b",
     local_llm_url: llmUrlInput.value.trim() || "http://localhost:11434",
+    clipboard_output_mode: clipboardModeSelect.value,
   };
   try {
     await invoke("set_config", { newConfig });
