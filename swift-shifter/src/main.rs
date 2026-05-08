@@ -190,6 +190,7 @@ fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             clipboard::paste_from_clipboard,
+            clipboard::paste_diagnostics,
             clipboard::copy_file_to_clipboard,
             clipboard::remove_temp_file,
             detect_format,
