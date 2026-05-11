@@ -312,6 +312,81 @@ pub async fn convert_media(
     Ok(out.to_string_lossy().to_string())
 }
 
+/// Convert a still image to a single-frame GIF via ffmpeg.
+///
+/// The `image` crate's GIF encoder is single-threaded LZW and slow enough
+/// (10s+ on multi-MP images) that the UI looks frozen. ffmpeg's
+/// palettegen+paletteuse path is both much faster *and* gives us real-time
+/// progress events to feed the frontend bar.
+pub async fn convert_image_to_gif(
+    app: &tauri::AppHandle,
+    path: &str,
+    output_dir: Option<&str>,
+) -> Result<String, String> {
+    let ffmpeg = get_ffmpeg()?;
+    let out = output_path(path, "gif", output_dir)?;
+
+    let mut cmd = tokio::process::Command::new(&ffmpeg);
+    cmd.args([
+        "-y",
+        "-i",
+        path,
+        "-vf",
+        "split[s0][s1];[s0]palettegen=max_colors=256[p];[s1][p]paletteuse=dither=sierra2_4a",
+        "-progress",
+        "pipe:2",
+        "-nostats",
+        out.to_str().unwrap_or(""),
+    ]);
+    cmd.stderr(std::process::Stdio::piped());
+
+    let path_string = path.to_string();
+    let app_handle = app.clone();
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn ffmpeg: {e}"))?;
+
+    // ffmpeg's `-progress pipe:2` prints `progress=continue` / `progress=end`
+    // alongside `frame=N` lines. A still image yields one frame, so the only
+    // meaningful events are start (frame=1) and end. We map those to ~50% / 100%
+    // so the bar visibly moves even on a fast run.
+    if let Some(stderr) = child.stderr.take() {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let mut reader = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = reader.next_line().await {
+            let percent = if line.starts_with("progress=end") {
+                Some(100.0_f32)
+            } else if line.starts_with("frame=") {
+                Some(50.0_f32)
+            } else {
+                None
+            };
+            if let Some(p) = percent {
+                app_handle
+                    .emit(
+                        "convert:progress",
+                        ProgressPayload { path: path_string.clone(), percent: p },
+                    )
+                    .ok();
+            }
+        }
+    }
+
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| format!("ffmpeg wait error: {e}"))?;
+    if !status.success() {
+        return Err(format!(
+            "ffmpeg exited with status {}",
+            status.code().unwrap_or(-1)
+        ));
+    }
+
+    Ok(out.to_string_lossy().to_string())
+}
+
 async fn get_duration(ffmpeg: &Path, path: &str) -> Option<f64> {
     let out = tokio::process::Command::new(ffmpeg)
         .args(["-i", path, "-hide_banner"])

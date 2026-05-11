@@ -78,6 +78,8 @@ pub async fn convert_file(
                 image::convert_to_avif(path, config.avif_quality, out_dir)
             } else if target_format == "heic" {
                 image::convert_to_heic(path, out_dir)
+            } else if target_format == "gif" {
+                media::convert_image_to_gif(app, path, out_dir).await
             } else {
                 image::convert_image(path, target_format, config.jpeg_quality, out_dir)
             }
@@ -87,6 +89,8 @@ pub async fn convert_file(
                 document::convert_image_to_pdf(app, path, out_dir).await
             } else if target_format == "heic" {
                 image::convert_to_heic(path, out_dir)
+            } else if target_format == "gif" {
+                media::convert_image_to_gif(app, path, out_dir).await
             } else {
                 image::convert_image(path, target_format, config.jpeg_quality, out_dir)
             }
