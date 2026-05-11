@@ -645,6 +645,62 @@ pub async fn paste_diagnostics() -> Result<Vec<String>, String> {
 
 const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff", "tif", "avif"];
 
+/// Write image bytes to the macOS general pasteboard under one or more
+/// UTIs. Going direct (vs. arboard's `NSImage` → `writeObjects:` path)
+/// means apps that read by UTI see exactly the bytes we provide, not a
+/// re-encoded NSImage representation. Each `(uti, bytes)` pair becomes one
+/// representation on the pasteboard; receivers pick the type they prefer.
+#[cfg(target_os = "macos")]
+fn write_image_to_pasteboard_macos(reps: &[(&str, &[u8])]) -> Result<(), String> {
+    use objc2::msg_send;
+    use objc2::rc::autoreleasepool;
+    use objc2::runtime::{AnyClass, AnyObject};
+    use objc2_foundation::{NSData, NSString};
+
+    if reps.is_empty() {
+        return Err("no pasteboard representations to write".to_string());
+    }
+
+    autoreleasepool(|_| unsafe {
+        let pb_class = AnyClass::get(c"NSPasteboard")
+            .ok_or("NSPasteboard class not found")?;
+        let pb: *mut AnyObject = msg_send![pb_class, generalPasteboard];
+        if pb.is_null() { return Err("generalPasteboard returned nil".to_string()); }
+
+        let _: i64 = msg_send![pb, clearContents];
+
+        for (uti, bytes) in reps {
+            let data = NSData::with_bytes(bytes);
+            let uti_str = NSString::from_str(uti);
+            let ok: bool = msg_send![pb, setData: &*data, forType: &*uti_str];
+            if !ok {
+                return Err(format!(
+                    "NSPasteboard setData:forType: returned NO for {uti}"
+                ));
+            }
+        }
+        Ok(())
+    })
+}
+
+/// Apple UTI for an image file extension. Returning `None` means the
+/// format has no widely-recognised pasteboard UTI on macOS, so we fall
+/// back to writing only a PNG re-encoding.
+#[cfg(target_os = "macos")]
+fn native_uti_for_ext(ext: &str) -> Option<&'static str> {
+    match ext {
+        "png" => Some("public.png"),
+        "jpg" | "jpeg" => Some("public.jpeg"),
+        "gif" => Some("com.compuserve.gif"),
+        "tiff" | "tif" => Some("public.tiff"),
+        "bmp" => Some("com.microsoft.bmp"),
+        "webp" => Some("org.webmproject.webp"),
+        "heic" | "heif" => Some("public.heic"),
+        "avif" => Some("public.avif"),
+        _ => None,
+    }
+}
+
 #[tauri::command]
 pub async fn copy_file_to_clipboard(app: AppHandle, path: String) -> Result<(), String> {
     tokio::task::spawn_blocking(move || {
@@ -655,12 +711,64 @@ pub async fn copy_file_to_clipboard(app: AppHandle, path: String) -> Result<(), 
             .unwrap_or_default();
 
         if IMAGE_EXTS.contains(&ext.as_str()) {
-            let img = image::open(&path).map_err(|e| e.to_string())?;
-            let rgba = img.to_rgba8();
-            let (w, h) = rgba.dimensions();
-            let raw = rgba.into_raw();
-            let cb_img = tauri::image::Image::new_owned(raw, w, h);
-            app.clipboard().write_image(&cb_img).map_err(|e| e.to_string())?;
+            // On macOS, go direct to NSPasteboard. We write the file's
+            // own bytes under its native UTI so that pasting into Finder
+            // (or any UTI-aware receiver) preserves the actual format
+            // the user just converted to — pasting a GIF must yield a
+            // GIF, not a PNG re-encoding. We also include a `public.png`
+            // re-encoding for receivers that only know PNG (e.g. some
+            // chat apps and web inputs).
+            #[cfg(target_os = "macos")]
+            {
+                let raw_bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+                let native_uti = native_uti_for_ext(&ext);
+
+                // Formats every macOS receiver decodes via NSImage / Core
+                // Graphics. Writing *only* the native UTI lets the OS
+                // auto-derive TIFF/PICT/etc., and—crucially—makes apps
+                // that pick "the most specific" type land on the format
+                // the user actually asked for. Pasting a GIF must yield
+                // a GIF, not a PNG re-encoding.
+                let native_is_universal = matches!(
+                    ext.as_str(),
+                    "png" | "jpg" | "jpeg" | "gif" | "tiff" | "tif" | "bmp"
+                );
+
+                let mut reps: Vec<(&str, &[u8])> = Vec::with_capacity(2);
+                if let Some(uti) = native_uti {
+                    reps.push((uti, raw_bytes.as_slice()));
+                }
+
+                // For formats macOS doesn't decode natively (WebP, AVIF,
+                // HEIC on older systems), also publish a PNG re-encoding
+                // so plain `public.png` consumers can still paste.
+                let png_bytes_opt: Option<Vec<u8>> = if native_is_universal {
+                    None
+                } else {
+                    let img = image::open(&path).map_err(|e| e.to_string())?;
+                    let mut buf: Vec<u8> = Vec::new();
+                    img.write_to(
+                        &mut std::io::Cursor::new(&mut buf),
+                        image::ImageFormat::Png,
+                    )
+                    .map_err(|e| e.to_string())?;
+                    Some(buf)
+                };
+                if let Some(ref png_bytes) = png_bytes_opt {
+                    reps.push(("public.png", png_bytes.as_slice()));
+                }
+
+                return write_image_to_pasteboard_macos(&reps);
+            }
+            #[cfg(not(target_os = "macos"))]
+            {
+                let img = image::open(&path).map_err(|e| e.to_string())?;
+                let rgba = img.to_rgba8();
+                let (w, h) = rgba.dimensions();
+                let raw = rgba.into_raw();
+                let cb_img = tauri::image::Image::new_owned(raw, w, h);
+                app.clipboard().write_image(&cb_img).map_err(|e| e.to_string())?;
+            }
         } else {
             // Anything that reads as valid UTF-8 — source code, configs,
             // JSON/YAML/TOML/CSV, etc. — copies as text. Binary non-image

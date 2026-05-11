@@ -748,17 +748,52 @@ async function startBatchConversion(targetFormat: string): Promise<void> {
         const lbl = pr?.querySelector<HTMLElement>(".progress-label");
         if (fill) fill.style.width = "100%";
         if (lbl) lbl.textContent = "100%";
+
+        const outputPath = result.output_path;
+        let wroteToClipboard = false;
+        if (clipboardFiles.has(result.path) && clipboardOutputMode === "clipboard") {
+          try {
+            await invoke("copy_file_to_clipboard", { path: outputPath });
+            wroteToClipboard = true;
+            const okMsg = "Copied to clipboard!";
+            bottomStatus.className = "ok";
+            bottomStatus.textContent = okMsg;
+            setTimeout(() => {
+              if (bottomStatus.textContent === okMsg) {
+                bottomStatus.textContent = "";
+                bottomStatus.className = "";
+              }
+            }, 3000);
+          } catch {
+            const outName = outputPath.split("/").pop() ?? outputPath;
+            const warnMsg = `Clipboard write failed — file saved as ${outName}`;
+            bottomStatus.className = "warning";
+            bottomStatus.textContent = warnMsg;
+            setTimeout(() => {
+              if (bottomStatus.textContent === warnMsg) {
+                bottomStatus.textContent = "";
+                bottomStatus.className = "";
+              }
+            }, 5000);
+          }
+        }
+
         setTimeout(() => {
           pr?.remove();
           const status = document.createElement("span");
           status.className = "file-status success";
-          status.textContent = `↗ ${result.output_path!.split("/").pop()}`;
-          status.title = "Click to reveal in Finder";
-          status.addEventListener("click", () =>
-            invoke("open_output_folder", { path: result.output_path }).catch(
-              console.error,
-            ),
-          );
+          if (wroteToClipboard) {
+            status.textContent = "✓ Copied to clipboard";
+            status.title = outputPath;
+          } else {
+            status.textContent = `↗ ${outputPath.split("/").pop()}`;
+            status.title = "Click to reveal in Finder";
+            status.addEventListener("click", () =>
+              invoke("open_output_folder", { path: outputPath }).catch(
+                console.error,
+              ),
+            );
+          }
           item.appendChild(status);
           item
             .querySelectorAll<HTMLButtonElement>(".fmt-btn")
