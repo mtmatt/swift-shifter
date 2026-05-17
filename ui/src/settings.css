@@ -48,6 +48,8 @@ body {
     border-radius: 4px;
     color: var(--text-3);
     cursor: pointer;
+    flex: 1;
+    text-align: center;
     transition:
         background 0.15s,
         color 0.15s;
@@ -107,10 +109,14 @@ body {
 label {
     font-size: 14px;
     color: var(--text-2);
-    width: 100px;
     flex-shrink: 0;
     letter-spacing: 0.04em;
     white-space: nowrap;
+}
+
+.row:has(input[type="range"]) label,
+.row:has(input[type="checkbox"]) label {
+    width: 100px;
 }
 
 input[type="range"] {
@@ -188,15 +194,20 @@ input[type="checkbox"]:checked::after {
 /* ─── Text input row ─────────────────────────────────────────────────── */
 .text-input {
     flex: 1;
+    min-width: 0;
     font-family: inherit;
     font-size: 13px;
     background: transparent;
     border: 0.5px solid var(--border-hi);
     color: var(--text-2);
-    padding: 4px 8px;
+    padding: 6px 10px;
     border-radius: 4px;
     outline: none;
     letter-spacing: 0.02em;
+}
+
+select.text-input {
+    font-size: 14px;
 }
 
 .text-input:focus {
