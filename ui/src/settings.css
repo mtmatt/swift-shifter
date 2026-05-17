@@ -95,6 +95,13 @@ body {
     display: flex;
     align-items: center;
     gap: 10px;
+    padding: 5px 8px;
+    border-radius: 5px;
+    transition: background 0.1s;
+}
+
+.row:hover {
+    background: var(--surface);
 }
 
 label {
@@ -143,12 +150,39 @@ input[type="range"]:active::-webkit-slider-thumb {
     letter-spacing: 0.02em;
 }
 
-/* ─── Checkbox row ────────────────────────────────────────────────────── */
+/* ─── Toggle switch ───────────────────────────────────────────────────── */
 input[type="checkbox"] {
-    width: 14px;
-    height: 14px;
-    accent-color: var(--accent);
+    -webkit-appearance: none;
+    appearance: none;
+    width: 30px;
+    height: 16px;
+    border-radius: 8px;
+    background: var(--border-hi);
+    position: relative;
     cursor: pointer;
+    flex-shrink: 0;
+    margin-left: auto;
+    transition: background 0.2s;
+}
+
+input[type="checkbox"]:checked {
+    background: var(--accent);
+}
+
+input[type="checkbox"]::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 50%;
+    transition: left 0.15s ease;
+}
+
+input[type="checkbox"]:checked::after {
+    left: 16px;
 }
 
 /* ─── Text input row ─────────────────────────────────────────────────── */
