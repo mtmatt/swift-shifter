@@ -3,6 +3,18 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 
+// Tab switching
+const tabs = document.querySelectorAll<HTMLButtonElement>(".tab");
+const panels = document.querySelectorAll<HTMLElement>(".panel");
+tabs.forEach((tab) => {
+  tab.addEventListener("click", () => {
+    tabs.forEach((t) => t.classList.remove("active"));
+    panels.forEach((p) => p.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById(`panel-${tab.dataset.panel}`)!.classList.add("active");
+  });
+});
+
 interface Config {
   output_dir: string | null;
   jpeg_quality: number;
