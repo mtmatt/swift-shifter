@@ -34,10 +34,6 @@ fn parse_manifest() -> Result<Manifest, String> {
     toml::from_str(MANIFEST).map_err(|e| format!("tools.toml: {e}"))
 }
 
-fn get_platform_entry(spec: &ToolSpec) -> Option<PlatformEntry> {
-    get_current_entry(spec)
-}
-
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 fn get_current_entry(spec: &ToolSpec) -> Option<PlatformEntry> { spec.linux_x86_64.clone() }
 
@@ -71,7 +67,9 @@ pub fn tool_version(name: &str) -> Option<String> {
 }
 
 pub fn verify_sha256(bytes: &[u8], expected: &str) -> Result<(), String> {
-    // Skip verification when sha256 is not yet populated in tools.toml
+    // Empty sha256 in tools.toml means the checksum hasn't been populated yet
+    // (typically for large archives skipped during initial setup). Downloads still
+    // succeed but integrity is unverified. Populate sha256 fields to enable checking.
     if expected.is_empty() {
         return Ok(());
     }
@@ -153,12 +151,19 @@ fn extract_dir(bytes: &[u8], archive: &str, dest: &std::path::Path) -> Result<()
 #[cfg(unix)]
 fn make_executable(dir: &std::path::Path) -> Result<(), String> {
     use std::os::unix::fs::PermissionsExt;
-    let entries = std::fs::read_dir(dir).map_err(|e| e.to_string())?;
-    for entry in entries {
+    for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
         let path = entry.map_err(|e| e.to_string())?.path();
+        if path.is_symlink() {
+            // Skip symlinks — calibre uses them; chmodding through a symlink
+            // requires the target to be accessible, which may not be the case
+            // during extraction ordering. The target will be chmod'd directly.
+            continue;
+        }
         if path.is_file() {
             std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755))
                 .map_err(|e| format!("chmod {path:?}: {e}"))?;
+        } else if path.is_dir() {
+            make_executable(&path)?;
         }
     }
     Ok(())
@@ -214,7 +219,7 @@ pub async fn ensure_tool(app: &tauri::AppHandle, tool_name: &str) -> Result<Path
         other     => return Err(format!("unknown tool: {other}")),
     };
 
-    let entry = get_platform_entry(spec)
+    let entry = get_current_entry(spec)
         .ok_or_else(|| format!("{tool_name}: no download entry for this platform/arch"))?;
 
     match entry.mode.as_str() {
