@@ -111,6 +111,14 @@ fn find_ffmpeg_binary() -> Option<PathBuf> {
             }
         }
     }
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    {
+        let bin_name = if cfg!(target_os = "windows") { "ffmpeg.exe" } else { "ffmpeg" };
+        let candidate = crate::downloader::user_tool_dir().join("bin").join(bin_name);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
     None
 }
 
@@ -185,6 +193,20 @@ pub async fn ensure_ffmpeg(app: &tauri::AppHandle) -> Result<(), String> {
                 FFMPEG_PATH.set(Some(path)).ok();
                 app.emit("ffmpeg:installed", ()).ok();
                 return Ok(());
+            }
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    {
+        match crate::downloader::ensure_tool(app, "ffmpeg").await {
+            Ok(path) => {
+                FFMPEG_PATH.set(Some(path)).ok();
+                app.emit("ffmpeg:installed", ()).ok();
+                return Ok(());
+            }
+            Err(e) => {
+                app.emit("ffmpeg:failed", &e).ok();
             }
         }
     }
