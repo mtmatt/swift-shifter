@@ -32,6 +32,57 @@ interface BatchResult {
   error: string | null;
 }
 
+interface TrimItem {
+  path: string;
+  start: string;
+  end: string;
+}
+
+const MEDIA_EXTENSIONS = new Set([
+  "mp4", "mov", "mkv", "webm", "avi",
+  "mp3", "aac", "flac", "ogg", "wav", "opus", "m4a",
+]);
+
+function secsToTimeStr(secs: number): string {
+  const s = Math.floor(secs);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+  return `${m}:${String(sec).padStart(2, "0")}`;
+}
+
+async function loadTrimDuration(
+  path: string,
+  startSlider: HTMLInputElement,
+  endSlider: HTMLInputElement,
+  fill: HTMLElement,
+  timeLabel: HTMLElement,
+): Promise<void> {
+  try {
+    const duration = await invoke<number>("get_media_duration", { path });
+    const maxSecs = Math.max(1, Math.floor(duration));
+    startSlider.max = String(maxSecs);
+    endSlider.max = String(maxSecs);
+    startSlider.value = "0";
+    endSlider.value = String(maxSecs);
+    startSlider.disabled = false;
+    endSlider.disabled = false;
+    fill.style.left = "0%";
+    fill.style.width = "100%";
+    timeLabel.textContent = `0:00 → ${secsToTimeStr(maxSecs)}`;
+  } catch {
+    startSlider.max = "100";
+    endSlider.max = "100";
+    endSlider.value = "100";
+    startSlider.disabled = false;
+    endSlider.disabled = false;
+    fill.style.left = "0%";
+    fill.style.width = "100%";
+    timeLabel.textContent = "0% → 100%";
+  }
+}
+
 // ─── Element refs ─────────────────────────────────────────────────────────
 
 const files = new Map<string, FileEntry>();
@@ -63,8 +114,12 @@ const btnMergeAll = document.getElementById("btn-merge-all") as HTMLButtonElemen
 const modeToggle = document.getElementById("mode-toggle") as HTMLDivElement;
 const btnModeConvert = document.getElementById("btn-mode-convert") as HTMLButtonElement;
 const btnModeMerge = document.getElementById("btn-mode-merge") as HTMLButtonElement;
+const btnModeTrim = document.getElementById("btn-mode-trim") as HTMLButtonElement;
+const trimFooter = document.getElementById("trim-footer") as HTMLDivElement;
+const trimBtnLabel = document.getElementById("trim-btn-label") as HTMLSpanElement;
+const btnTrimAll = document.getElementById("btn-trim-all") as HTMLButtonElement;
 
-let mode: "convert" | "merge" = "convert";
+let mode: "convert" | "merge" | "trim" = "convert";
 let dragSrc: HTMLElement | null = null;
 
 /** Paths of files that came from a clipboard paste (⌘V). */
@@ -112,6 +167,12 @@ function updateMergeFooter(): void {
     mergeOutputName.textContent = firstStem + "-merged.pdf";
 }
 
+function updateTrimFooter(): void {
+  if (mode !== "trim") return;
+  const count = fileList.querySelectorAll<HTMLElement>(".file-item").length;
+  btnTrimAll.disabled = count < 2;
+}
+
 const appWindow = getCurrentWindow();
 
 // ─── Dep install tracking ─────────────────────────────────────────────────
@@ -153,6 +214,8 @@ btnClearAll.addEventListener("click", () => {
 
 btnModeConvert.addEventListener("click", () => switchMode("convert"));
 btnModeMerge.addEventListener("click", () => switchMode("merge"));
+btnModeTrim.addEventListener("click", () => switchMode("trim"));
+btnTrimAll.addEventListener("click", trimAll);
 btnMergeAll.addEventListener("click", mergePdfs);
 
 // ─── Drag-drop ────────────────────────────────────────────────────────────
@@ -222,6 +285,14 @@ async function addFile(path: string): Promise<void> {
     return;
   }
 
+  if (mode === "trim") {
+    const ext = path.split(".").pop()?.toLowerCase() ?? "";
+    if (!MEDIA_EXTENSIONS.has(ext)) {
+      showInlineError(path, "Only audio/video files can be trimmed");
+      return;
+    }
+  }
+
   let formats: string[];
   try {
     formats = await invoke<string[]>("detect_format", { path });
@@ -234,12 +305,15 @@ async function addFile(path: string): Promise<void> {
   const el =
       mode === "merge"
           ? buildMergeItem(path, name, files.size)
+          : mode === "trim"
+          ? buildTrimItem(path, name)
           : buildFileItem(path, name, formats);
   files.set(path, { path, name, formats, el });
   fileList.appendChild(el);
   setFileListVisible(true);
   if (mode === "convert") updateBatchToolbar();
-  else updateMergeFooter();
+  else if (mode === "merge") updateMergeFooter();
+  else updateTrimFooter();
 }
 
 function removeFile(path: string): void {
@@ -254,7 +328,8 @@ function removeFile(path: string): void {
   }
   if (files.size === 0) setFileListVisible(false);
   if (mode === "convert") updateBatchToolbar();
-  else { renumberMergeItems(); updateMergeFooter(); }
+  else if (mode === "merge") { renumberMergeItems(); updateMergeFooter(); }
+  else updateTrimFooter();
 }
 
 function setFileListVisible(visible: boolean): void {
@@ -265,12 +340,14 @@ function setFileListVisible(visible: boolean): void {
     btnClearAll.hidden = false;
     modeToggle.hidden = false;
     mergeFooter.hidden = mode !== "merge";
+    trimFooter.hidden = mode !== "trim";
   } else {
     dropZone.hidden = false;
     fileList.hidden = true;
     btnClearAll.hidden = true;
     modeToggle.hidden = true;
     mergeFooter.hidden = true;
+    trimFooter.hidden = true;
   }
 }
 
@@ -419,15 +496,124 @@ function buildMergeItem(
     return item;
 }
 
-function switchMode(newMode: "convert" | "merge"): void {
+function buildTrimItem(path: string, name: string): HTMLElement {
+  const item = document.createElement("div");
+  item.className = "file-item";
+  item.dataset.path = path;
+
+  const row = document.createElement("div");
+  row.className = "file-row";
+  const nameEl = document.createElement("span");
+  nameEl.className = "file-name";
+  nameEl.textContent = name;
+  nameEl.title = path;
+  const removeBtn = document.createElement("button");
+  removeBtn.className = "file-remove";
+  removeBtn.textContent = "×";
+  removeBtn.title = "Remove";
+  removeBtn.addEventListener("click", () => removeFile(path));
+  row.appendChild(nameEl);
+  row.appendChild(removeBtn);
+  item.appendChild(row);
+
+  // Dual-handle range slider
+  const sliderWrap = document.createElement("div");
+  sliderWrap.className = "trim-slider-wrap";
+
+  const track = document.createElement("div");
+  track.className = "trim-track";
+
+  const fill = document.createElement("div");
+  fill.className = "trim-fill";
+
+  const startSlider = document.createElement("input");
+  startSlider.type = "range";
+  startSlider.className = "trim-range";
+  startSlider.dataset.role = "trim-start";
+  startSlider.min = "0";
+  startSlider.max = "100";
+  startSlider.value = "0";
+  startSlider.step = "1";
+  startSlider.disabled = true;
+
+  const endSlider = document.createElement("input");
+  endSlider.type = "range";
+  endSlider.className = "trim-range";
+  endSlider.dataset.role = "trim-end";
+  endSlider.min = "0";
+  endSlider.max = "100";
+  endSlider.value = "100";
+  endSlider.step = "1";
+  endSlider.disabled = true;
+
+  sliderWrap.append(track, fill, startSlider, endSlider);
+  item.appendChild(sliderWrap);
+
+  // Time label row + trim button
+  const timesRow = document.createElement("div");
+  timesRow.className = "trim-times-row";
+
+  const timeLabel = document.createElement("span");
+  timeLabel.className = "trim-time-label";
+  timeLabel.textContent = "loading…";
+
+  const trimBtn = document.createElement("button");
+  trimBtn.className = "trim-btn";
+  trimBtn.textContent = "trim →";
+  trimBtn.addEventListener("click", () => {
+    const maxSecs = parseFloat(startSlider.max);
+    const startSecs = parseFloat(startSlider.value);
+    const endSecs = parseFloat(endSlider.value);
+    const startStr = startSecs <= 0 ? "" : secsToTimeStr(startSecs);
+    const endStr = endSecs >= maxSecs ? "" : secsToTimeStr(endSecs);
+    startTrim(path, startStr, endStr, item);
+  });
+
+  timesRow.append(timeLabel, trimBtn);
+  item.appendChild(timesRow);
+
+  const updateFillAndLabel = () => {
+    const maxVal = parseFloat(startSlider.max) || 100;
+    let startVal = parseFloat(startSlider.value);
+    let endVal = parseFloat(endSlider.value);
+    // Clamp: keep start ≤ end
+    if (startVal > endVal) {
+      if (document.activeElement === startSlider) {
+        endSlider.value = startSlider.value;
+        endVal = startVal;
+      } else {
+        startSlider.value = endSlider.value;
+        startVal = endVal;
+      }
+    }
+    fill.style.left = `${(startVal / maxVal) * 100}%`;
+    fill.style.width = `${((endVal - startVal) / maxVal) * 100}%`;
+    timeLabel.textContent = `${secsToTimeStr(startVal)} → ${secsToTimeStr(endVal)}`;
+  };
+
+  // When start is focused bring it above end
+  startSlider.addEventListener("focus", () => { startSlider.style.zIndex = "3"; endSlider.style.zIndex = "2"; });
+  endSlider.addEventListener("focus", () => { endSlider.style.zIndex = "3"; startSlider.style.zIndex = "1"; });
+
+  startSlider.addEventListener("input", updateFillAndLabel);
+  endSlider.addEventListener("input", updateFillAndLabel);
+
+  loadTrimDuration(path, startSlider, endSlider, fill, timeLabel);
+
+  return item;
+}
+
+function switchMode(newMode: "convert" | "merge" | "trim"): void {
     if (mode === newMode) return;
     mode = newMode;
 
     btnModeConvert.classList.toggle("active", mode === "convert");
     btnModeMerge.classList.toggle("active", mode === "merge");
+    btnModeTrim.classList.toggle("active", mode === "trim");
 
     if (files.size === 0) {
         mergeFooter.hidden = true;
+        trimFooter.hidden = true;
         return;
     }
 
@@ -437,16 +623,17 @@ function switchMode(newMode: "convert" | "merge"): void {
 
     if (mode === "convert") {
         mergeFooter.hidden = true;
+        trimFooter.hidden = true;
         files.forEach((entry) => {
             entry.el = buildFileItem(entry.path, entry.name, entry.formats);
             files.set(entry.path, entry);
             fileList.appendChild(entry.el);
         });
         updateBatchToolbar();
-    } else {
+    } else if (mode === "merge") {
         mergeFooter.hidden = false;
-        // Remove any non-PDF files that were queued in convert mode —
-        // the merge backend only accepts PDFs.
+        trimFooter.hidden = true;
+        // Remove any non-PDF files
         files.forEach((entry, path) => {
             if (!path.toLowerCase().endsWith(".pdf")) {
                 entry.el.remove();
@@ -466,6 +653,28 @@ function switchMode(newMode: "convert" | "merge"): void {
         btnMergeAll.disabled = false;
         mergeBtnLabel.textContent = "merge all →";
         updateMergeFooter();
+    } else {
+        // trim mode
+        mergeFooter.hidden = true;
+        trimFooter.hidden = false;
+        // Remove non-media files
+        files.forEach((entry, path) => {
+            const ext = path.split(".").pop()?.toLowerCase() ?? "";
+            if (!MEDIA_EXTENSIONS.has(ext)) {
+                entry.el.remove();
+                files.delete(path);
+            }
+        });
+        if (files.size === 0) {
+            setFileListVisible(false);
+            return;
+        }
+        files.forEach((entry) => {
+            entry.el = buildTrimItem(entry.path, entry.name);
+            files.set(entry.path, entry);
+            fileList.appendChild(entry.el);
+        });
+        updateTrimFooter();
     }
 }
 
@@ -507,6 +716,142 @@ async function mergePdfs(): Promise<void> {
             }
         }, 5000);
     }
+}
+
+async function trimAll(): Promise<void> {
+  const items = Array.from(fileList.querySelectorAll<HTMLElement>(".file-item"));
+  const trimItems: TrimItem[] = items
+    .map((item) => {
+      const path = item.dataset.path;
+      if (!path) return null;
+      const startInput = item.querySelector<HTMLInputElement>("[data-role='trim-start']");
+      const endInput = item.querySelector<HTMLInputElement>("[data-role='trim-end']");
+      const maxSecs = parseFloat(startInput?.max ?? "0");
+      const startSecs = parseFloat(startInput?.value ?? "0");
+      const endSecs = parseFloat(endInput?.value ?? String(maxSecs));
+      const start = startSecs <= 0 ? "" : secsToTimeStr(startSecs);
+      const end = endSecs >= maxSecs ? "" : secsToTimeStr(endSecs);
+      return { path, start, end };
+    })
+    .filter((x): x is TrimItem => x !== null);
+
+  if (trimItems.length < 2) return;
+
+  btnTrimAll.disabled = true;
+  trimBtnLabel.textContent = "trimming…";
+
+  const unlisteners: Array<() => void> = [];
+
+  for (const ti of trimItems) {
+    const entry = files.get(ti.path);
+    if (!entry) continue;
+    const item = entry.el;
+    const tb = item.querySelector<HTMLButtonElement>(".trim-btn");
+    if (tb) tb.disabled = true;
+    item.querySelector(".file-status")?.remove();
+
+    let progressRow = item.querySelector<HTMLElement>(".progress-row");
+    let progressFill: HTMLElement;
+    let progressLabel: HTMLElement;
+
+    if (!progressRow) {
+      progressRow = document.createElement("div");
+      progressRow.className = "progress-row";
+      const bar = document.createElement("div");
+      bar.className = "progress-bar";
+      progressFill = document.createElement("div");
+      progressFill.className = "progress-fill";
+      bar.appendChild(progressFill);
+      progressLabel = document.createElement("span");
+      progressLabel.className = "progress-label";
+      progressLabel.textContent = "0%";
+      progressRow.appendChild(bar);
+      progressRow.appendChild(progressLabel);
+      item.appendChild(progressRow);
+    } else {
+      progressFill = progressRow.querySelector(".progress-fill") as HTMLElement;
+      progressLabel = progressRow.querySelector(".progress-label") as HTMLElement;
+      progressFill.style.width = "0%";
+      progressLabel.textContent = "0%";
+    }
+
+    const filePath = ti.path;
+    const fill = progressFill;
+    const lbl = progressLabel;
+    const unlisten = await listen<ProgressPayload>("convert:progress", (ev) => {
+      if (ev.payload.path !== filePath) return;
+      const pct = Math.round(ev.payload.percent);
+      fill.style.width = `${pct}%`;
+      lbl.textContent = `${pct}%`;
+    });
+    unlisteners.push(unlisten);
+  }
+
+  try {
+    const results = await invoke<BatchResult[]>("trim_batch", { items: trimItems });
+
+    for (const result of results) {
+      const entry = files.get(result.path);
+      if (!entry) continue;
+      const item = entry.el;
+      const pr = item.querySelector<HTMLElement>(".progress-row");
+      const tb = item.querySelector<HTMLButtonElement>(".trim-btn");
+
+      if (result.output_path) {
+        const fill = pr?.querySelector<HTMLElement>(".progress-fill");
+        const lbl = pr?.querySelector<HTMLElement>(".progress-label");
+        if (fill) fill.style.width = "100%";
+        if (lbl) lbl.textContent = "100%";
+
+        const outputPath = result.output_path;
+        setTimeout(() => {
+          pr?.remove();
+          const status = document.createElement("span");
+          status.className = "file-status success";
+          status.textContent = `↗ ${outputPath.split("/").pop()}`;
+          status.title = "Click to reveal in Finder";
+          status.addEventListener("click", () =>
+            invoke("open_output_folder", { path: outputPath }).catch(console.error),
+          );
+          item.appendChild(status);
+          if (tb) tb.disabled = false;
+        }, 600);
+      } else {
+        pr?.remove();
+        const status = document.createElement("span");
+        const errStr = result.error ?? "Unknown error";
+        const installingDep = installingDepForError(errStr);
+        if (installingDep) {
+          status.className = "file-status warning";
+          status.textContent = `⏳ Installing ${DEP_DISPLAY[installingDep]}, please try again…`;
+        } else {
+          status.className = "file-status error";
+          status.textContent = `✗ ${errStr}`;
+        }
+        item.appendChild(status);
+        if (tb) tb.disabled = false;
+      }
+    }
+
+    trimBtnLabel.textContent = "trim all →";
+    btnTrimAll.disabled = false;
+    updateTrimFooter();
+  } catch (err) {
+    trimBtnLabel.textContent = "trim all →";
+    const errStr = String(err);
+    bottomStatus.className = "warning";
+    bottomStatus.textContent = errStr;
+    btnTrimAll.disabled = false;
+    updateTrimFooter();
+    setTimeout(() => {
+      if (bottomStatus.textContent === errStr) {
+        bottomStatus.textContent = "";
+        bottomStatus.className = "";
+      }
+    }, 5000);
+  } finally {
+    unlisteners.forEach((u) => u());
+  }
 }
 
 // ─── Single-file conversion ───────────────────────────────────────────────
@@ -636,10 +981,93 @@ async function startConversion(
   }
 }
 
+async function startTrim(
+  path: string,
+  start: string,
+  end: string,
+  item: HTMLElement,
+): Promise<void> {
+  const trimBtn = item.querySelector<HTMLButtonElement>(".trim-btn");
+  if (trimBtn) trimBtn.disabled = true;
+  item.querySelector(".file-status")?.remove();
+
+  let progressRow = item.querySelector<HTMLElement>(".progress-row");
+  let progressFill: HTMLElement;
+  let progressLabel: HTMLElement;
+
+  if (!progressRow) {
+    progressRow = document.createElement("div");
+    progressRow.className = "progress-row";
+    const bar = document.createElement("div");
+    bar.className = "progress-bar";
+    progressFill = document.createElement("div");
+    progressFill.className = "progress-fill";
+    bar.appendChild(progressFill);
+    progressLabel = document.createElement("span");
+    progressLabel.className = "progress-label";
+    progressLabel.textContent = "0%";
+    progressRow.appendChild(bar);
+    progressRow.appendChild(progressLabel);
+    item.appendChild(progressRow);
+  } else {
+    progressFill = progressRow.querySelector(".progress-fill") as HTMLElement;
+    progressLabel = progressRow.querySelector(".progress-label") as HTMLElement;
+  }
+
+  progressFill.style.width = "0%";
+  progressLabel.textContent = "0%";
+
+  progressUnlisteners.get(path)?.();
+  const unlisten = await listen<ProgressPayload>("convert:progress", (ev) => {
+    if (ev.payload.path !== path) return;
+    const pct = Math.round(ev.payload.percent);
+    progressFill.style.width = `${pct}%`;
+    progressLabel.textContent = `${pct}%`;
+  });
+  progressUnlisteners.set(path, unlisten);
+
+  try {
+    const outputPath = await invoke<string>("trim_media", { path, start, end });
+    progressFill.style.width = "100%";
+    progressLabel.textContent = "100%";
+    // Trim output always goes to disk — clipboard round-trip doesn't apply to media files.
+
+    setTimeout(() => {
+      progressRow!.remove();
+      const status = document.createElement("span");
+      status.className = "file-status success";
+      status.textContent = `↗ ${outputPath.split("/").pop()}`;
+      status.title = "Click to reveal in Finder";
+      status.addEventListener("click", () =>
+        invoke("open_output_folder", { path: outputPath }).catch(console.error),
+      );
+      item.appendChild(status);
+      if (trimBtn) trimBtn.disabled = false;
+    }, 600);
+  } catch (err) {
+    progressRow.remove();
+    const errStr = String(err);
+    const status = document.createElement("span");
+    const installingDep = installingDepForError(errStr);
+    if (installingDep) {
+      status.className = "file-status warning";
+      status.textContent = `⏳ Installing ${DEP_DISPLAY[installingDep]}, please try again…`;
+    } else {
+      status.className = "file-status error";
+      status.textContent = `✗ ${errStr}`;
+    }
+    item.appendChild(status);
+    if (trimBtn) trimBtn.disabled = false;
+  } finally {
+    unlisten();
+    progressUnlisteners.delete(path);
+  }
+}
+
 // ─── Batch toolbar ────────────────────────────────────────────────────────
 
 function updateBatchToolbar(): void {
-  if (mode === "merge") return;
+  if (mode === "merge" || mode === "trim") return;
   fileList.querySelector(".batch-toolbar")?.remove();
   if (files.size < 2) return;
 
