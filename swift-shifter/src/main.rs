@@ -4,6 +4,7 @@
 mod clipboard;
 mod config;
 mod converter;
+mod downloader;
 mod hotkey;
 mod tray;
 
