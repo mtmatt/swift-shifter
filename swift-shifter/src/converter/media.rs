@@ -91,7 +91,26 @@ pub fn trim_output_path(input: &str, output_dir: Option<&str>) -> Result<PathBuf
         }
         None => p.parent().unwrap_or(Path::new(".")).to_path_buf(),
     };
-    Ok(dir.join(format!("{}-trim.{}", stem.to_string_lossy(), ext)))
+    let file_name = if ext.is_empty() {
+        format!("{}-trim", stem.to_string_lossy())
+    } else {
+        format!("{}-trim.{}", stem.to_string_lossy(), ext)
+    };
+    Ok(dir.join(file_name))
+}
+
+/// Audio containers we can losslessly stream-copy when trimming. Video files
+/// are re-encoded instead so the cut lands on the exact requested frame.
+fn is_audio_only(path: &str) -> bool {
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    matches!(
+        ext.as_str(),
+        "mp3" | "aac" | "flac" | "ogg" | "wav" | "opus" | "m4a"
+    )
 }
 
 /// Locations that Homebrew uses but macOS GUI apps don't inherit via PATH.
@@ -461,12 +480,27 @@ pub async fn trim_media(
     let ffmpeg = get_ffmpeg()?;
     let out = trim_output_path(path, output_dir)?;
     let source_duration_secs = get_duration(&ffmpeg, path).await.unwrap_or(0.0);
-    let effective_duration_secs = match (
-        (!start.trim().is_empty()).then(|| parse_time_to_secs(start)).flatten(),
-        (!end.trim().is_empty()).then(|| parse_time_to_secs(end)).flatten(),
-    ) {
-        (Some(s), Some(e)) if e > s => e - s,
-        _ => source_duration_secs,
+
+    let start_secs = (!start.trim().is_empty())
+        .then(|| parse_time_to_secs(start))
+        .flatten();
+    let end_secs = (!end.trim().is_empty())
+        .then(|| parse_time_to_secs(end))
+        .flatten();
+
+    if let (Some(s), Some(e)) = (start_secs, end_secs) {
+        if e <= s {
+            return Err("End time must be after start time".to_string());
+        }
+    }
+
+    // ffmpeg resets output timestamps to 0 after an input-side -ss, so the
+    // progress denominator is the *trimmed* span, not the full source.
+    let effective_duration_secs = match (start_secs, end_secs) {
+        (Some(s), Some(e)) => e - s,
+        (Some(s), None) => (source_duration_secs - s).max(0.0),
+        (None, Some(e)) => e,
+        (None, None) => source_duration_secs,
     };
 
     let mut cmd = tokio::process::Command::new(&ffmpeg);
@@ -477,13 +511,15 @@ pub async fn trim_media(
     if !end.trim().is_empty() {
         cmd.args(["-to", end.trim()]);
     }
-    cmd.args(["-i", path, "-c", "copy"]);
-    cmd.args([
-        "-progress",
-        "pipe:2",
-        "-nostats",
-        out.to_str().unwrap_or(""),
-    ]);
+    cmd.args(["-i", path]);
+    // Audio: lossless stream copy (audio frames are tiny, so cuts stay accurate).
+    // Video: re-encode with container defaults — modern ffmpeg makes the
+    // input-side -ss frame-accurate when transcoding.
+    if is_audio_only(path) {
+        cmd.args(["-c", "copy"]);
+    }
+    cmd.args(["-progress", "pipe:2", "-nostats"]);
+    cmd.arg(&out);
     cmd.stderr(std::process::Stdio::piped());
 
     let path_string = path.to_string();
@@ -492,6 +528,10 @@ pub async fn trim_media(
     let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn ffmpeg: {e}"))?;
+
+    // Keep the tail of ffmpeg's non-progress stderr so a failure can report
+    // the actual diagnostic instead of just an exit code.
+    let mut stderr_tail: Vec<String> = Vec::new();
 
     if let Some(stderr) = child.stderr.take() {
         use tokio::io::{AsyncBufReadExt, BufReader};
@@ -513,6 +553,20 @@ pub async fn trim_media(
                             .ok();
                     }
                 }
+                continue;
+            }
+            // Skip `-progress` key=value lines (lowercase_with_underscores=...);
+            // keep everything else as a potential error message.
+            let is_progress_kv = line.split_once('=').is_some_and(|(k, _)| {
+                !k.is_empty()
+                    && k.chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+            });
+            if !is_progress_kv && !line.trim().is_empty() {
+                stderr_tail.push(line);
+                if stderr_tail.len() > 15 {
+                    stderr_tail.remove(0);
+                }
             }
         }
     }
@@ -522,10 +576,15 @@ pub async fn trim_media(
         .await
         .map_err(|e| format!("ffmpeg wait error: {e}"))?;
     if !status.success() {
-        return Err(format!(
-            "ffmpeg exited with status {}",
-            status.code().unwrap_or(-1)
-        ));
+        let detail = stderr_tail.join("\n");
+        let detail = detail.trim();
+        if detail.is_empty() {
+            return Err(format!(
+                "ffmpeg exited with status {}",
+                status.code().unwrap_or(-1)
+            ));
+        }
+        return Err(format!("ffmpeg failed: {detail}"));
     }
 
     Ok(out.to_string_lossy().to_string())

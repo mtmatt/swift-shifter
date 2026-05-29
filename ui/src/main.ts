@@ -58,28 +58,30 @@ async function loadTrimDuration(
   endSlider: HTMLInputElement,
   fill: HTMLElement,
   timeLabel: HTMLElement,
+  trimBtn: HTMLButtonElement,
 ): Promise<void> {
   try {
     const duration = await invoke<number>("get_media_duration", { path });
-    const maxSecs = Math.max(1, Math.floor(duration));
+    if (!(duration > 0)) throw new Error("unknown duration");
+    const maxSecs = Math.floor(duration);
     startSlider.max = String(maxSecs);
     endSlider.max = String(maxSecs);
     startSlider.value = "0";
     endSlider.value = String(maxSecs);
     startSlider.disabled = false;
     endSlider.disabled = false;
+    trimBtn.disabled = false;
     fill.style.left = "0%";
     fill.style.width = "100%";
     timeLabel.textContent = `0:00 → ${secsToTimeStr(maxSecs)}`;
   } catch {
-    startSlider.max = "100";
-    endSlider.max = "100";
-    endSlider.value = "100";
-    startSlider.disabled = false;
-    endSlider.disabled = false;
-    fill.style.left = "0%";
-    fill.style.width = "100%";
-    timeLabel.textContent = "0% → 100%";
+    // Without a duration we can't build a meaningful range — a slider scaled to
+    // a fallback like 100 would be read as seconds and silently mistrim.
+    startSlider.disabled = true;
+    endSlider.disabled = true;
+    trimBtn.disabled = true;
+    fill.style.width = "0%";
+    timeLabel.textContent = "couldn't read duration";
   }
 }
 
@@ -560,6 +562,7 @@ function buildTrimItem(path: string, name: string): HTMLElement {
   const trimBtn = document.createElement("button");
   trimBtn.className = "trim-btn";
   trimBtn.textContent = "trim →";
+  trimBtn.disabled = true;
   trimBtn.addEventListener("click", () => {
     const maxSecs = parseFloat(startSlider.max);
     const startSecs = parseFloat(startSlider.value);
@@ -598,7 +601,7 @@ function buildTrimItem(path: string, name: string): HTMLElement {
   startSlider.addEventListener("input", updateFillAndLabel);
   endSlider.addEventListener("input", updateFillAndLabel);
 
-  loadTrimDuration(path, startSlider, endSlider, fill, timeLabel);
+  loadTrimDuration(path, startSlider, endSlider, fill, timeLabel, trimBtn);
 
   return item;
 }
@@ -726,6 +729,8 @@ async function trimAll(): Promise<void> {
       if (!path) return null;
       const startInput = item.querySelector<HTMLInputElement>("[data-role='trim-start']");
       const endInput = item.querySelector<HTMLInputElement>("[data-role='trim-end']");
+      // Sliders stay disabled when the duration couldn't be read — skip those.
+      if (!startInput || startInput.disabled) return null;
       const maxSecs = parseFloat(startInput?.max ?? "0");
       const startSecs = parseFloat(startInput?.value ?? "0");
       const endSecs = parseFloat(endInput?.value ?? String(maxSecs));
