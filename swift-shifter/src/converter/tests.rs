@@ -15,4 +15,26 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("at least 2"));
     }
+
+    #[test]
+    fn test_trim_output_path_appends_trim_suffix() {
+        let out =
+            crate::converter::media::trim_output_path("/home/user/interview.mp3", None).unwrap();
+        assert_eq!(
+            out.file_name().unwrap().to_str().unwrap(),
+            "interview-trim.mp3"
+        );
+        assert_eq!(out.parent().unwrap(), std::path::Path::new("/home/user"));
+    }
+
+    #[test]
+    fn test_trim_output_path_uses_output_dir() {
+        let out = crate::converter::media::trim_output_path(
+            "/home/user/clip.mp4",
+            Some("/tmp/output"),
+        )
+        .unwrap();
+        assert_eq!(out.file_name().unwrap().to_str().unwrap(), "clip-trim.mp4");
+        assert!(out.starts_with("/tmp/output"));
+    }
 }
