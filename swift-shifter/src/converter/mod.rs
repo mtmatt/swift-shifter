@@ -1,5 +1,6 @@
 pub mod data;
 pub mod document;
+pub mod graph;
 pub mod image;
 pub mod media;
 
@@ -9,7 +10,8 @@ use std::path::Path;
 
 use crate::config::Config;
 
-/// Return the list of valid output format strings for a given input file path.
+/// Return the list of valid DIRECT output format strings for a given input path.
+/// Derived from the edge table in `graph.rs` (single source of truth).
 pub fn detect_output_formats(path: &str) -> Result<Vec<String>, String> {
     let ext = Path::new(path)
         .extension()
@@ -17,45 +19,11 @@ pub fn detect_output_formats(path: &str) -> Result<Vec<String>, String> {
         .unwrap_or("")
         .to_lowercase();
 
-    let formats: &[&str] = match ext.as_str() {
-        // Images
-        "png" | "jpg" | "jpeg" | "webp" | "bmp" | "tiff" | "tif" | "gif" | "avif" => &[
-            "png", "jpg", "webp", "avif", "gif", "bmp", "tiff", "heic", "pdf",
-        ],
-        // HEIC — macOS sips only; no WebP/AVIF output via sips
-        "heic" | "heif" => &["jpg", "png", "tiff", "gif", "bmp", "pdf"],
-        // Video
-        "mp4" | "mov" | "mkv" | "webm" | "avi" => &["mp4", "mov", "mkv", "webm", "avi", "gif"],
-        // Audio
-        "mp3" | "aac" | "flac" | "ogg" | "wav" | "opus" | "m4a" => {
-            &["mp3", "aac", "flac", "ogg", "wav", "opus", "m4a"]
-        }
-        // Data
-        "json" => &["yaml", "toml", "csv"],
-        "yaml" | "yml" => &["json", "toml", "csv"],
-        "toml" => &["json", "yaml", "csv"],
-        // CSV is always an array of records; TOML has no top-level array-of-tables,
-        // so csv → toml can never succeed. Don't offer it.
-        "csv" => &["json", "yaml"],
-        // Documents (pandoc)
-        "md" | "markdown" => &["txt", "html", "pdf", "tex", "typst"],
-        "txt" => &["md", "html", "pdf", "tex", "typst"],
-        "tex" | "latex" => &["md", "html", "pdf", "typst"],
-        "typst" => &["md", "html", "pdf", "tex"],
-        "epub" => &["pdf", "mobi", "md", "html"],
-        "mobi" => &["epub", "pdf", "html", "md"],
-        "pdf" => &["epub", "mobi", "html", "md"],
-        _ => return Err(format!("Unsupported file type: .{ext}")),
-    };
-
-    let is_jpeg_input = ext == "jpg" || ext == "jpeg";
-    Ok(formats
-        .iter()
-        .filter(|&&f| {
-            f != ext.as_str() && !(is_jpeg_input && (f == "jpg" || f == "jpeg"))
-        })
-        .map(|s| s.to_string())
-        .collect())
+    let targets = graph::direct_targets(&ext);
+    if targets.is_empty() {
+        return Err(format!("Unsupported file type: .{ext}"));
+    }
+    Ok(targets)
 }
 
 pub async fn convert_file(

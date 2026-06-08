@@ -84,7 +84,9 @@ mod tests {
             ("/x.gif",  &["png","jpg","webp","avif","bmp","tiff","heic","pdf"]),
             ("/x.bmp",  &["png","jpg","webp","avif","gif","tiff","heic","pdf"]),
             ("/x.tiff", &["png","jpg","webp","avif","gif","bmp","heic","pdf"]),
-            ("/x.tif",  &["png","jpg","webp","avif","gif","bmp","tiff","heic","pdf"]),
+            // .tif normalizes to tiff in the graph, so the pointless tif->tiff
+            // identity conversion is no longer offered (intentional delta).
+            ("/x.tif",  &["png","jpg","webp","avif","gif","bmp","heic","pdf"]),
             ("/x.avif", &["png","jpg","webp","gif","bmp","tiff","heic","pdf"]),
             ("/x.heic", &["jpg","png","tiff","gif","bmp","pdf"]),
             ("/x.heif", &["jpg","png","tiff","gif","bmp","pdf"]),
