@@ -28,8 +28,6 @@ impl EdgeCond {
 pub struct Edge {
     pub from: &'static str,
     pub to: &'static str,
-    // cost is read by the Dijkstra path-finder in Task 3; suppress dead_code until then.
-    #[allow(dead_code)]
     pub cost: u32,
     pub cond: EdgeCond,
 }
@@ -148,4 +146,159 @@ pub fn direct_targets(from_ext: &str) -> Vec<String> {
         .filter(|e| e.from == from && e.cond.satisfied())
         .map(|e| e.to.to_string())
         .collect()
+}
+
+use std::collections::{BinaryHeap, HashMap};
+
+/// Which converter performs a single (from,to) hop. Mirrors the dispatch in
+/// `converter::run_single_hop`. `route_hop` returns `Some` iff the pair is
+/// handled — making it the shared coverage check for the property test.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Hop {
+    ImageRaster,    // image -> pdf (document::convert_image_to_pdf)
+    ImageToAvif,
+    ImageToHeic,
+    ImageToGif,     // media::convert_image_to_gif
+    ImageGeneric,   // image::convert_image
+    HeicInput,      // image::convert_heic (heic input, non-pdf target)
+    Media,          // media::convert_media
+    Data,           // data::convert_data
+    EpubToMobi,
+    MobiInput,      // document::convert_mobi
+    PdfToMobi,
+    PdfToHtml,
+    PdfToMd,
+    PdfToEpubOrMarker,
+    DocumentPandoc, // document::convert_document (md/txt/tex/typst, epub non-mobi)
+}
+
+/// Classify a single hop. Inputs MUST already be normalized.
+pub fn route_hop(from: &str, to: &str) -> Option<Hop> {
+    use Hop::*;
+    match from {
+        "png" | "jpg" | "webp" | "bmp" | "tiff" | "gif" => match to {
+            "pdf" => Some(ImageRaster),
+            "avif" => Some(ImageToAvif),
+            "heic" => Some(ImageToHeic),
+            "gif" => Some(ImageToGif),
+            "png" | "jpg" | "webp" | "bmp" | "tiff" => Some(ImageGeneric),
+            _ => None,
+        },
+        "avif" => match to {
+            "pdf" => Some(ImageRaster),
+            "heic" => Some(ImageToHeic),
+            "gif" => Some(ImageToGif),
+            "png" | "jpg" | "webp" | "bmp" | "tiff" => Some(ImageGeneric),
+            _ => None,
+        },
+        "heic" => match to {
+            "pdf" => Some(ImageRaster),
+            "jpg" | "png" | "tiff" | "gif" | "bmp" => Some(HeicInput),
+            _ => None,
+        },
+        "mp4" | "mov" | "mkv" | "webm" | "avi" | "mp3" | "aac" | "flac" | "ogg" | "wav"
+        | "opus" | "m4a" => Some(Media),
+        "json" | "yaml" | "toml" | "csv" => Some(Data),
+        "mobi" => Some(MobiInput),
+        "epub" => {
+            if to == "mobi" {
+                Some(EpubToMobi)
+            } else {
+                Some(DocumentPandoc)
+            }
+        }
+        "pdf" => match to {
+            "mobi" => Some(PdfToMobi),
+            "html" => Some(PdfToHtml),
+            "md" => Some(PdfToMd),
+            "epub" => Some(PdfToEpubOrMarker),
+            _ => None,
+        },
+        "md" | "txt" | "tex" | "typst" => Some(DocumentPandoc),
+        _ => None,
+    }
+}
+
+/// Maximum number of hops (edges) in a chain.
+pub const MAX_HOPS: usize = 6;
+
+/// Dijkstra from `from` over platform-satisfiable edges. Returns, for every
+/// reachable node, the min-cost path (as a node sequence including endpoints)
+/// whose length is within `MAX_HOPS`.
+pub fn shortest_paths(from: &str) -> HashMap<String, Vec<String>> {
+    let from = normalize_ext(from).to_string();
+
+    // adjacency: node -> Vec<(neighbor, cost)>
+    let mut adj: HashMap<&'static str, Vec<(&'static str, u32)>> = HashMap::new();
+    for e in edges() {
+        if e.cond.satisfied() {
+            adj.entry(e.from).or_default().push((e.to, e.cost));
+        }
+    }
+
+    let mut dist: HashMap<String, u32> = HashMap::new();
+    let mut prev: HashMap<String, String> = HashMap::new();
+    dist.insert(from.clone(), 0);
+
+    // min-heap on (Reverse(cost), node)
+    let mut heap: BinaryHeap<(std::cmp::Reverse<u32>, String)> = BinaryHeap::new();
+    heap.push((std::cmp::Reverse(0), from.clone()));
+
+    while let Some((std::cmp::Reverse(d), node)) = heap.pop() {
+        if d > *dist.get(&node).unwrap_or(&u32::MAX) {
+            continue;
+        }
+        if let Some(neighbors) = adj.get(node.as_str()) {
+            for &(nbr, cost) in neighbors {
+                let nd = d + cost;
+                if nd < *dist.get(nbr).unwrap_or(&u32::MAX) {
+                    dist.insert(nbr.to_string(), nd);
+                    prev.insert(nbr.to_string(), node.clone());
+                    heap.push((std::cmp::Reverse(nd), nbr.to_string()));
+                }
+            }
+        }
+    }
+
+    // reconstruct paths, dropping any that exceed MAX_HOPS
+    let mut paths: HashMap<String, Vec<String>> = HashMap::new();
+    for target in dist.keys() {
+        if *target == from {
+            continue;
+        }
+        let mut seq = vec![target.clone()];
+        let mut cur = target.clone();
+        while let Some(p) = prev.get(&cur) {
+            seq.push(p.clone());
+            cur = p.clone();
+        }
+        seq.reverse();
+        if seq.len() - 1 <= MAX_HOPS {
+            paths.insert(target.clone(), seq);
+        }
+    }
+    paths
+}
+
+/// Semantic dead-ends: (from, to) pairs that the graph structurally cannot
+/// offer even if a multi-hop path exists through intermediate nodes.
+/// Reason: CSV is an array-of-records; TOML has no top-level array syntax,
+/// so the conversion would always fail at runtime regardless of the route.
+fn is_semantically_blocked(from: &str, to: &str) -> bool {
+    matches!((from, to), ("csv", "toml"))
+}
+
+/// Min-cost path of normalized format nodes from `from_ext` to `target`,
+/// including both endpoints. `None` if unreachable, beyond `MAX_HOPS`, or
+/// semantically blocked (e.g. csv→toml has no valid TOML representation).
+pub fn find_path(from_ext: &str, target: &str) -> Option<Vec<String>> {
+    let target = normalize_ext(target).to_string();
+    let from = normalize_ext(from_ext).to_string();
+    if from == target {
+        return None;
+    }
+    if is_semantically_blocked(&from, &target) {
+        return None;
+    }
+    shortest_paths(&from).remove(&target)
 }

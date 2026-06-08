@@ -136,4 +136,57 @@ mod tests {
         // HEIC input has only MacOnly edges, so off-macOS it is an unsupported type.
         assert!(d("/x.heic").is_err());
     }
+
+    #[test]
+    fn test_find_path_direct_is_two_nodes() {
+        let p = crate::converter::graph::find_path("json", "yaml").unwrap();
+        assert_eq!(p, vec!["json".to_string(), "yaml".to_string()]);
+    }
+
+    #[test]
+    fn test_find_path_multi_hop_png_to_mobi() {
+        // png has no direct edge to mobi; must go through pdf then an ebook tool.
+        let p = crate::converter::graph::find_path("png", "mobi").unwrap();
+        assert!(p.len() > 2, "expected a chain, got {p:?}");
+        assert_eq!(p.first().unwrap(), &"png");
+        assert_eq!(p.last().unwrap(), &"mobi");
+        for w in p.windows(2) {
+            assert!(
+                crate::converter::graph::route_hop(&w[0], &w[1]).is_some(),
+                "hop {:?}->{:?} not routable",
+                w[0], w[1]
+            );
+        }
+    }
+
+    #[test]
+    fn test_find_path_normalizes_aliases() {
+        let p = crate::converter::graph::find_path("jpeg", "png").unwrap();
+        assert_eq!(p, vec!["jpg".to_string(), "png".to_string()]);
+    }
+
+    #[test]
+    fn test_find_path_unreachable_returns_none() {
+        assert!(crate::converter::graph::find_path("csv", "toml").is_none());
+    }
+
+    #[test]
+    fn test_find_path_prefers_cheaper_route() {
+        let p = crate::converter::graph::find_path("png", "tiff").unwrap();
+        assert_eq!(p, vec!["png".to_string(), "tiff".to_string()]);
+    }
+
+    #[test]
+    fn test_route_hop_covers_every_satisfiable_edge() {
+        // The core guarantee: nothing the table offers is unhandled by the dispatcher.
+        for e in crate::converter::graph::edges() {
+            if e.cond.satisfied() {
+                assert!(
+                    crate::converter::graph::route_hop(e.from, e.to).is_some(),
+                    "edge {}->{} is offered but route_hop returns None",
+                    e.from, e.to
+                );
+            }
+        }
+    }
 }
