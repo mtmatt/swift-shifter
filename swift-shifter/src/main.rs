@@ -62,6 +62,11 @@ struct BatchResult {
 }
 
 fn main() {
+    let context = tauri::generate_context!();
+    if cli::is_cli_invocation() {
+        std::process::exit(cli::run(context));
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -223,7 +228,7 @@ fn main() {
             install_update,
             quit,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|_app_handle, event| match event {
             tauri::RunEvent::ExitRequested { .. } => {

@@ -273,6 +273,36 @@ pub fn run_trim(context: tauri::Context, cfg: Config, input: String, start: Stri
     })
 }
 
+/// Parse args and dispatch. Returns the process exit code.
+/// AppHandle-backed commands (`convert`, `trim`) never return — they
+/// `std::process::exit` from inside the headless runner.
+pub fn run(context: tauri::Context) -> i32 {
+    let cli = match Cli::try_parse() {
+        Ok(c) => c,
+        Err(e) => {
+            // Prints help/version/usage as appropriate and exits.
+            e.exit();
+        }
+    };
+
+    let cfg = match build_config(&cli.cfg) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("{e}");
+            return 2;
+        }
+    };
+
+    match cli.command {
+        Commands::DetectFormats { input } => run_detect(&input),
+        Commands::Merge { inputs } => run_merge(&inputs, &cfg),
+        Commands::Duration { input } => run_duration(&input),
+        Commands::Doctor => run_doctor(&cfg),
+        Commands::Convert { format, inputs } => run_convert(context, cfg, format, inputs),
+        Commands::Trim { input, start, end } => run_trim(context, cfg, input, start, end),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
