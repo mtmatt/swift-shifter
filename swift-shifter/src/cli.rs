@@ -12,20 +12,21 @@ const SUBCOMMANDS: &[&str] = &[
     "convert", "detect-formats", "trim", "merge", "duration", "doctor",
 ];
 
-/// True when the first CLI argument should route to the developer CLI
-/// instead of launching the GUI.
+/// True when the args should route to the developer CLI instead of the GUI.
 pub fn is_cli_invocation() -> bool {
-    is_subcommand(std::env::args().nth(1).as_deref())
+    args_select_cli(std::env::args().skip(1))
 }
 
-fn is_subcommand(arg: Option<&str>) -> bool {
-    match arg {
-        Some(a) => {
-            SUBCOMMANDS.contains(&a)
-                || matches!(a, "-h" | "--help" | "-V" | "--version" | "help")
-        }
-        None => false,
-    }
+/// Scan all args (not just argv[1]) for a subcommand or help/version token, so
+/// global flags placed before the subcommand — e.g.
+/// `swift-shifter --jpeg-quality 80 convert in.png` — still route to the CLI.
+fn args_select_cli(args: impl Iterator<Item = String>) -> bool {
+    args.into_iter().any(|a| is_cli_token(&a))
+}
+
+/// True if `arg` is a known subcommand name or a help/version flag.
+fn is_cli_token(arg: &str) -> bool {
+    SUBCOMMANDS.contains(&arg) || matches!(arg, "-h" | "--help" | "-V" | "--version" | "help")
 }
 
 #[derive(Parser)]
@@ -344,18 +345,33 @@ mod tests {
         assert_eq!(cfg.local_llm_url, "http://localhost:11434");
     }
 
+    fn select(args: &[&str]) -> bool {
+        args_select_cli(args.iter().map(|s| s.to_string()))
+    }
+
     #[test]
     fn detects_known_subcommands() {
-        assert!(is_subcommand(Some("convert")));
-        assert!(is_subcommand(Some("doctor")));
-        assert!(is_subcommand(Some("--help")));
+        assert!(is_cli_token("convert"));
+        assert!(is_cli_token("doctor"));
+        assert!(is_cli_token("--help"));
     }
 
     #[test]
     fn ignores_non_subcommands() {
-        assert!(!is_subcommand(None));
-        assert!(!is_subcommand(Some("/Applications/Swift Shifter.app")));
-        assert!(!is_subcommand(Some("-NSDocumentRevisionsDebugMode")));
+        assert!(!is_cli_token("/Applications/Swift Shifter.app"));
+        assert!(!is_cli_token("-NSDocumentRevisionsDebugMode"));
+    }
+
+    #[test]
+    fn no_args_is_gui() {
+        assert!(!select(&[]));
+        assert!(!select(&["-NSDocumentRevisionsDebugMode", "YES"]));
+    }
+
+    #[test]
+    fn global_flags_before_subcommand_select_cli() {
+        assert!(select(&["--jpeg-quality", "80", "convert", "in.png", "png"]));
+        assert!(select(&["convert", "webp", "a.png"]));
     }
 
     use std::path::PathBuf;
