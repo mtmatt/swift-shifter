@@ -1,4 +1,5 @@
 use clap::{Args, Parser, Subcommand};
+use crate::config::Config;
 
 /// Subcommand names that signal CLI (non-GUI) invocation.
 const SUBCOMMANDS: &[&str] = &[
@@ -55,6 +56,34 @@ struct ConfigArgs {
     llm_url: Option<String>,
 }
 
+fn build_config(args: &ConfigArgs) -> Result<Config, String> {
+    let mut cfg = Config::default();
+    if let Some(d) = &args.output_dir {
+        cfg.output_dir = Some(d.clone());
+    }
+    if let Some(q) = args.jpeg_quality {
+        cfg.jpeg_quality = q.clamp(1, 100);
+    }
+    if let Some(q) = args.avif_quality {
+        cfg.avif_quality = q.clamp(1, 100);
+    }
+    cfg.use_marker_pdf = args.marker;
+    cfg.use_local_llm = args.llm;
+    if let Some(m) = &args.llm_model {
+        cfg.local_llm_model = m.clone();
+    }
+    if let Some(u) = &args.llm_url {
+        let u = u.trim();
+        if !u.starts_with("http://") && !u.starts_with("https://") {
+            return Err(format!(
+                "Invalid --llm-url '{u}': must start with http:// or https://"
+            ));
+        }
+        cfg.local_llm_url = u.to_string();
+    }
+    Ok(cfg)
+}
+
 #[derive(Subcommand)]
 enum Commands {
     /// Convert one or more files to FORMAT.
@@ -81,6 +110,43 @@ enum Commands {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn cfg_args() -> ConfigArgs {
+        ConfigArgs {
+            output_dir: None,
+            jpeg_quality: None,
+            avif_quality: None,
+            marker: false,
+            llm: false,
+            llm_model: None,
+            llm_url: None,
+        }
+    }
+
+    #[test]
+    fn build_config_clamps_quality() {
+        let mut a = cfg_args();
+        a.jpeg_quality = Some(200);
+        a.avif_quality = Some(0);
+        let cfg = build_config(&a).unwrap();
+        assert_eq!(cfg.jpeg_quality, 100);
+        assert_eq!(cfg.avif_quality, 1);
+    }
+
+    #[test]
+    fn build_config_rejects_bad_llm_url() {
+        let mut a = cfg_args();
+        a.llm_url = Some("localhost:11434".to_string());
+        assert!(build_config(&a).is_err());
+    }
+
+    #[test]
+    fn build_config_accepts_good_llm_url() {
+        let mut a = cfg_args();
+        a.llm_url = Some("http://localhost:11434".to_string());
+        let cfg = build_config(&a).unwrap();
+        assert_eq!(cfg.local_llm_url, "http://localhost:11434");
+    }
 
     #[test]
     fn detects_known_subcommands() {
