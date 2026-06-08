@@ -126,4 +126,14 @@ mod tests {
         }
         assert!(d("/x.xyz").is_err(), "unknown extension must error");
     }
+
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn test_heic_absent_off_macos() {
+        use crate::converter::detect_output_formats as d;
+        // HEIC output is offered only on macOS (sips).
+        assert!(!d("/x.png").unwrap().contains(&"heic".to_string()));
+        // HEIC input has only MacOnly edges, so off-macOS it is an unsupported type.
+        assert!(d("/x.heic").is_err());
+    }
 }
