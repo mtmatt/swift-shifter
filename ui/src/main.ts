@@ -15,10 +15,20 @@ interface InstallLogPayload {
   phase: string;
 }
 
+interface ChainedTarget {
+  format: string;
+  route: string[];
+  hops: number;
+}
+interface DetectResult {
+  direct: string[];
+  chained: ChainedTarget[];
+}
+
 interface FileEntry {
   path: string;
   name: string;
-  formats: string[];
+  formats: DetectResult;
   el: HTMLElement;
 }
 
@@ -295,9 +305,9 @@ async function addFile(path: string): Promise<void> {
     }
   }
 
-  let formats: string[];
+  let formats: DetectResult;
   try {
-    formats = await invoke<string[]>("detect_format", { path });
+    formats = await invoke<DetectResult>("detect_format", { path });
   } catch (err) {
     showInlineError(path, String(err));
     return;
@@ -366,7 +376,7 @@ function showInstallPanel(title: string, subtitle = ""): void {
 function buildFileItem(
   path: string,
   name: string,
-  formats: string[],
+  formats: DetectResult,
 ): HTMLElement {
   const item = document.createElement("div");
   item.className = "file-item";
@@ -391,14 +401,54 @@ function buildFileItem(
 
   const btnRow = document.createElement("div");
   btnRow.className = "format-buttons";
-  for (const fmt of formats) {
+  for (const fmt of formats.direct) {
     const btn = document.createElement("button");
     btn.className = "fmt-btn";
     btn.textContent = fmt;
     btn.addEventListener("click", () => startConversion(path, fmt, item));
     btnRow.appendChild(btn);
   }
-  item.appendChild(btnRow);
+
+  // "…" expander reveals chained (multi-hop) targets.
+  if (formats.chained.length > 0) {
+    const moreBtn = document.createElement("button");
+    moreBtn.className = "fmt-btn fmt-more";
+    moreBtn.textContent = "…";
+    moreBtn.title = "More formats via conversion chains";
+
+    const chainedRow = document.createElement("div");
+    chainedRow.className = "format-buttons format-chained";
+    chainedRow.hidden = true;
+
+    for (const c of formats.chained) {
+      const btn = document.createElement("button");
+      btn.className = "fmt-btn fmt-chained";
+      const via = c.route.slice(1, -1).join("→");
+      const fmtName = document.createElement("span");
+      fmtName.className = "fmt-name";
+      fmtName.textContent = c.format;
+      const fmtVia = document.createElement("span");
+      fmtVia.className = "fmt-via";
+      fmtVia.textContent = `via ${via}`;
+      btn.appendChild(fmtName);
+      btn.appendChild(fmtVia);
+      btn.title = `${c.route.join(" → ")}  (${c.hops} hops)`;
+      btn.addEventListener("click", () => startConversion(path, c.format, item));
+      chainedRow.appendChild(btn);
+    }
+
+    moreBtn.addEventListener("click", () => {
+      chainedRow.hidden = !chainedRow.hidden;
+      moreBtn.classList.toggle("active", !chainedRow.hidden);
+    });
+
+    btnRow.appendChild(moreBtn);
+    item.appendChild(btnRow);
+    item.appendChild(chainedRow);
+  } else {
+    item.appendChild(btnRow);
+  }
+
   return item;
 }
 
@@ -1076,7 +1126,7 @@ function updateBatchToolbar(): void {
   fileList.querySelector(".batch-toolbar")?.remove();
   if (files.size < 2) return;
 
-  const allFormats = Array.from(files.values()).map((e) => new Set(e.formats));
+  const allFormats = Array.from(files.values()).map((e) => new Set(e.formats.direct));
   const intersection = allFormats.reduce(
     (acc, set) => new Set([...acc].filter((f) => set.has(f))),
   );
@@ -1104,7 +1154,7 @@ function updateBatchToolbar(): void {
 
 async function startBatchConversion(targetFormat: string): Promise<void> {
   const entries = Array.from(files.values()).filter((e) =>
-    e.formats.includes(targetFormat),
+    e.formats.direct.includes(targetFormat),
   );
   if (entries.length === 0) return;
 

@@ -364,6 +364,29 @@ body {
     cursor: default;
 }
 
+.fmt-more {
+    font-weight: 600;
+}
+.fmt-more.active {
+    background: var(--accent, #3b82f6);
+    color: #fff;
+}
+.format-chained {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 1px solid var(--border, rgba(128, 128, 128, 0.25));
+}
+.fmt-chained {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    line-height: 1.15;
+}
+.fmt-chained .fmt-via {
+    font-size: 0.7em;
+    opacity: 0.6;
+}
+
 /* ─── Progress ────────────────────────────────────────────────────────── */
 .progress-row {
     display: flex;
