@@ -63,6 +63,40 @@ async fn run_streamed(
 
 static FFMPEG_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
 
+/// Cached result of probing whether this ffmpeg build ships the external
+/// `libvorbis` encoder. Some builds (e.g. certain Homebrew bottles) only carry
+/// the native `vorbis` encoder, so hardcoding `libvorbis` fails with
+/// "Unknown encoder 'libvorbis'".
+static LIBVORBIS_AVAILABLE: OnceLock<bool> = OnceLock::new();
+
+/// Append the right Ogg Vorbis encoder flags, preferring the higher-quality
+/// external `libvorbis` when present and falling back to ffmpeg's native
+/// (experimental) `vorbis` encoder otherwise.
+async fn push_ogg_codec_args(cmd: &mut tokio::process::Command, ffmpeg: &Path) {
+    let has_libvorbis = match LIBVORBIS_AVAILABLE.get() {
+        Some(&v) => v,
+        None => {
+            let available = tokio::process::Command::new(ffmpeg)
+                .args(["-hide_banner", "-encoders"])
+                .output()
+                .await
+                .map(|o| String::from_utf8_lossy(&o.stdout).contains("libvorbis"))
+                .unwrap_or(false);
+            LIBVORBIS_AVAILABLE.set(available).ok();
+            available
+        }
+    };
+
+    if has_libvorbis {
+        cmd.args(["-codec:a", "libvorbis", "-q:a", "4"]);
+    } else {
+        // The native encoder is flagged experimental (-strict -2) and only
+        // supports 2 channels, so force stereo (-ac 2) or mono/surround input
+        // fails with "only supports 2 channels".
+        cmd.args(["-codec:a", "vorbis", "-strict", "-2", "-ac", "2", "-q:a", "4"]);
+    }
+}
+
 fn output_path(input: &str, ext: &str, output_dir: Option<&str>) -> Result<PathBuf, String> {
     let p = Path::new(input);
     let stem = p.file_stem().unwrap_or_default();
@@ -116,6 +150,11 @@ fn is_audio_only(path: &str) -> bool {
 /// Locations that Homebrew uses but macOS GUI apps don't inherit via PATH.
 #[cfg(target_os = "macos")]
 const BREW_PATHS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
+
+/// Public wrapper so the CLI `doctor` command can report ffmpeg's location.
+pub fn find_ffmpeg() -> Option<PathBuf> {
+    find_ffmpeg_binary()
+}
 
 fn find_ffmpeg_binary() -> Option<PathBuf> {
     // First try PATH (works in dev / terminal launches)
@@ -291,7 +330,7 @@ pub async fn convert_media(
             cmd.args(["-codec:a", "flac"]);
         }
         "ogg" => {
-            cmd.args(["-codec:a", "libvorbis", "-q:a", "4"]);
+            push_ogg_codec_args(&mut cmd, &ffmpeg).await;
         }
         "opus" => {
             cmd.args(["-codec:a", "libopus", "-b:a", "128k"]);

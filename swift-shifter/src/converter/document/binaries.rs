@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use tauri::Emitter;
-use crate::converter::document::{PANDOC_PATH, EBOOK_CONVERT_PATH, PYMUPDF4LLM_PYTHON};
+use crate::converter::document::{PANDOC_PATH, TYPST_PATH, EBOOK_CONVERT_PATH, PYMUPDF4LLM_PYTHON};
 
 #[cfg(target_os = "macos")]
 pub const BREW_PATHS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
@@ -438,8 +438,83 @@ pub fn get_pandoc() -> Result<PathBuf, String> {
     }
 }
 
+pub fn find_typst_binary() -> Option<PathBuf> {
+    if let Ok(p) = which::which("typst") {
+        return Some(p);
+    }
+    #[cfg(target_os = "macos")]
+    for dir in BREW_PATHS {
+        let candidate = PathBuf::from(dir).join("typst");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    if let Some(home) = dirs::home_dir() {
+        let candidate = home.join(".local").join("bin").join("typst");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    {
+        let bin_name = if cfg!(target_os = "windows") { "typst.exe" } else { "typst" };
+        let candidate = crate::downloader::user_tool_dir().join("bin").join(bin_name);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+pub async fn ensure_typst(app: &tauri::AppHandle) -> Result<(), String> {
+    if TYPST_PATH.get().is_some() {
+        return Ok(());
+    }
+    if let Some(path) = find_typst_binary() {
+        TYPST_PATH.set(Some(path)).ok();
+        return Ok(());
+    }
+
+    app.emit("typst:missing", ()).ok();
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(brew) = find_brew_binary() {
+            app.emit("typst:installing", ()).ok();
+            let ok = brew_install(&brew, &["install", "typst"]).await;
+            if ok && let Some(path) = find_typst_binary() {
+                TYPST_PATH.set(Some(path)).ok();
+                app.emit("typst:installed", ()).ok();
+                return Ok(());
+            }
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    {
+        app.emit("typst:installing", ()).ok();
+        match crate::downloader::ensure_tool(app, "typst").await {
+            Ok(path) => {
+                TYPST_PATH.set(Some(path)).ok();
+                app.emit("typst:installed", ()).ok();
+                return Ok(());
+            }
+            Err(e) => {
+                app.emit("typst:failed", &e).ok();
+            }
+        }
+    }
+
+    TYPST_PATH.set(None).ok();
+    Ok(())
+}
+
 pub fn detect_pdf_engine() -> Option<&'static str> {
-    const ENGINES: &[&str] = &["tectonic", "xelatex", "pdflatex", "lualatex", "wkhtmltopdf"];
+    // LaTeX engines first (best fidelity for .tex), then typst as a capable,
+    // dependency-light fallback that also renders Markdown PDFs well.
+    const ENGINES: &[&str] = &[
+        "tectonic", "xelatex", "pdflatex", "lualatex", "wkhtmltopdf", "typst",
+    ];
     for engine in ENGINES {
         if which::which(engine).is_ok() {
             return Some(engine);
@@ -450,6 +525,10 @@ pub fn detect_pdf_engine() -> Option<&'static str> {
                 return Some(engine);
             }
         }
+    }
+    // typst may live in a managed/user dir that isn't on PATH.
+    if find_typst_binary().is_some() {
+        return Some("typst");
     }
     None
 }

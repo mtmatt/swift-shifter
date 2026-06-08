@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod clipboard;
+mod cli;
 mod config;
 mod converter;
 mod downloader;
@@ -61,6 +62,11 @@ struct BatchResult {
 }
 
 fn main() {
+    let context = tauri::generate_context!();
+    if cli::is_cli_invocation() {
+        std::process::exit(cli::run(context));
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
@@ -143,6 +149,15 @@ fn main() {
                 }
             });
 
+            // Check for typst at startup — used for Typst → PDF and as a PDF engine
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = converter::document::ensure_typst(&handle).await {
+                    eprintln!("typst setup warning: {e}");
+                    handle.emit("typst:failed", e).ok();
+                }
+            });
+
             // Check for pymupdf4llm at startup — needed for PDF → EPUB/HTML/MD
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -222,7 +237,7 @@ fn main() {
             install_update,
             quit,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|_app_handle, event| match event {
             tauri::RunEvent::ExitRequested { .. } => {
