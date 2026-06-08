@@ -260,10 +260,13 @@ pub fn shortest_paths(from: &str) -> HashMap<String, Vec<String>> {
         }
     }
 
-    // reconstruct paths, dropping any that exceed MAX_HOPS
+    // reconstruct paths, dropping any that exceed MAX_HOPS or are semantically blocked
     let mut paths: HashMap<String, Vec<String>> = HashMap::new();
     for target in dist.keys() {
         if *target == from {
+            continue;
+        }
+        if is_semantically_blocked(&from, target) {
             continue;
         }
         let mut seq = vec![target.clone()];
