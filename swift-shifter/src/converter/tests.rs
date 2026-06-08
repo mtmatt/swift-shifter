@@ -69,4 +69,59 @@ mod tests {
     fn test_find_typst_binary_does_not_panic() {
         let _ = crate::converter::document::find_typst_binary();
     }
+
+    /// Locks the exact direct-output surface before the graph refactor.
+    /// macOS values (HEIC offered) — see platform test for the non-macOS delta.
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_detect_output_formats_snapshot() {
+        use crate::converter::detect_output_formats as d;
+        let cases: &[(&str, &[&str])] = &[
+            ("/x.png",  &["jpg","webp","avif","gif","bmp","tiff","heic","pdf"]),
+            ("/x.jpg",  &["png","webp","avif","gif","bmp","tiff","heic","pdf"]),
+            ("/x.jpeg", &["png","webp","avif","gif","bmp","tiff","heic","pdf"]),
+            ("/x.webp", &["png","jpg","avif","gif","bmp","tiff","heic","pdf"]),
+            ("/x.gif",  &["png","jpg","webp","avif","bmp","tiff","heic","pdf"]),
+            ("/x.bmp",  &["png","jpg","webp","avif","gif","tiff","heic","pdf"]),
+            ("/x.tiff", &["png","jpg","webp","avif","gif","bmp","heic","pdf"]),
+            ("/x.tif",  &["png","jpg","webp","avif","gif","bmp","tiff","heic","pdf"]),
+            ("/x.avif", &["png","jpg","webp","gif","bmp","tiff","heic","pdf"]),
+            ("/x.heic", &["jpg","png","tiff","gif","bmp","pdf"]),
+            ("/x.heif", &["jpg","png","tiff","gif","bmp","pdf"]),
+            ("/x.mp4",  &["mov","mkv","webm","avi","gif"]),
+            ("/x.mov",  &["mp4","mkv","webm","avi","gif"]),
+            ("/x.mkv",  &["mp4","mov","webm","avi","gif"]),
+            ("/x.webm", &["mp4","mov","mkv","avi","gif"]),
+            ("/x.avi",  &["mp4","mov","mkv","webm","gif"]),
+            ("/x.mp3",  &["aac","flac","ogg","wav","opus","m4a"]),
+            ("/x.aac",  &["mp3","flac","ogg","wav","opus","m4a"]),
+            ("/x.flac", &["mp3","aac","ogg","wav","opus","m4a"]),
+            ("/x.ogg",  &["mp3","aac","flac","wav","opus","m4a"]),
+            ("/x.wav",  &["mp3","aac","flac","ogg","opus","m4a"]),
+            ("/x.opus", &["mp3","aac","flac","ogg","wav","m4a"]),
+            ("/x.m4a",  &["mp3","aac","flac","ogg","wav","opus"]),
+            ("/x.json", &["yaml","toml","csv"]),
+            ("/x.yaml", &["json","toml","csv"]),
+            ("/x.yml",  &["json","toml","csv"]),
+            ("/x.toml", &["json","yaml","csv"]),
+            ("/x.csv",  &["json","yaml"]),
+            ("/x.md",   &["txt","html","pdf","tex","typst"]),
+            ("/x.markdown", &["txt","html","pdf","tex","typst"]),
+            ("/x.txt",  &["md","html","pdf","tex","typst"]),
+            ("/x.tex",  &["md","html","pdf","typst"]),
+            ("/x.latex",&["md","html","pdf","typst"]),
+            ("/x.typst",&["md","html","pdf","tex"]),
+            ("/x.epub", &["pdf","mobi","md","html"]),
+            ("/x.mobi", &["epub","pdf","html","md"]),
+            ("/x.pdf",  &["epub","mobi","html","md"]),
+        ];
+        for (path, expected) in cases {
+            let mut got = d(path).unwrap();
+            let mut want: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
+            got.sort();
+            want.sort();
+            assert_eq!(got, want, "direct formats for {path} changed");
+        }
+        assert!(d("/x.xyz").is_err(), "unknown extension must error");
+    }
 }
