@@ -1,5 +1,9 @@
+use std::path::Path;
+
 use clap::{Args, Parser, Subcommand};
 use crate::config::Config;
+use crate::converter;
+use crate::converter::{document, media};
 
 /// Subcommand names that signal CLI (non-GUI) invocation.
 const SUBCOMMANDS: &[&str] = &[
@@ -107,6 +111,93 @@ enum Commands {
     Doctor,
 }
 
+fn format_check(name: &str, found: Option<&Path>) -> String {
+    match found {
+        Some(p) => format!("\u{2713} {name}: {}", p.display()),
+        None => format!("\u{2717} {name}: not found"),
+    }
+}
+
+fn run_detect(input: &str) -> i32 {
+    match converter::detect_output_formats(input) {
+        Ok(formats) => {
+            for f in formats {
+                println!("{f}");
+            }
+            0
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            1
+        }
+    }
+}
+
+fn run_merge(inputs: &[String], cfg: &Config) -> i32 {
+    match converter::merge_pdfs(inputs, cfg.output_dir.as_deref()) {
+        Ok(out) => {
+            println!("{out}");
+            0
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            1
+        }
+    }
+}
+
+fn run_duration(input: &str) -> i32 {
+    let rt = tokio::runtime::Runtime::new().expect("failed to create runtime");
+    match rt.block_on(media::media_duration_secs(input)) {
+        Ok(secs) => {
+            println!("{secs}");
+            0
+        }
+        Err(e) => {
+            eprintln!("{e}");
+            1
+        }
+    }
+}
+
+fn run_doctor(cfg: &Config) -> i32 {
+    println!(
+        "{}",
+        format_check("ffmpeg", media::find_ffmpeg().as_deref())
+    );
+    println!(
+        "{}",
+        format_check("pandoc", document::find_pandoc_binary().as_deref())
+    );
+    println!(
+        "{}",
+        format_check(
+            "pymupdf4llm",
+            document::find_pymupdf4llm_python().as_deref()
+        )
+    );
+    println!(
+        "{}",
+        format_check(
+            "ebook-convert (Calibre)",
+            document::find_ebook_convert_binary().as_deref()
+        )
+    );
+    println!(
+        "{}",
+        format_check("marker-pdf", document::find_marker_binary().as_deref())
+    );
+
+    let rt = tokio::runtime::Runtime::new().expect("failed to create runtime");
+    let ollama = rt.block_on(document::ollama_reachable(&cfg.local_llm_url));
+    if ollama {
+        println!("\u{2713} ollama: reachable at {}", cfg.local_llm_url);
+    } else {
+        println!("\u{2717} ollama: not reachable at {}", cfg.local_llm_url);
+    }
+    0
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -160,6 +251,20 @@ mod tests {
         assert!(!is_subcommand(None));
         assert!(!is_subcommand(Some("/Applications/Swift Shifter.app")));
         assert!(!is_subcommand(Some("-NSDocumentRevisionsDebugMode")));
+    }
+
+    use std::path::PathBuf;
+
+    #[test]
+    fn format_check_marks_found_and_missing() {
+        let found = format_check("ffmpeg", Some(&PathBuf::from("/usr/bin/ffmpeg")));
+        assert!(found.contains("ffmpeg"));
+        assert!(found.contains("/usr/bin/ffmpeg"));
+        assert!(found.starts_with('\u{2713}')); // ✓
+
+        let missing = format_check("pandoc", None);
+        assert!(missing.contains("not found"));
+        assert!(missing.starts_with('\u{2717}')); // ✗
     }
 
     #[test]

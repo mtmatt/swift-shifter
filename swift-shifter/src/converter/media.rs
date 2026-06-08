@@ -117,6 +117,11 @@ fn is_audio_only(path: &str) -> bool {
 #[cfg(target_os = "macos")]
 const BREW_PATHS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
 
+/// Public wrapper so the CLI `doctor` command can report ffmpeg's location.
+pub fn find_ffmpeg() -> Option<PathBuf> {
+    find_ffmpeg_binary()
+}
+
 fn find_ffmpeg_binary() -> Option<PathBuf> {
     // First try PATH (works in dev / terminal launches)
     if let Ok(p) = which::which("ffmpeg") {
