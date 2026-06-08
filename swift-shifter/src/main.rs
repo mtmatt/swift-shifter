@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod clipboard;
+mod cli;
 mod config;
 mod converter;
 mod downloader;
