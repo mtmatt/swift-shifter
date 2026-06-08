@@ -1,7 +1,9 @@
 use std::path::Path;
+use std::sync::Mutex;
 
 use clap::{Args, Parser, Subcommand};
-use crate::config::Config;
+use tauri::Manager;
+use crate::config::{AppState, Config};
 use crate::converter;
 use crate::converter::{document, media};
 
@@ -196,6 +198,79 @@ fn run_doctor(cfg: &Config) -> i32 {
         println!("\u{2717} ollama: not reachable at {}", cfg.local_llm_url);
     }
     0
+}
+
+/// Build a minimal, windowless Tauri app, run `task` with a real AppHandle,
+/// then exit the process with the task's status code.
+///
+/// The caller must supply `context` from `tauri::generate_context!()` so the
+/// plist-embedding symbol is defined exactly once per binary.
+pub fn run_with_app<F>(mut context: tauri::Context, cfg: Config, task: F) -> i32
+where
+    F: FnOnce(tauri::AppHandle) -> std::pin::Pin<Box<dyn std::future::Future<Output = i32> + Send>>
+        + Send
+        + 'static,
+{
+    // Clear the window config so no GUI window is created in CLI mode.
+    context.config_mut().app.windows.clear();
+
+    tauri::Builder::default()
+        .manage(AppState {
+            config: Mutex::new(cfg),
+            ollama_process: Mutex::new(None),
+        })
+        .setup(move |app| {
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let code = task(handle).await;
+                std::process::exit(code);
+            });
+            Ok(())
+        })
+        .build(context)
+        .expect("failed to build headless app")
+        .run(|_, _| {});
+
+    0 // unreachable: the spawned task calls std::process::exit
+}
+
+pub fn run_convert(context: tauri::Context, cfg: Config, format: String, inputs: Vec<String>) -> i32 {
+    run_with_app(context, cfg, move |app| {
+        Box::pin(async move {
+            let state = app.state::<AppState>();
+            let cfg = state.config.lock().unwrap().clone();
+            let mut failed = false;
+            for input in &inputs {
+                match converter::convert_file(&app, input, &format, &cfg).await {
+                    Ok(out) => println!("{out}"),
+                    Err(e) => {
+                        eprintln!("{input}: {e}");
+                        failed = true;
+                    }
+                }
+            }
+            if failed { 1 } else { 0 }
+        })
+    })
+}
+
+pub fn run_trim(context: tauri::Context, cfg: Config, input: String, start: String, end: String) -> i32 {
+    run_with_app(context, cfg, move |app| {
+        Box::pin(async move {
+            let state = app.state::<AppState>();
+            let out_dir = state.config.lock().unwrap().output_dir.clone();
+            match media::trim_media(&app, &input, &start, &end, out_dir.as_deref()).await {
+                Ok(out) => {
+                    println!("{out}");
+                    0
+                }
+                Err(e) => {
+                    eprintln!("{e}");
+                    1
+                }
+            }
+        })
+    })
 }
 
 #[cfg(test)]
