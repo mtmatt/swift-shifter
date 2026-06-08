@@ -316,13 +316,19 @@ pub async fn convert_document(
     target_format: &str,
     output_dir: Option<&str>,
 ) -> Result<String, String> {
-    let pandoc = get_pandoc()?;
-
     let input_ext = Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
+
+    // typst → pdf is best served by `typst compile` directly: it's the native
+    // toolchain, needs no LaTeX/PDF engine, and renders faster than pandoc.
+    if input_ext == "typst" && target_format == "pdf" {
+        return convert_typst_to_pdf(app, path, output_dir).await;
+    }
+
+    let pandoc = get_pandoc()?;
 
     let out = output_path(path, target_to_ext(target_format), output_dir)?;
 
@@ -335,7 +341,7 @@ pub async fn convert_document(
     )
     .ok();
 
-    let from_fmt = ext_to_pandoc_format(&input_ext);
+    let from_fmt = ext_to_pandoc_input_format(&input_ext);
     let to_fmt = ext_to_pandoc_format(target_format);
 
     let mut cmd = tokio::process::Command::new(&pandoc);
@@ -391,6 +397,53 @@ pub async fn convert_document(
             path: path.to_string(),
             percent: 100.0,
         },
+    )
+    .ok();
+
+    Ok(out.to_string_lossy().to_string())
+}
+
+/// Compile a Typst document straight to PDF with the native `typst` binary.
+/// Falls back to nothing — if typst isn't installed this returns a clear error
+/// rather than silently routing through pandoc (which needs a PDF engine).
+pub async fn convert_typst_to_pdf(
+    app: &tauri::AppHandle,
+    path: &str,
+    output_dir: Option<&str>,
+) -> Result<String, String> {
+    let typst = find_typst_binary().ok_or_else(|| {
+        "typst not found — install it to convert Typst documents to PDF".to_string()
+    })?;
+    let out = output_path(path, "pdf", output_dir)?;
+
+    app.emit(
+        "convert:progress",
+        ProgressPayload { path: path.to_string(), percent: 0.0 },
+    )
+    .ok();
+
+    let output = tokio::process::Command::new(&typst)
+        .arg("compile")
+        .arg(path)
+        .arg(out.to_str().unwrap_or(""))
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn typst: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(if stderr.trim().is_empty() {
+            format!("typst exited with code {}", output.status.code().unwrap_or(-1))
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+
+    app.emit(
+        "convert:progress",
+        ProgressPayload { path: path.to_string(), percent: 100.0 },
     )
     .ok();
 

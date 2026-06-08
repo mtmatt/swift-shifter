@@ -34,7 +34,9 @@ pub fn detect_output_formats(path: &str) -> Result<Vec<String>, String> {
         "json" => &["yaml", "toml", "csv"],
         "yaml" | "yml" => &["json", "toml", "csv"],
         "toml" => &["json", "yaml", "csv"],
-        "csv" => &["json", "yaml", "toml"],
+        // CSV is always an array of records; TOML has no top-level array-of-tables,
+        // so csv → toml can never succeed. Don't offer it.
+        "csv" => &["json", "yaml"],
         // Documents (pandoc)
         "md" | "markdown" => &["txt", "html", "pdf", "tex", "typst"],
         "txt" => &["md", "html", "pdf", "tex", "typst"],

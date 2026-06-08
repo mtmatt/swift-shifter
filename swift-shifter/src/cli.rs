@@ -174,6 +174,10 @@ fn run_doctor(cfg: &Config) -> i32 {
     );
     println!(
         "{}",
+        format_check("typst", document::find_typst_binary().as_deref())
+    );
+    println!(
+        "{}",
         format_check(
             "pymupdf4llm",
             document::find_pymupdf4llm_python().as_deref()
