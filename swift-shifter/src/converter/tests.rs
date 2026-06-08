@@ -189,4 +189,28 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_detect_with_chains_png_offers_chained_mobi() {
+        let r = crate::converter::graph::detect_with_chains("/x.png").unwrap();
+        // direct still includes a 1-hop target
+        assert!(r.direct.contains(&"pdf".to_string()));
+        // mobi is NOT direct from png
+        assert!(!r.direct.contains(&"mobi".to_string()));
+        // ...but appears as a chained target with a route through pdf
+        let mobi = r.chained.iter().find(|c| c.format == "mobi")
+            .expect("mobi should be a chained target for png");
+        assert!(mobi.hops >= 2);
+        assert_eq!(mobi.route.first().unwrap(), "png");
+        assert_eq!(mobi.route.last().unwrap(), "mobi");
+        // chained never repeats a direct target
+        for c in &r.chained {
+            assert!(!r.direct.contains(&c.format), "{} is both direct and chained", c.format);
+        }
+    }
+
+    #[test]
+    fn test_detect_with_chains_unknown_errors() {
+        assert!(crate::converter::graph::detect_with_chains("/x.xyz").is_err());
+    }
 }

@@ -149,6 +149,7 @@ pub fn direct_targets(from_ext: &str) -> Vec<String> {
 }
 
 use std::collections::{BinaryHeap, HashMap};
+use std::path::Path;
 
 /// Which converter performs a single (from,to) hop. Mirrors the dispatch in
 /// `converter::run_single_hop`. `route_hop` returns `Some` iff the pair is
@@ -304,4 +305,49 @@ pub fn find_path(from_ext: &str, target: &str) -> Option<Vec<String>> {
         return None;
     }
     shortest_paths(&from).remove(&target)
+}
+
+#[derive(serde::Serialize, Debug)]
+pub struct ChainedTarget {
+    pub format: String,
+    /// Full node sequence including source and target, e.g. ["png","pdf","epub","mobi"].
+    pub route: Vec<String>,
+    /// Number of hops (edges) = route.len() - 1.
+    pub hops: usize,
+}
+
+#[derive(serde::Serialize, Debug)]
+pub struct DetectResult {
+    pub direct: Vec<String>,
+    pub chained: Vec<ChainedTarget>,
+}
+
+/// Direct + multi-hop reachable targets for a file path. Errors if the input
+/// extension has no outgoing edges at all (unsupported type).
+pub fn detect_with_chains(path: &str) -> Result<DetectResult, String> {
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    let from = normalize_ext(&ext);
+
+    let direct = direct_targets(&ext);
+    if direct.is_empty() {
+        return Err(format!("Unsupported file type: .{ext}"));
+    }
+
+    let mut chained: Vec<ChainedTarget> = shortest_paths(from)
+        .into_iter()
+        .filter(|(fmt, seq)| seq.len() > 2 && !direct.contains(fmt))
+        .map(|(fmt, seq)| ChainedTarget {
+            hops: seq.len() - 1,
+            route: seq,
+            format: fmt,
+        })
+        .collect();
+    // Stable, predictable order for the UI: fewest hops first, then name.
+    chained.sort_by(|a, b| a.hops.cmp(&b.hops).then_with(|| a.format.cmp(&b.format)));
+
+    Ok(DetectResult { direct, chained })
 }
