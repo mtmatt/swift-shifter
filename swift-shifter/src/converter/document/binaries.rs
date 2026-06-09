@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use tauri::Emitter;
-use crate::converter::document::{PANDOC_PATH, EBOOK_CONVERT_PATH, PYMUPDF4LLM_PYTHON};
+use crate::converter::document::{PANDOC_PATH, TYPST_PATH, EBOOK_CONVERT_PATH, PYMUPDF4LLM_PYTHON};
 
 #[cfg(target_os = "macos")]
 pub const BREW_PATHS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
@@ -36,6 +36,14 @@ pub fn find_pandoc_binary() -> Option<PathBuf> {
         "/snap/bin/pandoc",
     ] {
         let candidate = PathBuf::from(path);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    {
+        let bin_name = if cfg!(target_os = "windows") { "pandoc.exe" } else { "pandoc" };
+        let candidate = crate::downloader::user_tool_dir().join("bin").join(bin_name);
         if candidate.exists() {
             return Some(candidate);
         }
@@ -136,62 +144,17 @@ pub async fn ensure_pandoc(app: &tauri::AppHandle) -> Result<(), String> {
         }
     }
 
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
     {
         app.emit("pandoc:installing", ()).ok();
-        let ok = if which::which("winget").is_ok() {
-            tokio::process::Command::new("winget")
-                .args(["install", "--id", "JohnMacFarlane.Pandoc", "-e", "--silent"])
-                .status()
-                .await
-                .map(|s| s.success())
-                .unwrap_or(false)
-        } else {
-            false
-        };
-
-        if ok {
-            if let Some(path) = find_pandoc_binary() {
+        match crate::downloader::ensure_tool(app, "pandoc").await {
+            Ok(path) => {
                 PANDOC_PATH.set(Some(path)).ok();
                 app.emit("pandoc:installed", ()).ok();
                 return Ok(());
             }
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        app.emit("pandoc:installing", ()).ok();
-        let installed = if which::which("dnf").is_ok() {
-            tokio::process::Command::new("pkexec")
-                .args(["dnf", "install", "-y", "pandoc"])
-                .status()
-                .await
-                .map(|s| s.success())
-                .unwrap_or(false)
-        } else if which::which("pacman").is_ok() {
-            tokio::process::Command::new("pkexec")
-                .args(["pacman", "-S", "--noconfirm", "pandoc"])
-                .status()
-                .await
-                .map(|s| s.success())
-                .unwrap_or(false)
-        } else if which::which("apt-get").is_ok() {
-            tokio::process::Command::new("pkexec")
-                .args(["apt-get", "install", "-y", "pandoc"])
-                .status()
-                .await
-                .map(|s| s.success())
-                .unwrap_or(false)
-        } else {
-            false
-        };
-
-        if installed {
-            if let Some(path) = find_pandoc_binary() {
-                PANDOC_PATH.set(Some(path)).ok();
-                app.emit("pandoc:installed", ()).ok();
-                return Ok(());
+            Err(e) => {
+                app.emit("pandoc:failed", &e).ok();
             }
         }
     }
@@ -234,6 +197,15 @@ pub fn find_ebook_convert_binary() -> Option<PathBuf> {
             return Some(candidate);
         }
     }
+    #[cfg(target_os = "linux")]
+    {
+        let candidate = crate::downloader::user_tool_dir()
+            .join("calibre")
+            .join("ebook-convert");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
     None
 }
 
@@ -266,9 +238,15 @@ pub async fn ensure_ebook_convert(app: &tauri::AppHandle) -> Result<(), String> 
     #[cfg(target_os = "windows")]
     {
         app.emit("ebook-convert:installing", ()).ok();
+        let version = crate::downloader::tool_version("calibre").unwrap_or_default();
         let ok = if which::which("winget").is_ok() {
             tokio::process::Command::new("winget")
-                .args(["install", "--id", "calibre.calibre", "-e", "--silent"])
+                .args([
+                    "install", "--id", "calibre.calibre",
+                    "--version", &version,
+                    "--scope", "user",
+                    "-e", "--silent",
+                ])
                 .status()
                 .await
                 .map(|s| s.success())
@@ -276,6 +254,7 @@ pub async fn ensure_ebook_convert(app: &tauri::AppHandle) -> Result<(), String> 
         } else {
             false
         };
+
         if ok {
             if let Some(path) = find_ebook_convert_binary() {
                 EBOOK_CONVERT_PATH.set(Some(path)).ok();
@@ -288,35 +267,14 @@ pub async fn ensure_ebook_convert(app: &tauri::AppHandle) -> Result<(), String> 
     #[cfg(target_os = "linux")]
     {
         app.emit("ebook-convert:installing", ()).ok();
-        let installed = if which::which("dnf").is_ok() {
-            tokio::process::Command::new("pkexec")
-                .args(["dnf", "install", "-y", "calibre"])
-                .status()
-                .await
-                .map(|s| s.success())
-                .unwrap_or(false)
-        } else if which::which("pacman").is_ok() {
-            tokio::process::Command::new("pkexec")
-                .args(["pacman", "-S", "--noconfirm", "calibre"])
-                .status()
-                .await
-                .map(|s| s.success())
-                .unwrap_or(false)
-        } else if which::which("apt-get").is_ok() {
-            tokio::process::Command::new("pkexec")
-                .args(["apt-get", "install", "-y", "calibre"])
-                .status()
-                .await
-                .map(|s| s.success())
-                .unwrap_or(false)
-        } else {
-            false
-        };
-        if installed {
-            if let Some(path) = find_ebook_convert_binary() {
+        match crate::downloader::ensure_tool(app, "calibre").await {
+            Ok(path) => {
                 EBOOK_CONVERT_PATH.set(Some(path)).ok();
                 app.emit("ebook-convert:installed", ()).ok();
                 return Ok(());
+            }
+            Err(e) => {
+                app.emit("ebook-convert:failed", &e).ok();
             }
         }
     }
@@ -480,8 +438,83 @@ pub fn get_pandoc() -> Result<PathBuf, String> {
     }
 }
 
+pub fn find_typst_binary() -> Option<PathBuf> {
+    if let Ok(p) = which::which("typst") {
+        return Some(p);
+    }
+    #[cfg(target_os = "macos")]
+    for dir in BREW_PATHS {
+        let candidate = PathBuf::from(dir).join("typst");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    if let Some(home) = dirs::home_dir() {
+        let candidate = home.join(".local").join("bin").join("typst");
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    {
+        let bin_name = if cfg!(target_os = "windows") { "typst.exe" } else { "typst" };
+        let candidate = crate::downloader::user_tool_dir().join("bin").join(bin_name);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+pub async fn ensure_typst(app: &tauri::AppHandle) -> Result<(), String> {
+    if TYPST_PATH.get().is_some() {
+        return Ok(());
+    }
+    if let Some(path) = find_typst_binary() {
+        TYPST_PATH.set(Some(path)).ok();
+        return Ok(());
+    }
+
+    app.emit("typst:missing", ()).ok();
+
+    #[cfg(target_os = "macos")]
+    {
+        if let Some(brew) = find_brew_binary() {
+            app.emit("typst:installing", ()).ok();
+            let ok = brew_install(&brew, &["install", "typst"]).await;
+            if ok && let Some(path) = find_typst_binary() {
+                TYPST_PATH.set(Some(path)).ok();
+                app.emit("typst:installed", ()).ok();
+                return Ok(());
+            }
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    {
+        app.emit("typst:installing", ()).ok();
+        match crate::downloader::ensure_tool(app, "typst").await {
+            Ok(path) => {
+                TYPST_PATH.set(Some(path)).ok();
+                app.emit("typst:installed", ()).ok();
+                return Ok(());
+            }
+            Err(e) => {
+                app.emit("typst:failed", &e).ok();
+            }
+        }
+    }
+
+    TYPST_PATH.set(None).ok();
+    Ok(())
+}
+
 pub fn detect_pdf_engine() -> Option<&'static str> {
-    const ENGINES: &[&str] = &["tectonic", "xelatex", "pdflatex", "lualatex", "wkhtmltopdf"];
+    // LaTeX engines first (best fidelity for .tex), then typst as a capable,
+    // dependency-light fallback that also renders Markdown PDFs well.
+    const ENGINES: &[&str] = &[
+        "tectonic", "xelatex", "pdflatex", "lualatex", "wkhtmltopdf", "typst",
+    ];
     for engine in ENGINES {
         if which::which(engine).is_ok() {
             return Some(engine);
@@ -492,6 +525,10 @@ pub fn detect_pdf_engine() -> Option<&'static str> {
                 return Some(engine);
             }
         }
+    }
+    // typst may live in a managed/user dir that isn't on PATH.
+    if find_typst_binary().is_some() {
+        return Some("typst");
     }
     None
 }
@@ -585,12 +622,9 @@ pub async fn install_marker(app: &tauri::AppHandle) -> Result<(), String> {
             ).await.ok();
         }
         #[cfg(target_os = "linux")]
-        if which::which("dnf").is_ok() {
-            run_silent(&PathBuf::from("pkexec"), &["dnf", "install", "-y", "pipx"]).await.ok();
-        } else if which::which("pacman").is_ok() {
-            run_silent(&PathBuf::from("pkexec"), &["pacman", "-S", "--noconfirm", "python-pipx"]).await.ok();
-        } else if which::which("apt-get").is_ok() {
-            run_silent(&PathBuf::from("pkexec"), &["apt-get", "install", "-y", "pipx"]).await.ok();
+        if let Some(python) = find_any_binary(&["python3", "python"]) {
+            // Install pipx to user space — no sudo needed
+            run_silent(&python, &["-m", "pip", "install", "--user", "pipx"]).await.ok();
         }
         find_any_binary(&["pipx"])
     };
@@ -622,14 +656,6 @@ pub async fn install_marker(app: &tauri::AppHandle) -> Result<(), String> {
                 &PathBuf::from("winget"),
                 &["install", "--id", "Python.Python.3", "-e", "--silent"],
             ).await.ok();
-        }
-        #[cfg(target_os = "linux")]
-        if which::which("dnf").is_ok() {
-            run_silent(&PathBuf::from("pkexec"), &["dnf", "install", "-y", "python3-pip"]).await.ok();
-        } else if which::which("pacman").is_ok() {
-            run_silent(&PathBuf::from("pkexec"), &["pacman", "-S", "--noconfirm", "python-pip"]).await.ok();
-        } else if which::which("apt-get").is_ok() {
-            run_silent(&PathBuf::from("pkexec"), &["apt-get", "install", "-y", "python3-pip"]).await.ok();
         }
         find_any_binary(&["pip3", "pip"])
     };

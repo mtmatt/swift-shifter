@@ -1,0 +1,94 @@
+# External tool version manifest.
+# Bump version/url/sha256 here when upgrading a tool — no Rust changes needed.
+# sha256 values are lowercase hex. Compute with: curl -sL <url> | sha256sum
+
+[ffmpeg]
+version = "7.1.4"
+
+[ffmpeg.linux-x86_64]
+url     = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-05-22-15-11/ffmpeg-n7.1.4-6-g181cfa1008-linux64-gpl-7.1.tar.xz"
+sha256  = ""
+archive = "tar.xz"
+mode    = "binary"
+binary  = "ffmpeg-n7.1.4-6-g181cfa1008-linux64-gpl-7.1/bin/ffmpeg"
+
+[ffmpeg.linux-aarch64]
+url     = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-05-22-15-11/ffmpeg-n7.1.4-6-g181cfa1008-linuxarm64-gpl-7.1.tar.xz"
+sha256  = ""
+archive = "tar.xz"
+mode    = "binary"
+binary  = "ffmpeg-n7.1.4-6-g181cfa1008-linuxarm64-gpl-7.1/bin/ffmpeg"
+
+[ffmpeg.windows-x86_64]
+url     = "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-05-22-15-11/ffmpeg-n7.1.4-6-g181cfa1008-win64-gpl-7.1.zip"
+sha256  = ""
+archive = "zip"
+mode    = "binary"
+binary  = "ffmpeg-n7.1.4-6-g181cfa1008-win64-gpl-7.1/bin/ffmpeg.exe"
+
+[pandoc]
+version = "3.6.4"
+
+[pandoc.linux-x86_64]
+url     = "https://github.com/jgm/pandoc/releases/download/3.6.4/pandoc-3.6.4-linux-amd64.tar.gz"
+sha256  = "5def6e1ff535e397becce292ee97767a947306150b9fb1488003b67ac3417c5e"
+archive = "tar.gz"
+mode    = "binary"
+binary  = "pandoc-3.6.4/bin/pandoc"
+
+[pandoc.linux-aarch64]
+url     = "https://github.com/jgm/pandoc/releases/download/3.6.4/pandoc-3.6.4-linux-arm64.tar.gz"
+sha256  = "ad5cf63fe0420388d9ec513f02d03e061477b786d11a328164dce8ad7387b8bd"
+archive = "tar.gz"
+mode    = "binary"
+binary  = "pandoc-3.6.4/bin/pandoc"
+
+[pandoc.windows-x86_64]
+url     = "https://github.com/jgm/pandoc/releases/download/3.6.4/pandoc-3.6.4-windows-x86_64.zip"
+sha256  = "a9e5feb3d56d2fb0e3e765d1c33b8ee6b72e6963d7de31504edeec8cd1be34b1"
+archive = "zip"
+mode    = "binary"
+binary  = "pandoc-3.6.4/pandoc.exe"
+
+[typst]
+version = "0.14.2"
+
+[typst.linux-x86_64]
+url     = "https://github.com/typst/typst/releases/download/v0.14.2/typst-x86_64-unknown-linux-musl.tar.xz"
+sha256  = ""
+archive = "tar.xz"
+mode    = "binary"
+binary  = "typst-x86_64-unknown-linux-musl/typst"
+
+[typst.linux-aarch64]
+url     = "https://github.com/typst/typst/releases/download/v0.14.2/typst-aarch64-unknown-linux-musl.tar.xz"
+sha256  = ""
+archive = "tar.xz"
+mode    = "binary"
+binary  = "typst-aarch64-unknown-linux-musl/typst"
+
+[typst.windows-x86_64]
+url     = "https://github.com/typst/typst/releases/download/v0.14.2/typst-x86_64-pc-windows-msvc.zip"
+sha256  = ""
+archive = "zip"
+mode    = "binary"
+binary  = "typst-x86_64-pc-windows-msvc/typst.exe"
+
+[calibre]
+version  = "7.26.0"
+
+[calibre.linux-x86_64]
+url      = "https://download.calibre-ebook.com/7.26.0/calibre-7.26.0-x86_64.txz"
+sha256   = ""
+archive  = "tar.xz"
+mode     = "dir"
+dest_dir = "calibre"
+binary   = "ebook-convert"
+
+[calibre.linux-aarch64]
+url      = "https://download.calibre-ebook.com/7.26.0/calibre-7.26.0-aarch64.txz"
+sha256   = ""
+archive  = "tar.xz"
+mode     = "dir"
+dest_dir = "calibre"
+binary   = "ebook-convert"
