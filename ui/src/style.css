@@ -376,6 +376,11 @@ body {
     padding-top: 6px;
     border-top: 1px solid var(--border, rgba(128, 128, 128, 0.25));
 }
+/* Override UA [hidden]{display:none} — author .format-buttons display:flex
+   would otherwise win and keep the collapsed chain row visible. */
+.format-chained[hidden] {
+    display: none;
+}
 .fmt-chained {
     display: inline-flex;
     flex-direction: column;
