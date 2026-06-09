@@ -69,4 +69,148 @@ mod tests {
     fn test_find_typst_binary_does_not_panic() {
         let _ = crate::converter::document::find_typst_binary();
     }
+
+    /// Locks the exact direct-output surface before the graph refactor.
+    /// macOS values (HEIC offered) — see platform test for the non-macOS delta.
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn test_detect_output_formats_snapshot() {
+        use crate::converter::detect_output_formats as d;
+        let cases: &[(&str, &[&str])] = &[
+            ("/x.png",  &["jpg","webp","avif","gif","bmp","tiff","heic","pdf"]),
+            ("/x.jpg",  &["png","webp","avif","gif","bmp","tiff","heic","pdf"]),
+            ("/x.jpeg", &["png","webp","avif","gif","bmp","tiff","heic","pdf"]),
+            ("/x.webp", &["png","jpg","avif","gif","bmp","tiff","heic","pdf"]),
+            ("/x.gif",  &["png","jpg","webp","avif","bmp","tiff","heic","pdf"]),
+            ("/x.bmp",  &["png","jpg","webp","avif","gif","tiff","heic","pdf"]),
+            ("/x.tiff", &["png","jpg","webp","avif","gif","bmp","heic","pdf"]),
+            // .tif normalizes to tiff in the graph, so the pointless tif->tiff
+            // identity conversion is no longer offered (intentional delta).
+            ("/x.tif",  &["png","jpg","webp","avif","gif","bmp","heic","pdf"]),
+            ("/x.avif", &["png","jpg","webp","gif","bmp","tiff","heic","pdf"]),
+            ("/x.heic", &["jpg","png","tiff","gif","bmp","pdf"]),
+            ("/x.heif", &["jpg","png","tiff","gif","bmp","pdf"]),
+            ("/x.mp4",  &["mov","mkv","webm","avi","gif"]),
+            ("/x.mov",  &["mp4","mkv","webm","avi","gif"]),
+            ("/x.mkv",  &["mp4","mov","webm","avi","gif"]),
+            ("/x.webm", &["mp4","mov","mkv","avi","gif"]),
+            ("/x.avi",  &["mp4","mov","mkv","webm","gif"]),
+            ("/x.mp3",  &["aac","flac","ogg","wav","opus","m4a"]),
+            ("/x.aac",  &["mp3","flac","ogg","wav","opus","m4a"]),
+            ("/x.flac", &["mp3","aac","ogg","wav","opus","m4a"]),
+            ("/x.ogg",  &["mp3","aac","flac","wav","opus","m4a"]),
+            ("/x.wav",  &["mp3","aac","flac","ogg","opus","m4a"]),
+            ("/x.opus", &["mp3","aac","flac","ogg","wav","m4a"]),
+            ("/x.m4a",  &["mp3","aac","flac","ogg","wav","opus"]),
+            ("/x.json", &["yaml","toml","csv"]),
+            ("/x.yaml", &["json","toml","csv"]),
+            ("/x.yml",  &["json","toml","csv"]),
+            ("/x.toml", &["json","yaml","csv"]),
+            ("/x.csv",  &["json","yaml"]),
+            ("/x.md",   &["txt","html","pdf","tex","typst"]),
+            ("/x.markdown", &["txt","html","pdf","tex","typst"]),
+            ("/x.txt",  &["md","html","pdf","tex","typst"]),
+            ("/x.tex",  &["md","html","pdf","typst"]),
+            ("/x.latex",&["md","html","pdf","typst"]),
+            ("/x.typst",&["md","html","pdf","tex"]),
+            ("/x.epub", &["pdf","mobi","md","html"]),
+            ("/x.mobi", &["epub","pdf","html","md"]),
+            ("/x.pdf",  &["epub","mobi","html","md"]),
+        ];
+        for (path, expected) in cases {
+            let mut got = d(path).unwrap();
+            let mut want: Vec<String> = expected.iter().map(|s| s.to_string()).collect();
+            got.sort();
+            want.sort();
+            assert_eq!(got, want, "direct formats for {path} changed");
+        }
+        assert!(d("/x.xyz").is_err(), "unknown extension must error");
+    }
+
+    #[test]
+    #[cfg(not(target_os = "macos"))]
+    fn test_heic_absent_off_macos() {
+        use crate::converter::detect_output_formats as d;
+        // HEIC output is offered only on macOS (sips).
+        assert!(!d("/x.png").unwrap().contains(&"heic".to_string()));
+        // HEIC input has only MacOnly edges, so off-macOS it is an unsupported type.
+        assert!(d("/x.heic").is_err());
+    }
+
+    #[test]
+    fn test_find_path_direct_is_two_nodes() {
+        let p = crate::converter::graph::find_path("json", "yaml").unwrap();
+        assert_eq!(p, vec!["json".to_string(), "yaml".to_string()]);
+    }
+
+    #[test]
+    fn test_find_path_multi_hop_png_to_mobi() {
+        // png has no direct edge to mobi; must go through pdf then an ebook tool.
+        let p = crate::converter::graph::find_path("png", "mobi").unwrap();
+        assert!(p.len() > 2, "expected a chain, got {p:?}");
+        assert_eq!(p.first().unwrap(), &"png");
+        assert_eq!(p.last().unwrap(), &"mobi");
+        for w in p.windows(2) {
+            assert!(
+                crate::converter::graph::route_hop(&w[0], &w[1]).is_some(),
+                "hop {:?}->{:?} not routable",
+                w[0], w[1]
+            );
+        }
+    }
+
+    #[test]
+    fn test_find_path_normalizes_aliases() {
+        let p = crate::converter::graph::find_path("jpeg", "png").unwrap();
+        assert_eq!(p, vec!["jpg".to_string(), "png".to_string()]);
+    }
+
+    #[test]
+    fn test_find_path_unreachable_returns_none() {
+        assert!(crate::converter::graph::find_path("csv", "toml").is_none());
+    }
+
+    #[test]
+    fn test_find_path_prefers_cheaper_route() {
+        let p = crate::converter::graph::find_path("png", "tiff").unwrap();
+        assert_eq!(p, vec!["png".to_string(), "tiff".to_string()]);
+    }
+
+    #[test]
+    fn test_route_hop_covers_every_satisfiable_edge() {
+        // The core guarantee: nothing the table offers is unhandled by the dispatcher.
+        for e in crate::converter::graph::edges() {
+            if e.cond.satisfied() {
+                assert!(
+                    crate::converter::graph::route_hop(e.from, e.to).is_some(),
+                    "edge {}->{} is offered but route_hop returns None",
+                    e.from, e.to
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_detect_with_chains_png_offers_chained_mobi() {
+        let r = crate::converter::graph::detect_with_chains("/x.png").unwrap();
+        // direct still includes a 1-hop target
+        assert!(r.direct.contains(&"pdf".to_string()));
+        // mobi is NOT direct from png
+        assert!(!r.direct.contains(&"mobi".to_string()));
+        // ...but appears as a chained target with a route through pdf
+        let mobi = r.chained.iter().find(|c| c.format == "mobi")
+            .expect("mobi should be a chained target for png");
+        assert!(mobi.hops >= 2);
+        assert_eq!(mobi.route.first().unwrap(), "png");
+        assert_eq!(mobi.route.last().unwrap(), "mobi");
+        // chained never repeats a direct target
+        for c in &r.chained {
+            assert!(!r.direct.contains(&c.format), "{} is both direct and chained", c.format);
+        }
+    }
+
+    #[test]
+    fn test_detect_with_chains_unknown_errors() {
+        assert!(crate::converter::graph::detect_with_chains("/x.xyz").is_err());
+    }
 }

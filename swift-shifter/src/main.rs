@@ -287,8 +287,8 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn detect_format(path: String) -> Result<Vec<String>, String> {
-    converter::detect_output_formats(&path)
+async fn detect_format(path: String) -> Result<converter::graph::DetectResult, String> {
+    converter::graph::detect_with_chains(&path)
 }
 
 #[tauri::command]
