@@ -123,7 +123,7 @@ fn main() {
                         tauri::WebviewUrl::App("settings.html".into()),
                     )
                     .title("Preferences")
-                    .inner_size(480.0, 660.0)
+                    .inner_size(420.0, 440.0)
                     .resizable(false)
                     .always_on_top(true)
                     .center()

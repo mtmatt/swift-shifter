@@ -14,9 +14,11 @@ A featherweight, always-on file converter that lives in your menu bar. Drop any 
 - **Broad format support**
   - Images: WebP, PNG, JPEG, AVIF, GIF, BMP, TIFF, HEIC/HEIF
   - Video: MP4, MOV, MKV, WebM, AVI, GIF (video-to-GIF and GIF-to-video)
-  - Audio: MP3, AAC, FLAC, OGG, WAV, OPUS
+  - Audio: MP3, AAC, FLAC, OGG, WAV, OPUS, M4A
   - Data: JSON, YAML, TOML, CSV
   - Documents: Markdown, plain text, HTML, LaTeX, Typst, PDF, EPUB, MOBI (via pandoc + pymupdf4llm/marker-pdf/Calibre)
+- **PDF merge** -- combine multiple PDF files into one in a dedicated merge mode
+- **Clipboard integration** -- paste (⌘V) to load clipboard content for conversion; result written back to clipboard or saved to disk (configurable)
 - **Local LLM post-processing** -- optional Ollama integration cleans up extracted PDF text (configurable model and endpoint)
 - **Output next to source** -- converted file lands in the same folder as the input (configurable)
 - **Batch conversion** -- drop multiple files at once; common formats shown in a shared toolbar
@@ -53,6 +55,7 @@ swift-shifter/
 │   ├── src/
 │   │   ├── main.rs          # Tauri app entry point, window + tray + menu setup
 │   │   ├── config.rs        # Persisted settings (quality, concurrency)
+│   │   ├── clipboard.rs     # Clipboard read/write (paste-to-convert, copy result back)
 │   │   ├── hotkey.rs        # Global shortcut registration
 │   │   ├── tray.rs          # System tray icon and menu
 │   │   └── converter/
@@ -64,6 +67,7 @@ swift-shifter/
 │   │           ├── mod.rs
 │   │           ├── binaries.rs  # dependency detection and auto-install
 │   │           ├── conversion.rs # conversion logic per format
+│   │           ├── merge.rs     # PDF merge (combine multiple PDFs into one)
 │   │           ├── llm.rs       # Ollama LLM post-processing
 │   │           ├── types.rs
 │   │           └── utils.rs
@@ -167,11 +171,14 @@ This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Push
 - [x] MOBI <-> PDF/EPUB/HTML/MD
 - [x] PDF/EPUB/MOBI -> HTML and Markdown
 - [x] Local LLM post-processing for PDF conversions (Ollama)
+- [x] PDF merge (combine multiple PDFs into one)
+- [x] M4A audio format support
+- [x] Clipboard integration (paste to convert; copy result back to clipboard)
 
 
 ### Workflow & Automation
 
-- [ ] Clipboard Integration: Convert image/text directly from clipboard to file and vice versa
+- [x] Clipboard Integration: Convert image/text directly from clipboard to file and vice versa
 - [ ] Watched Folders: Designate folders for automatic background conversion upon file drop
 - [ ] Smart Presets: Create custom "Action Chains" (e.g., Convert to WebP + Resize to 1200px + Strip Metadata)
 - [ ] Post-processing hooks: Run custom shell commands or scripts after a successful conversion
