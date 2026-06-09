@@ -18,7 +18,10 @@ fn output_path(input: &str, ext: &str, output_dir: Option<&str>) -> Result<PathB
 
 // sips is built-in on every macOS install — the only reliable way to handle HEIC.
 fn sips_convert(path: &str, sips_format: &str, out: &Path) -> Result<(), String> {
-    let status = std::process::Command::new("sips")
+    // sips echoes the input/output paths to stdout. Null it so the CLI's stdout
+    // stays clean (the converted path is the only thing callers should see);
+    // capture stderr so a failure reports sips's actual diagnostic.
+    let output = std::process::Command::new("sips")
         .args([
             "-s",
             "format",
@@ -27,16 +30,24 @@ fn sips_convert(path: &str, sips_format: &str, out: &Path) -> Result<(), String>
             "--out",
             out.to_str().unwrap_or(""),
         ])
-        .status()
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
         .map_err(|e| format!("sips not available: {e}"))?;
 
-    if status.success() {
+    if output.status.success() {
         Ok(())
     } else {
-        Err(format!(
-            "sips exited with status {}",
-            status.code().unwrap_or(-1)
-        ))
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stderr = stderr.trim();
+        if stderr.is_empty() {
+            Err(format!(
+                "sips exited with status {}",
+                output.status.code().unwrap_or(-1)
+            ))
+        } else {
+            Err(format!("sips failed: {stderr}"))
+        }
     }
 }
 

@@ -63,6 +63,40 @@ async fn run_streamed(
 
 static FFMPEG_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
 
+/// Cached result of probing whether this ffmpeg build ships the external
+/// `libvorbis` encoder. Some builds (e.g. certain Homebrew bottles) only carry
+/// the native `vorbis` encoder, so hardcoding `libvorbis` fails with
+/// "Unknown encoder 'libvorbis'".
+static LIBVORBIS_AVAILABLE: OnceLock<bool> = OnceLock::new();
+
+/// Append the right Ogg Vorbis encoder flags, preferring the higher-quality
+/// external `libvorbis` when present and falling back to ffmpeg's native
+/// (experimental) `vorbis` encoder otherwise.
+async fn push_ogg_codec_args(cmd: &mut tokio::process::Command, ffmpeg: &Path) {
+    let has_libvorbis = match LIBVORBIS_AVAILABLE.get() {
+        Some(&v) => v,
+        None => {
+            let available = tokio::process::Command::new(ffmpeg)
+                .args(["-hide_banner", "-encoders"])
+                .output()
+                .await
+                .map(|o| String::from_utf8_lossy(&o.stdout).contains("libvorbis"))
+                .unwrap_or(false);
+            LIBVORBIS_AVAILABLE.set(available).ok();
+            available
+        }
+    };
+
+    if has_libvorbis {
+        cmd.args(["-codec:a", "libvorbis", "-q:a", "4"]);
+    } else {
+        // The native encoder is flagged experimental (-strict -2) and only
+        // supports 2 channels, so force stereo (-ac 2) or mono/surround input
+        // fails with "only supports 2 channels".
+        cmd.args(["-codec:a", "vorbis", "-strict", "-2", "-ac", "2", "-q:a", "4"]);
+    }
+}
+
 fn output_path(input: &str, ext: &str, output_dir: Option<&str>) -> Result<PathBuf, String> {
     let p = Path::new(input);
     let stem = p.file_stem().unwrap_or_default();
@@ -78,9 +112,49 @@ fn output_path(input: &str, ext: &str, output_dir: Option<&str>) -> Result<PathB
     Ok(dir.join(format!("{}.{}", stem.to_string_lossy(), ext)))
 }
 
+pub fn trim_output_path(input: &str, output_dir: Option<&str>) -> Result<PathBuf, String> {
+    let p = Path::new(input);
+    let stem = p.file_stem().unwrap_or_default();
+    let ext = p.extension().unwrap_or_default().to_str().unwrap_or("");
+    let dir = match output_dir {
+        Some(d) => {
+            let dir = PathBuf::from(d);
+            std::fs::create_dir_all(&dir)
+                .map_err(|e| format!("Failed to create output directory: {e}"))?;
+            dir
+        }
+        None => p.parent().unwrap_or(Path::new(".")).to_path_buf(),
+    };
+    let file_name = if ext.is_empty() {
+        format!("{}-trim", stem.to_string_lossy())
+    } else {
+        format!("{}-trim.{}", stem.to_string_lossy(), ext)
+    };
+    Ok(dir.join(file_name))
+}
+
+/// Audio containers we can losslessly stream-copy when trimming. Video files
+/// are re-encoded instead so the cut lands on the exact requested frame.
+fn is_audio_only(path: &str) -> bool {
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.to_ascii_lowercase())
+        .unwrap_or_default();
+    matches!(
+        ext.as_str(),
+        "mp3" | "aac" | "flac" | "ogg" | "wav" | "opus" | "m4a"
+    )
+}
+
 /// Locations that Homebrew uses but macOS GUI apps don't inherit via PATH.
 #[cfg(target_os = "macos")]
 const BREW_PATHS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
+
+/// Public wrapper so the CLI `doctor` command can report ffmpeg's location.
+pub fn find_ffmpeg() -> Option<PathBuf> {
+    find_ffmpeg_binary()
+}
 
 fn find_ffmpeg_binary() -> Option<PathBuf> {
     // First try PATH (works in dev / terminal launches)
@@ -109,6 +183,14 @@ fn find_ffmpeg_binary() -> Option<PathBuf> {
                     return Some(p);
                 }
             }
+        }
+    }
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    {
+        let bin_name = if cfg!(target_os = "windows") { "ffmpeg.exe" } else { "ffmpeg" };
+        let candidate = crate::downloader::user_tool_dir().join("bin").join(bin_name);
+        if candidate.exists() {
+            return Some(candidate);
         }
     }
     None
@@ -189,6 +271,20 @@ pub async fn ensure_ffmpeg(app: &tauri::AppHandle) -> Result<(), String> {
         }
     }
 
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    {
+        match crate::downloader::ensure_tool(app, "ffmpeg").await {
+            Ok(path) => {
+                FFMPEG_PATH.set(Some(path)).ok();
+                app.emit("ffmpeg:installed", ()).ok();
+                return Ok(());
+            }
+            Err(e) => {
+                app.emit("ffmpeg:failed", &e).ok();
+            }
+        }
+    }
+
     FFMPEG_PATH.set(None).ok();
     Ok(())
 }
@@ -234,7 +330,7 @@ pub async fn convert_media(
             cmd.args(["-codec:a", "flac"]);
         }
         "ogg" => {
-            cmd.args(["-codec:a", "libvorbis", "-q:a", "4"]);
+            push_ogg_codec_args(&mut cmd, &ffmpeg).await;
         }
         "opus" => {
             cmd.args(["-codec:a", "libopus", "-b:a", "128k"]);
@@ -387,6 +483,11 @@ pub async fn convert_image_to_gif(
     Ok(out.to_string_lossy().to_string())
 }
 
+pub async fn media_duration_secs(path: &str) -> Result<f64, String> {
+    let ffmpeg = get_ffmpeg()?;
+    Ok(get_duration(&ffmpeg, path).await.unwrap_or(0.0))
+}
+
 async fn get_duration(ffmpeg: &Path, path: &str) -> Option<f64> {
     let out = tokio::process::Command::new(ffmpeg)
         .args(["-i", path, "-hide_banner"])
@@ -408,4 +509,144 @@ async fn get_duration(ffmpeg: &Path, path: &str) -> Option<f64> {
         }
     }
     None
+}
+
+fn parse_time_to_secs(t: &str) -> Option<f64> {
+    let t = t.trim();
+    let parts: Vec<&str> = t.split(':').collect();
+    match parts.len() {
+        1 => parts[0].parse::<f64>().ok(),
+        2 => {
+            let m: f64 = parts[0].parse().ok()?;
+            let s: f64 = parts[1].parse().ok()?;
+            Some(m * 60.0 + s)
+        }
+        3 => {
+            let h: f64 = parts[0].parse().ok()?;
+            let m: f64 = parts[1].parse().ok()?;
+            let s: f64 = parts[2].parse().ok()?;
+            Some(h * 3600.0 + m * 60.0 + s)
+        }
+        _ => None,
+    }
+}
+
+pub async fn trim_media(
+    app: &tauri::AppHandle,
+    path: &str,
+    start: &str,
+    end: &str,
+    output_dir: Option<&str>,
+) -> Result<String, String> {
+    let ffmpeg = get_ffmpeg()?;
+    let out = trim_output_path(path, output_dir)?;
+    let source_duration_secs = get_duration(&ffmpeg, path).await.unwrap_or(0.0);
+
+    let start_secs = (!start.trim().is_empty())
+        .then(|| parse_time_to_secs(start))
+        .flatten();
+    let end_secs = (!end.trim().is_empty())
+        .then(|| parse_time_to_secs(end))
+        .flatten();
+
+    if let (Some(s), Some(e)) = (start_secs, end_secs) {
+        if e <= s {
+            return Err("End time must be after start time".to_string());
+        }
+    }
+
+    // ffmpeg resets output timestamps to 0 after an input-side -ss, so the
+    // progress denominator is the *trimmed* span, not the full source.
+    let effective_duration_secs = match (start_secs, end_secs) {
+        (Some(s), Some(e)) => e - s,
+        (Some(s), None) => (source_duration_secs - s).max(0.0),
+        (None, Some(e)) => e,
+        (None, None) => source_duration_secs,
+    };
+
+    let mut cmd = tokio::process::Command::new(&ffmpeg);
+    cmd.arg("-y");
+    if !start.trim().is_empty() {
+        cmd.args(["-ss", start.trim()]);
+    }
+    if !end.trim().is_empty() {
+        cmd.args(["-to", end.trim()]);
+    }
+    cmd.args(["-i", path]);
+    // Audio: lossless stream copy (audio frames are tiny, so cuts stay accurate).
+    // Video: re-encode with container defaults — modern ffmpeg makes the
+    // input-side -ss frame-accurate when transcoding.
+    if is_audio_only(path) {
+        cmd.args(["-c", "copy"]);
+    }
+    cmd.args(["-progress", "pipe:2", "-nostats"]);
+    cmd.arg(&out);
+    cmd.stderr(std::process::Stdio::piped());
+
+    let path_string = path.to_string();
+    let app_handle = app.clone();
+
+    let mut child = cmd
+        .spawn()
+        .map_err(|e| format!("Failed to spawn ffmpeg: {e}"))?;
+
+    // Keep the tail of ffmpeg's non-progress stderr so a failure can report
+    // the actual diagnostic instead of just an exit code.
+    let mut stderr_tail: Vec<String> = Vec::new();
+
+    if let Some(stderr) = child.stderr.take() {
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let mut reader = BufReader::new(stderr).lines();
+        while let Ok(Some(line)) = reader.next_line().await {
+            if let Some(val) = line.strip_prefix("out_time_us=") {
+                if let Ok(us) = val.trim().parse::<f64>() {
+                    if effective_duration_secs > 0.0 {
+                        let percent =
+                            ((us / 1_000_000.0) / effective_duration_secs * 100.0).min(100.0) as f32;
+                        app_handle
+                            .emit(
+                                "convert:progress",
+                                ProgressPayload {
+                                    path: path_string.clone(),
+                                    percent,
+                                },
+                            )
+                            .ok();
+                    }
+                }
+                continue;
+            }
+            // Skip `-progress` key=value lines (lowercase_with_underscores=...);
+            // keep everything else as a potential error message.
+            let is_progress_kv = line.split_once('=').is_some_and(|(k, _)| {
+                !k.is_empty()
+                    && k.chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+            });
+            if !is_progress_kv && !line.trim().is_empty() {
+                stderr_tail.push(line);
+                if stderr_tail.len() > 15 {
+                    stderr_tail.remove(0);
+                }
+            }
+        }
+    }
+
+    let status = child
+        .wait()
+        .await
+        .map_err(|e| format!("ffmpeg wait error: {e}"))?;
+    if !status.success() {
+        let detail = stderr_tail.join("\n");
+        let detail = detail.trim();
+        if detail.is_empty() {
+            return Err(format!(
+                "ffmpeg exited with status {}",
+                status.code().unwrap_or(-1)
+            ));
+        }
+        return Err(format!("ffmpeg failed: {detail}"));
+    }
+
+    Ok(out.to_string_lossy().to_string())
 }
