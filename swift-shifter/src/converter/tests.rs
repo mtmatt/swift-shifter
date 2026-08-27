@@ -90,11 +90,11 @@ mod tests {
             ("/x.avif", &["png","jpg","webp","gif","bmp","tiff","heic","pdf"]),
             ("/x.heic", &["jpg","png","tiff","gif","bmp","pdf"]),
             ("/x.heif", &["jpg","png","tiff","gif","bmp","pdf"]),
-            ("/x.mp4",  &["mov","mkv","webm","avi","gif"]),
-            ("/x.mov",  &["mp4","mkv","webm","avi","gif"]),
-            ("/x.mkv",  &["mp4","mov","webm","avi","gif"]),
-            ("/x.webm", &["mp4","mov","mkv","avi","gif"]),
-            ("/x.avi",  &["mp4","mov","mkv","webm","gif"]),
+            ("/x.mp4",  &["mov","mkv","webm","avi","gif","mp3","aac","flac","ogg","wav","opus","m4a"]),
+            ("/x.mov",  &["mp4","mkv","webm","avi","gif","mp3","aac","flac","ogg","wav","opus","m4a"]),
+            ("/x.mkv",  &["mp4","mov","webm","avi","gif","mp3","aac","flac","ogg","wav","opus","m4a"]),
+            ("/x.webm", &["mp4","mov","mkv","avi","gif","mp3","aac","flac","ogg","wav","opus","m4a"]),
+            ("/x.avi",  &["mp4","mov","mkv","webm","gif","mp3","aac","flac","ogg","wav","opus","m4a"]),
             ("/x.mp3",  &["aac","flac","ogg","wav","opus","m4a"]),
             ("/x.aac",  &["mp3","flac","ogg","wav","opus","m4a"]),
             ("/x.flac", &["mp3","aac","ogg","wav","opus","m4a"]),
@@ -206,6 +206,18 @@ mod tests {
         // chained never repeats a direct target
         for c in &r.chained {
             assert!(!r.direct.contains(&c.format), "{} is both direct and chained", c.format);
+        }
+    }
+
+    #[test]
+    fn test_video_to_audio_is_direct_edge() {
+        let formats = crate::converter::detect_output_formats("/x.mp4").unwrap();
+        for audio in ["mp3", "aac", "flac", "ogg", "wav", "opus", "m4a"] {
+            assert!(formats.contains(&audio.to_string()), "mp4 should offer {audio}");
+            assert!(
+                crate::converter::graph::route_hop("mp4", audio).is_some(),
+                "mp4->{audio} not routable"
+            );
         }
     }
 
