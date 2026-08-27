@@ -69,6 +69,14 @@ pub fn convert_data(
             serde_yaml::to_string(&value).map_err(|e| format!("YAML serialization error: {e}"))?
         }
         "toml" => {
+            // TOML documents are tables — they cannot have a top-level array.
+            // CSV always yields an array of records, and JSON/YAML may too.
+            if value.is_array() {
+                return Err(
+                    "TOML has no top-level array — only object/map data can convert to TOML"
+                        .to_string(),
+                );
+            }
             let toml_val: toml::Value =
                 serde_json::from_value(value).map_err(|e| format!("JSON→TOML conversion: {e}"))?;
             toml::to_string_pretty(&toml_val)

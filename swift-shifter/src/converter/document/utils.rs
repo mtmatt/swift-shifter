@@ -65,10 +65,40 @@ pub fn ext_to_pandoc_format(ext: &str) -> &str {
     }
 }
 
+/// Map a file extension to the pandoc *reader* name. Differs from
+/// [`ext_to_pandoc_format`] for `.txt`: pandoc has no `plain` reader (it's a
+/// writer-only format), so plain-text input is read as Markdown.
+pub fn ext_to_pandoc_input_format(ext: &str) -> &str {
+    match ext {
+        "txt" => "markdown",
+        _ => ext_to_pandoc_format(ext),
+    }
+}
+
 /// Output file extension for a given target format keyword.
 pub fn target_to_ext(target: &str) -> &str {
     match target {
         "latex" => "tex",
         _ => target,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn txt_reads_as_markdown_but_writes_as_plain() {
+        // pandoc has no `plain` reader, so .txt input must read as markdown,
+        // while .txt output stays `plain`.
+        assert_eq!(ext_to_pandoc_input_format("txt"), "markdown");
+        assert_eq!(ext_to_pandoc_format("txt"), "plain");
+    }
+
+    #[test]
+    fn input_format_matches_output_for_non_txt() {
+        for ext in ["md", "tex", "latex", "typst", "epub", "pdf"] {
+            assert_eq!(ext_to_pandoc_input_format(ext), ext_to_pandoc_format(ext));
+        }
     }
 }

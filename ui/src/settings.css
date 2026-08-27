@@ -21,22 +21,69 @@ body {
     user-select: none;
 }
 
-/* ─── Section label ───────────────────────────────────────────────────── */
-.section-label {
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.16em;
-    text-transform: uppercase;
-    color: var(--text-3);
-    margin-bottom: 14px;
-}
-
 /* ─── Content area ────────────────────────────────────────────────────── */
 .content {
     flex: 1;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    padding-top: 16px;
+}
+
+/* ─── Tab bar ─────────────────────────────────────────────────────────── */
+.tab-bar {
+    display: flex;
+    gap: 4px;
+    padding-bottom: 10px;
+    border-bottom: 0.5px solid var(--border);
+    flex-shrink: 0;
+}
+
+.tab {
+    font-family: inherit;
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    padding: 5px 12px;
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    color: var(--text-3);
+    cursor: pointer;
+    flex: 1;
+    text-align: center;
+    transition:
+        background 0.15s,
+        color 0.15s;
+}
+
+.tab.active {
+    background: var(--accent-dim);
+    color: var(--accent);
+}
+
+.tab:not(.active):hover {
+    color: var(--text-2);
+    background: var(--surface);
+}
+
+/* ─── Panels ──────────────────────────────────────────────────────────── */
+.panel {
+    display: none;
+    flex: 1;
+}
+
+.panel.active {
+    display: flex;
+    flex-direction: column;
+}
+
+/* ─── Subheader (engines panel) ───────────────────────────────────────── */
+.subheader {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.25);
+    padding: 4px 8px 2px;
 }
 
 .group {
@@ -45,25 +92,31 @@ body {
     gap: 14px;
 }
 
-.divider {
-    height: 0.5px;
-    background: var(--border);
-}
-
 /* ─── Slider row ──────────────────────────────────────────────────────── */
 .row {
     display: flex;
     align-items: center;
     gap: 10px;
+    padding: 5px 8px;
+    border-radius: 5px;
+    transition: background 0.1s;
+}
+
+.row:hover {
+    background: var(--surface);
 }
 
 label {
     font-size: 14px;
     color: var(--text-2);
-    width: 100px;
     flex-shrink: 0;
     letter-spacing: 0.04em;
     white-space: nowrap;
+}
+
+.row:has(input[type="range"]) label,
+.row:has(input[type="checkbox"]) label {
+    width: 100px;
 }
 
 input[type="range"] {
@@ -103,26 +156,58 @@ input[type="range"]:active::-webkit-slider-thumb {
     letter-spacing: 0.02em;
 }
 
-/* ─── Checkbox row ────────────────────────────────────────────────────── */
+/* ─── Toggle switch ───────────────────────────────────────────────────── */
 input[type="checkbox"] {
-    width: 14px;
-    height: 14px;
-    accent-color: var(--accent);
+    -webkit-appearance: none;
+    appearance: none;
+    width: 30px;
+    height: 16px;
+    border-radius: 8px;
+    background: var(--border-hi);
+    position: relative;
     cursor: pointer;
+    flex-shrink: 0;
+    margin-left: auto;
+    transition: background 0.2s;
+}
+
+input[type="checkbox"]:checked {
+    background: var(--accent);
+}
+
+input[type="checkbox"]::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 12px;
+    height: 12px;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 50%;
+    transition: left 0.15s ease;
+}
+
+input[type="checkbox"]:checked::after {
+    left: 16px;
 }
 
 /* ─── Text input row ─────────────────────────────────────────────────── */
 .text-input {
     flex: 1;
+    min-width: 0;
     font-family: inherit;
     font-size: 13px;
     background: transparent;
     border: 0.5px solid var(--border-hi);
     color: var(--text-2);
-    padding: 4px 8px;
+    padding: 6px 10px;
     border-radius: 4px;
     outline: none;
     letter-spacing: 0.02em;
+}
+
+select.text-input {
+    font-size: 14px;
 }
 
 .text-input:focus {
@@ -158,7 +243,8 @@ input[type="checkbox"] {
     padding: 2px 0;
 }
 
-#marker-progress-track {
+#marker-progress-track,
+#llm-progress-track {
     width: 100%;
     height: 3px;
     background: var(--border);

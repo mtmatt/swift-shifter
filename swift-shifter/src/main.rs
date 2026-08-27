@@ -1,8 +1,11 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod clipboard;
+mod cli;
 mod config;
 mod converter;
+mod downloader;
 mod hotkey;
 mod tray;
 mod util;
@@ -45,6 +48,13 @@ struct BatchItem {
     target_format: String,
 }
 
+#[derive(Deserialize)]
+struct TrimItem {
+    path: String,
+    start: String,
+    end: String,
+}
+
 #[derive(Serialize)]
 struct BatchResult {
     path: String,
@@ -53,9 +63,15 @@ struct BatchResult {
 }
 
 fn main() {
+    let context = tauri::generate_context!();
+    if cli::is_cli_invocation() {
+        std::process::exit(cli::run(context));
+    }
+
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(hotkey::build_plugin())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
@@ -118,6 +134,15 @@ fn main() {
                 }
             });
 
+            // Check for typst at startup — used for Typst → PDF and as a PDF engine
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Err(e) = converter::document::ensure_typst(&handle).await {
+                    eprintln!("typst setup warning: {e}");
+                    handle.emit("typst:failed", e).ok();
+                }
+            });
+
             // Check for pymupdf4llm at startup — needed for PDF → EPUB/HTML/MD
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -176,9 +201,16 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            clipboard::paste_from_clipboard,
+            clipboard::paste_diagnostics,
+            clipboard::copy_file_to_clipboard,
+            clipboard::remove_temp_file,
             detect_format,
             convert,
             convert_batch,
+            trim_media,
+            trim_batch,
+            get_media_duration,
             merge_pdfs,
             get_config,
             set_config,
@@ -194,7 +226,7 @@ fn main() {
             install_update,
             quit,
         ])
-        .build(tauri::generate_context!())
+        .build(context)
         .expect("error while building tauri application")
         .run(|_app_handle, event| match event {
             tauri::RunEvent::ExitRequested { .. } => {
@@ -244,8 +276,8 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn detect_format(path: String) -> Result<Vec<String>, String> {
-    converter::detect_output_formats(&path)
+async fn detect_format(path: String) -> Result<converter::graph::DetectResult, String> {
+    converter::graph::detect_with_chains(&path)
 }
 
 #[tauri::command]
@@ -313,12 +345,87 @@ async fn convert_batch(
 }
 
 #[tauri::command]
+async fn get_media_duration(path: String) -> Result<f64, String> {
+    converter::media::media_duration_secs(&path).await
+}
+
+#[tauri::command]
+async fn trim_media(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    path: String,
+    start: String,
+    end: String,
+) -> Result<String, String> {
+    let cfg = state.config.lock().unwrap().clone();
+    converter::media::trim_media(&app_handle, &path, &start, &end, cfg.output_dir.as_deref())
+        .await
+}
+
+#[tauri::command]
+async fn trim_batch(
+    app_handle: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    items: Vec<TrimItem>,
+) -> Result<Vec<BatchResult>, String> {
+    use tokio::sync::Semaphore;
+
+    let cfg = Arc::new(state.config.lock().unwrap().clone());
+    let sem = Arc::new(Semaphore::new(cfg.max_concurrent));
+
+    let handles: Vec<_> = items
+        .into_iter()
+        .map(|item| {
+            let sem = Arc::clone(&sem);
+            let cfg = Arc::clone(&cfg);
+            let handle = app_handle.clone();
+            tokio::spawn(async move {
+                let _permit = sem.acquire().await.unwrap();
+                match converter::media::trim_media(
+                    &handle,
+                    &item.path,
+                    &item.start,
+                    &item.end,
+                    cfg.output_dir.as_deref(),
+                )
+                .await
+                {
+                    Ok(out) => BatchResult {
+                        path: item.path,
+                        output_path: Some(out),
+                        error: None,
+                    },
+                    Err(e) => BatchResult {
+                        path: item.path,
+                        output_path: None,
+                        error: Some(e),
+                    },
+                }
+            })
+        })
+        .collect();
+
+    let mut results = Vec::with_capacity(handles.len());
+    for h in handles {
+        match h.await {
+            Ok(r) => results.push(r),
+            Err(e) => results.push(BatchResult {
+                path: String::new(),
+                output_path: None,
+                error: Some(format!("task panicked: {e}")),
+            }),
+        }
+    }
+    Ok(results)
+}
+
+#[tauri::command]
 fn get_config(state: tauri::State<'_, AppState>) -> config::Config {
     state.config.lock().unwrap().clone()
 }
 
 #[tauri::command]
-fn set_config(state: tauri::State<'_, AppState>, new_config: config::Config) -> Result<(), String> {
+fn set_config(app: tauri::AppHandle, state: tauri::State<'_, AppState>, new_config: config::Config) -> Result<(), String> {
     // Validate local_llm_url is a well-formed HTTP/HTTPS URL
     let llm_url = new_config.local_llm_url.trim().to_string();
     if !llm_url.is_empty()
@@ -340,9 +447,14 @@ fn set_config(state: tauri::State<'_, AppState>, new_config: config::Config) -> 
         use_local_llm:  new_config.use_local_llm,
         local_llm_model: new_config.local_llm_model,
         local_llm_url: llm_url,
+        clipboard_output_mode: match new_config.clipboard_output_mode.as_str() {
+            "download" => "download".to_string(),
+            _ => "clipboard".to_string(),
+        },
     };
     config::save(&validated)?;
     *state.config.lock().unwrap() = validated;
+    app.emit("config:updated", ()).ok();
     Ok(())
 }
 
