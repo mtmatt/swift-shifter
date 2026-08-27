@@ -321,22 +321,23 @@ pub async fn convert_media(
     // Format-specific flags
     match target_format {
         "mp3" => {
-            cmd.args(["-codec:a", "libmp3lame", "-q:a", "2"]);
+            cmd.args(["-vn", "-codec:a", "libmp3lame", "-q:a", "2"]);
         }
         "aac" => {
-            cmd.args(["-codec:a", "aac", "-b:a", "192k"]);
+            cmd.args(["-vn", "-codec:a", "aac", "-b:a", "192k"]);
         }
         "flac" => {
-            cmd.args(["-codec:a", "flac"]);
+            cmd.args(["-vn", "-codec:a", "flac"]);
         }
         "ogg" => {
+            cmd.arg("-vn");
             push_ogg_codec_args(&mut cmd, &ffmpeg).await;
         }
         "opus" => {
-            cmd.args(["-codec:a", "libopus", "-b:a", "128k"]);
+            cmd.args(["-vn", "-codec:a", "libopus", "-b:a", "128k"]);
         }
         "wav" => {
-            cmd.args(["-codec:a", "pcm_s16le"]);
+            cmd.args(["-vn", "-codec:a", "pcm_s16le"]);
         }
         "m4a" => {
             cmd.args(["-vn", "-codec:a", "aac", "-b:a", "192k"]);

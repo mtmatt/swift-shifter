@@ -94,6 +94,12 @@ pub fn edges() -> Vec<Edge> {
             }
         }
     }
+    // ---- Video -> audio (extract/re-encode audio track, drop video) ----
+    for &from in VIDEO {
+        for &to in AUDIO {
+            push(from, to, 4, Always);
+        }
+    }
 
     // ---- Data (serde, lossless-ish) ----
     push("json", "yaml", 1, Always);
