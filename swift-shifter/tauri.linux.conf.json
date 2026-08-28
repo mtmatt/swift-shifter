@@ -1,0 +1,18 @@
+{
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Swift Shifter",
+        "width": 340,
+        "height": 460,
+        "resizable": false,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "transparent": false,
+        "visible": true,
+        "center": false
+      }
+    ]
+  }
+}
