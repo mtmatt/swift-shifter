@@ -1,5 +1,6 @@
 use crate::converter::document::binaries::*;
 use crate::converter::document::llm::*;
+use crate::converter::document::pdf;
 use crate::converter::document::types::*;
 use crate::converter::document::utils::*;
 use std::path::Path;
@@ -398,10 +399,8 @@ pub async fn convert_document(
         out.to_str().unwrap_or(""),
     ]);
 
-    if target_format == "pdf"
-        && let Some(engine) = detect_pdf_engine()
-    {
-        cmd.args(["--pdf-engine", engine]);
+    if target_format == "pdf" {
+        pdf::configure_pandoc_pdf(&mut cmd, &pandoc, Some(Path::new(path))).await?;
     }
 
     cmd.arg(path);
@@ -511,18 +510,10 @@ pub async fn convert_image_to_pdf(
     let pandoc = get_pandoc()?;
 
     let input = Path::new(path);
-    let filename = input
-        .file_name()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
-    let image_dir = input
-        .parent()
-        .unwrap_or(Path::new("."))
-        .to_string_lossy()
-        .to_string();
-
-    let out = output_path(path, "pdf", output_dir)?;
+    // pandoc runs from the staging dir below, so the output path must not
+    // be relative to our own working directory.
+    let out = std::path::absolute(output_path(path, "pdf", output_dir)?)
+        .map_err(|e| format!("Failed to resolve output path: {e}"))?;
 
     app.emit(
         "convert:progress",
@@ -533,27 +524,34 @@ pub async fn convert_image_to_pdf(
     )
     .ok();
 
-    let tmp_md = std::env::temp_dir().join(format!("swift_shifter_{}.md", unique_tmp_suffix()));
-    std::fs::write(&tmp_md, format!("![]({})", filename))
-        .map_err(|e| format!("Failed to create temp file: {e}"))?;
+    // Stage a copy of the image next to a one-line markdown file and run
+    // pandoc from there. Older pandoc (e.g. 3.1 on Debian/Ubuntu) ignores
+    // --resource-path with typst, which resolves image paths against
+    // pandoc's working directory. The fixed name also avoids escaping
+    // spaces or parentheses from the user's file name in markdown.
+    let stage = tempfile::Builder::new()
+        .prefix("swift-shifter-image-pdf-")
+        .tempdir()
+        .map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    let ext = input.extension().and_then(|e| e.to_str()).unwrap_or("png");
+    let staged_image = format!("image.{ext}");
+    std::fs::copy(input, stage.path().join(&staged_image))
+        .map_err(|e| format!("Failed to stage image: {e}"))?;
+    std::fs::write(
+        stage.path().join("image.md"),
+        format!("![]({staged_image})"),
+    )
+    .map_err(|e| format!("Failed to create temp file: {e}"))?;
 
     let mut cmd = crate::process::async_command(&pandoc);
-    cmd.args([
-        "-f",
-        "markdown",
-        "-t",
-        "pdf",
-        "--resource-path",
-        &image_dir,
-        "-o",
-        out.to_str().unwrap_or(""),
-    ]);
+    cmd.current_dir(stage.path());
+    cmd.args(["-f", "markdown", "-t", "pdf", "-o"]);
+    cmd.arg(&out);
 
-    if let Some(engine) = detect_pdf_engine() {
-        cmd.args(["--pdf-engine", engine]);
-    }
+    // The staged markdown has no text of its own to inspect.
+    pdf::configure_pandoc_pdf(&mut cmd, &pandoc, None).await?;
 
-    cmd.arg(tmp_md.to_str().unwrap_or(""));
+    cmd.arg("image.md");
     cmd.stdout(std::process::Stdio::null());
     cmd.stderr(std::process::Stdio::piped());
 
@@ -574,8 +572,6 @@ pub async fn convert_image_to_pdf(
         .wait()
         .await
         .map_err(|e| format!("pandoc wait error: {e}"))?;
-
-    let _ = std::fs::remove_file(&tmp_md);
 
     if !status.success() {
         let msg = if stderr_out.trim().is_empty() {

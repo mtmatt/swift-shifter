@@ -5,6 +5,7 @@ pub mod binaries;
 pub mod conversion;
 pub mod llm;
 pub mod merge;
+pub mod pdf;
 pub mod types;
 mod utils;
 pub use merge::*;

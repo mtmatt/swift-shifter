@@ -12,7 +12,23 @@ const MANIFEST: &str = include_str!("../../tools.toml");
 struct Manifest {
     ffmpeg: ToolSpec,
     pandoc: ToolSpec,
+    typst: ToolSpec,
     calibre: ToolSpec,
+}
+
+impl Manifest {
+    /// The tools.toml entry for `name`. Every table in tools.toml must be
+    /// listed here (see `every_manifest_tool_is_resolvable`); serde silently
+    /// ignores tables without a matching field.
+    fn spec(&self, name: &str) -> Option<&ToolSpec> {
+        match name {
+            "ffmpeg" => Some(&self.ffmpeg),
+            "pandoc" => Some(&self.pandoc),
+            "typst" => Some(&self.typst),
+            "calibre" => Some(&self.calibre),
+            _ => None,
+        }
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -71,13 +87,8 @@ pub fn user_tool_dir() -> PathBuf {
 }
 
 pub fn tool_version(name: &str) -> Option<String> {
-    let m = parse_manifest().ok()?;
-    match name {
-        "ffmpeg" => Some(m.ffmpeg.version),
-        "pandoc" => Some(m.pandoc.version),
-        "calibre" => Some(m.calibre.version),
-        _ => None,
-    }
+    let manifest = parse_manifest().ok()?;
+    manifest.spec(name).map(|spec| spec.version.clone())
 }
 
 pub fn verify_sha256(bytes: &[u8], expected: &str) -> Result<(), String> {
@@ -226,12 +237,9 @@ async fn download_bytes(
 
 pub async fn ensure_tool(app: &tauri::AppHandle, tool_name: &str) -> Result<PathBuf, String> {
     let manifest = parse_manifest()?;
-    let spec = match tool_name {
-        "ffmpeg" => &manifest.ffmpeg,
-        "pandoc" => &manifest.pandoc,
-        "calibre" => &manifest.calibre,
-        other => return Err(format!("unknown tool: {other}")),
-    };
+    let spec = manifest
+        .spec(tool_name)
+        .ok_or_else(|| format!("unknown tool: {tool_name}"))?;
 
     let entry = get_current_entry(spec)
         .ok_or_else(|| format!("{tool_name}: no download entry for this platform/arch"))?;
@@ -369,6 +377,34 @@ mod tests {
             dir.starts_with(&home),
             "{dir:?} should be under home {home:?}"
         );
+    }
+
+    #[test]
+    fn every_manifest_tool_is_resolvable() {
+        // Guards against adding a tool to tools.toml without wiring it into
+        // `Manifest`, which left typst uninstallable on Linux/Windows.
+        let manifest = parse_manifest().unwrap();
+        let tables: toml::Table = toml::from_str(MANIFEST).unwrap();
+        for name in tables.keys() {
+            assert!(
+                manifest.spec(name).is_some(),
+                "tools.toml has [{name}] but Manifest::spec doesn't resolve it"
+            );
+        }
+    }
+
+    #[test]
+    fn typst_has_pinned_downloads_for_every_platform() {
+        let manifest = parse_manifest().unwrap();
+        let typst = manifest.spec("typst").unwrap();
+        for entry in [
+            &typst.linux_x86_64,
+            &typst.linux_aarch64,
+            &typst.windows_x86_64,
+        ] {
+            let entry = entry.as_ref().expect("missing typst platform entry");
+            assert_eq!(entry.sha256.len(), 64, "typst {} lacks a sha256", entry.url);
+        }
     }
 
     #[test]
