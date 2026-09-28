@@ -26,6 +26,19 @@ pub fn detect_output_formats(path: &str) -> Result<Vec<String>, String> {
     Ok(targets)
 }
 
+/// Directory the final hop of a multi-hop chain writes to: the configured
+/// output dir, else the ORIGINAL input's directory. Falling back to the last
+/// hop's own input would resolve to the temp dir, which is deleted afterward.
+fn chain_output_dir(original: &str, configured: Option<&str>) -> String {
+    if let Some(dir) = configured {
+        return dir.to_string();
+    }
+    match Path::new(original).parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => parent.to_string_lossy().into_owned(),
+        _ => ".".to_string(),
+    }
+}
+
 /// Execute exactly one conversion hop. `from`/`to` MUST be normalized.
 /// `out_dir` is where THIS hop writes (a temp dir for intermediate hops).
 async fn run_single_hop(
@@ -81,7 +94,8 @@ fn pdf_llm_cfg(config: &Config) -> document::LlmCfg {
 }
 
 /// Convert `path` to `target_format`, chaining hops through a temp dir when no
-/// direct conversion exists. Only the final artifact lands in `config.output_dir`.
+/// direct conversion exists. Only the final artifact lands in the output dir
+/// (`config.output_dir`, or the input's own directory when unset).
 pub async fn convert_file(
     app: &tauri::AppHandle,
     path: &str,
@@ -105,12 +119,13 @@ pub async fn convert_file(
             .await;
     }
 
-    // Multi-hop: run through a temp dir; only the last hop writes to output_dir.
+    // Multi-hop: run through a temp dir; only the last hop writes to `final_dir`.
     let tmp = tempfile::Builder::new()
         .prefix("swift-shifter-chain-")
         .tempdir()
         .map_err(|e| format!("Failed to create temp dir: {e}"))?;
     let tmp_str = tmp.path().to_str().ok_or("Temp path is not valid UTF-8")?;
+    let final_dir = chain_output_dir(path, config.output_dir.as_deref());
 
     let total = seq.len() - 1;
     let mut current = path.to_string();
@@ -124,12 +139,8 @@ pub async fn convert_file(
         .ok();
 
         let is_last = i == total - 1;
-        let out_dir = if is_last {
-            config.output_dir.as_deref()
-        } else {
-            Some(tmp_str)
-        };
-        current = run_single_hop(app, &current, &win[0], &win[1], out_dir, config).await?;
+        let out_dir = if is_last { final_dir.as_str() } else { tmp_str };
+        current = run_single_hop(app, &current, &win[0], &win[1], Some(out_dir), config).await?;
     }
 
     app.emit(
@@ -138,7 +149,7 @@ pub async fn convert_file(
     )
     .ok();
 
-    // `tmp` drops here, removing all intermediates; the final file is in output_dir.
+    // `tmp` drops here, removing all intermediates; the final file is in `final_dir`.
     Ok(current)
 }
 mod tests;

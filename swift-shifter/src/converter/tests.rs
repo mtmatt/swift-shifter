@@ -222,6 +222,24 @@ mod tests {
     }
 
     #[test]
+    fn test_chain_output_dir_prefers_configured_dir() {
+        let dir = crate::converter::chain_output_dir("/in/doc.md", Some("/out"));
+        assert_eq!(dir, "/out");
+    }
+
+    #[test]
+    fn test_chain_output_dir_defaults_to_original_input_dir() {
+        let dir = crate::converter::chain_output_dir("/in/doc.md", None);
+        assert_eq!(dir, "/in");
+    }
+
+    #[test]
+    fn test_chain_output_dir_bare_filename_uses_cwd() {
+        let dir = crate::converter::chain_output_dir("doc.md", None);
+        assert_eq!(dir, ".");
+    }
+
+    #[test]
     fn test_detect_with_chains_unknown_errors() {
         assert!(crate::converter::graph::detect_with_chains("/x.xyz").is_err());
     }
