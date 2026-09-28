@@ -13,6 +13,23 @@ fn tool_present(doctor_stdout: &str, name: &str) -> bool {
 
 #[test]
 fn png_to_html_chain_produces_file() {
+    run_png_to_html_chain(OutputDirFlag::Passed);
+}
+
+/// Regression for #27: without `--output-dir`, the final artifact must land
+/// next to the original input, not in the (deleted) chain temp dir.
+#[test]
+fn png_to_html_chain_without_output_dir_writes_next_to_input() {
+    run_png_to_html_chain(OutputDirFlag::Omitted);
+}
+
+/// Whether the CLI run gets `--output-dir <input's dir>` or falls back to the default.
+enum OutputDirFlag {
+    Passed,
+    Omitted,
+}
+
+fn run_png_to_html_chain(output_dir_flag: OutputDirFlag) {
     // 1. Ask the CLI which tools exist.
     let doctor = Command::new(env!("CARGO_BIN_EXE_swift-shifter"))
         .arg("doctor")
@@ -39,15 +56,14 @@ fn png_to_html_chain_produces_file() {
     let png = dir.path().join("tiny.png");
     write_tiny_png(&png);
 
-    // 3. Run the chain via the CLI: `convert html tiny.png`, output into the temp dir.
-    let out = Command::new(env!("CARGO_BIN_EXE_swift-shifter"))
-        .args([
-            "--output-dir",
-            dir.path().to_str().unwrap(),
-            "convert",
-            "html",
-            png.to_str().unwrap(),
-        ])
+    // 3. Run the chain via the CLI: `convert html tiny.png`. Either way the
+    //    output must land in the temp dir (explicitly, or as the input's dir).
+    let mut cmd = Command::new(env!("CARGO_BIN_EXE_swift-shifter"));
+    if let OutputDirFlag::Passed = output_dir_flag {
+        cmd.args(["--output-dir", dir.path().to_str().unwrap()]);
+    }
+    let out = cmd
+        .args(["convert", "html", png.to_str().unwrap()])
         .output()
         .expect("failed to run convert");
 
@@ -65,6 +81,13 @@ fn png_to_html_chain_produces_file() {
     assert!(produced.ends_with(".html"), "expected .html output, got {produced}");
     let meta = std::fs::metadata(produced).expect("output file missing");
     assert!(meta.len() > 0, "output file is empty");
+    // Canonicalize both sides: on macOS the temp dir sits behind a /var symlink.
+    let produced_dir = std::path::Path::new(produced).parent().unwrap();
+    assert_eq!(
+        produced_dir.canonicalize().unwrap(),
+        dir.path().canonicalize().unwrap(),
+        "output not written to the expected dir"
+    );
 
     // 5. The intermediate PDF must NOT leak into the output dir — only the final
     //    artifact lands there; intermediates live in (and die with) a temp dir.
