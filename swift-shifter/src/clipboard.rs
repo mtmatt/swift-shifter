@@ -104,15 +104,23 @@ fn pasteboard_data_for_uti(uti: &str) -> Option<Vec<u8>> {
     autoreleasepool(|_| unsafe {
         let pb_class = AnyClass::get(c"NSPasteboard")?;
         let pb: *mut AnyObject = msg_send![pb_class, generalPasteboard];
-        if pb.is_null() { return None; }
+        if pb.is_null() {
+            return None;
+        }
 
         let type_str = NSString::from_str(uti);
         let data: *mut AnyObject = msg_send![pb, dataForType: &*type_str];
-        if data.is_null() { return None; }
+        if data.is_null() {
+            return None;
+        }
         let len: usize = msg_send![data, length];
-        if len == 0 { return None; }
+        if len == 0 {
+            return None;
+        }
         let ptr: *const u8 = msg_send![data, bytes];
-        if ptr.is_null() { return None; }
+        if ptr.is_null() {
+            return None;
+        }
         Some(std::slice::from_raw_parts(ptr, len).to_vec())
     })
 }
@@ -132,11 +140,15 @@ fn pasteboard_string_for_uti(uti: &str) -> Option<String> {
     autoreleasepool(|_| unsafe {
         let pb_class = AnyClass::get(c"NSPasteboard")?;
         let pb: *mut AnyObject = msg_send![pb_class, generalPasteboard];
-        if pb.is_null() { return None; }
+        if pb.is_null() {
+            return None;
+        }
 
         let type_str = NSString::from_str(uti);
         let s: *mut NSString = msg_send![pb, stringForType: &*type_str];
-        if s.is_null() { return None; }
+        if s.is_null() {
+            return None;
+        }
         Some((*s).to_string())
     })
 }
@@ -157,9 +169,13 @@ fn pasteboard_available_types() -> Vec<String> {
             None => return Vec::new(),
         };
         let pb: *mut AnyObject = msg_send![pb_class, generalPasteboard];
-        if pb.is_null() { return Vec::new(); }
+        if pb.is_null() {
+            return Vec::new();
+        }
         let arr: *mut AnyObject = msg_send![pb, types];
-        if arr.is_null() { return Vec::new(); }
+        if arr.is_null() {
+            return Vec::new();
+        }
         let count: usize = msg_send![arr, count];
         let mut out = Vec::with_capacity(count);
         for i in 0..count {
@@ -226,13 +242,23 @@ fn resolve_file_reference_url(url_str: &str) -> Option<String> {
         let nsurl_class = AnyClass::get(c"NSURL")?;
         let s = NSString::from_str(url_str);
         let url: *mut AnyObject = msg_send![nsurl_class, URLWithString: &*s];
-        if url.is_null() { return None; }
+        if url.is_null() {
+            return None;
+        }
         let file_url: *mut AnyObject = msg_send![url, filePathURL];
-        if file_url.is_null() { return None; }
+        if file_url.is_null() {
+            return None;
+        }
         let path: *mut NSString = msg_send![file_url, path];
-        if path.is_null() { return None; }
+        if path.is_null() {
+            return None;
+        }
         let p = (*path).to_string();
-        if std::path::Path::new(&p).is_file() { Some(p) } else { None }
+        if std::path::Path::new(&p).is_file() {
+            Some(p)
+        } else {
+            None
+        }
     })
 }
 
@@ -299,10 +325,7 @@ const RICH_DOC_UTIS: &[(&str, &str)] = &[
 /// Used only as a last-resort fallback when no plain-text type is on the
 /// pasteboard.
 #[cfg(target_os = "macos")]
-const RICH_TEXT_UTIS: &[(&str, &str)] = &[
-    ("public.rtf", "rtf"),
-    ("public.html", "html"),
-];
+const RICH_TEXT_UTIS: &[(&str, &str)] = &[("public.rtf", "rtf"), ("public.html", "html")];
 
 #[cfg(target_os = "macos")]
 fn read_rich_doc_from_pasteboard() -> Option<(Vec<u8>, &'static str)> {
@@ -387,7 +410,9 @@ fn pasteboard_has_image_data() -> bool {
 /// false-positive on ordinary prose.
 fn sniff_text_format(text: &str) -> &'static str {
     let trimmed = text.trim();
-    if trimmed.is_empty() { return "txt"; }
+    if trimmed.is_empty() {
+        return "txt";
+    }
 
     if (trimmed.starts_with('{') || trimmed.starts_with('['))
         && serde_json::from_str::<serde_json::Value>(text).is_ok()
@@ -408,8 +433,7 @@ fn sniff_text_format(text: &str) -> &'static str {
     // valid empty table, which would mis-classify prose.
     let toml_shaped = text.lines().any(|l| {
         let t = l.trim();
-        (t.starts_with('[') && t.ends_with(']') && t.len() > 2)
-            || t.contains(" = ")
+        (t.starts_with('[') && t.ends_with(']') && t.len() > 2) || t.contains(" = ")
     });
     if toml_shaped && toml::from_str::<toml::Value>(text).is_ok() {
         return "toml";
@@ -442,20 +466,26 @@ fn write_text_paste(text: &str) -> Result<PasteResult, String> {
     if let Some(path) = trimmed.strip_prefix("file://") {
         let decoded = percent_decode(path);
         if std::path::Path::new(&decoded).is_file() {
-            return Ok(PasteResult { path: decoded, is_temp: false });
+            return Ok(PasteResult {
+                path: decoded,
+                is_temp: false,
+            });
         }
     }
     let candidate = std::path::Path::new(trimmed);
-    if !trimmed.contains(['\n', '\r', '\0'])
-        && candidate.is_absolute()
-        && candidate.is_file()
-    {
-        return Ok(PasteResult { path: trimmed.to_string(), is_temp: false });
+    if !trimmed.contains(['\n', '\r', '\0']) && candidate.is_absolute() && candidate.is_file() {
+        return Ok(PasteResult {
+            path: trimmed.to_string(),
+            is_temp: false,
+        });
     }
     let ext = sniff_text_format(text);
     let p = temp_path(ext);
     std::fs::write(&p, text.as_bytes()).map_err(|e| e.to_string())?;
-    Ok(PasteResult { path: p.to_string_lossy().into_owned(), is_temp: true })
+    Ok(PasteResult {
+        path: p.to_string_lossy().into_owned(),
+        is_temp: true,
+    })
 }
 
 /// Decode the clipboard's RGBA image and write it as a PNG temp file.
@@ -464,7 +494,10 @@ fn write_image_as_png(img: &tauri::image::Image) -> Result<PasteResult, String> 
         .ok_or("Invalid clipboard image dimensions")?;
     let p = temp_path("png");
     rb.save(&p).map_err(|e| e.to_string())?;
-    Ok(PasteResult { path: p.to_string_lossy().into_owned(), is_temp: true })
+    Ok(PasteResult {
+        path: p.to_string_lossy().into_owned(),
+        is_temp: true,
+    })
 }
 
 /// Snapshot of what was synchronously readable off the system clipboard
@@ -508,12 +541,24 @@ enum PasteOutcome {
 }
 
 fn dispatch_paste_macos(r: ClipboardReads) -> PasteOutcome {
-    if let Some(p) = r.file_path { return PasteOutcome::ExistingPath(p); }
-    if let Some((b, e)) = r.raw_image { return PasteOutcome::Bytes(b, e); }
-    if let Some((b, e)) = r.rich_doc { return PasteOutcome::Bytes(b, e); }
-    if r.has_text { return PasteOutcome::Text; }
-    if r.has_image { return PasteOutcome::ReadRgbaImage; }
-    if let Some((b, e)) = r.rich_text { return PasteOutcome::Bytes(b, e); }
+    if let Some(p) = r.file_path {
+        return PasteOutcome::ExistingPath(p);
+    }
+    if let Some((b, e)) = r.raw_image {
+        return PasteOutcome::Bytes(b, e);
+    }
+    if let Some((b, e)) = r.rich_doc {
+        return PasteOutcome::Bytes(b, e);
+    }
+    if r.has_text {
+        return PasteOutcome::Text;
+    }
+    if r.has_image {
+        return PasteOutcome::ReadRgbaImage;
+    }
+    if let Some((b, e)) = r.rich_text {
+        return PasteOutcome::Bytes(b, e);
+    }
     PasteOutcome::Empty
 }
 
@@ -522,21 +567,28 @@ fn dispatch_paste_other(r: ClipboardReads) -> PasteOutcome {
     // Non-macOS path. The Tauri `read_image()` call is performed by the
     // caller and signalled here as `ReadRgbaImage` (we don't have a way
     // to know up-front whether it'll succeed; the caller probes).
-    if let Some(p) = r.file_path { return PasteOutcome::ExistingPath(p); }
-    if let Some((b, e)) = r.raw_image { return PasteOutcome::Bytes(b, e); }
+    if let Some(p) = r.file_path {
+        return PasteOutcome::ExistingPath(p);
+    }
+    if let Some((b, e)) = r.raw_image {
+        return PasteOutcome::Bytes(b, e);
+    }
     PasteOutcome::ReadRgbaImage
 }
 
-fn finalize_outcome(
-    app: &AppHandle,
-    outcome: PasteOutcome,
-) -> Result<PasteResult, String> {
+fn finalize_outcome(app: &AppHandle, outcome: PasteOutcome) -> Result<PasteResult, String> {
     match outcome {
-        PasteOutcome::ExistingPath(p) => Ok(PasteResult { path: p, is_temp: false }),
+        PasteOutcome::ExistingPath(p) => Ok(PasteResult {
+            path: p,
+            is_temp: false,
+        }),
         PasteOutcome::Bytes(bytes, ext) => {
             let p = temp_path(ext);
             std::fs::write(&p, &bytes).map_err(|e| e.to_string())?;
-            Ok(PasteResult { path: p.to_string_lossy().into_owned(), is_temp: true })
+            Ok(PasteResult {
+                path: p.to_string_lossy().into_owned(),
+                is_temp: true,
+            })
         }
         PasteOutcome::Text => {
             let text = app.clipboard().read_text().map_err(|e| e.to_string())?;
@@ -568,8 +620,8 @@ fn snapshot_clipboard_macos() -> ClipboardReads {
     ClipboardReads {
         file_path: read_file_path_from_pasteboard(),
         raw_image: read_raw_image_from_pasteboard(),
-        rich_doc:  read_rich_doc_from_pasteboard(),
-        has_text:  pasteboard_has_text_data(),
+        rich_doc: read_rich_doc_from_pasteboard(),
+        has_text: pasteboard_has_text_data(),
         has_image: pasteboard_has_image_data(),
         rich_text: read_rich_text_from_pasteboard(),
     }
@@ -613,7 +665,9 @@ pub async fn paste_from_clipboard(app: AppHandle) -> Result<PasteResult, String>
 pub async fn paste_diagnostics() -> Result<Vec<String>, String> {
     tokio::task::spawn_blocking(|| -> Vec<String> {
         #[cfg(target_os = "macos")]
-        { return pasteboard_available_types(); }
+        {
+            return pasteboard_available_types();
+        }
         #[cfg(target_os = "linux")]
         {
             use std::process::Command;
@@ -623,27 +677,35 @@ pub async fn paste_diagnostics() -> Result<Vec<String>, String> {
             {
                 if o.status.success() {
                     return String::from_utf8_lossy(&o.stdout)
-                        .lines().map(|l| l.trim().to_string())
-                        .filter(|l| !l.is_empty()).collect();
+                        .lines()
+                        .map(|l| l.trim().to_string())
+                        .filter(|l| !l.is_empty())
+                        .collect();
                 }
             }
             if let Ok(o) = Command::new("wl-paste").arg("--list-types").output() {
                 if o.status.success() {
                     return String::from_utf8_lossy(&o.stdout)
-                        .lines().map(|l| l.trim().to_string())
-                        .filter(|l| !l.is_empty()).collect();
+                        .lines()
+                        .map(|l| l.trim().to_string())
+                        .filter(|l| !l.is_empty())
+                        .collect();
                 }
             }
             Vec::new()
         }
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-        { Vec::new() }
+        {
+            Vec::new()
+        }
     })
     .await
     .map_err(|e| format!("Diagnostics task panicked: {e}"))
 }
 
-const IMAGE_EXTS: &[&str] = &["png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff", "tif", "avif"];
+const IMAGE_EXTS: &[&str] = &[
+    "png", "jpg", "jpeg", "webp", "gif", "bmp", "tiff", "tif", "avif",
+];
 
 /// Write image bytes to the macOS general pasteboard under one or more
 /// UTIs. Going direct (vs. arboard's `NSImage` → `writeObjects:` path)
@@ -662,10 +724,11 @@ fn write_image_to_pasteboard_macos(reps: &[(&str, &[u8])]) -> Result<(), String>
     }
 
     autoreleasepool(|_| unsafe {
-        let pb_class = AnyClass::get(c"NSPasteboard")
-            .ok_or("NSPasteboard class not found")?;
+        let pb_class = AnyClass::get(c"NSPasteboard").ok_or("NSPasteboard class not found")?;
         let pb: *mut AnyObject = msg_send![pb_class, generalPasteboard];
-        if pb.is_null() { return Err("generalPasteboard returned nil".to_string()); }
+        if pb.is_null() {
+            return Err("generalPasteboard returned nil".to_string());
+        }
 
         let _: i64 = msg_send![pb, clearContents];
 
@@ -747,11 +810,8 @@ pub async fn copy_file_to_clipboard(app: AppHandle, path: String) -> Result<(), 
                 } else {
                     let img = image::open(&path).map_err(|e| e.to_string())?;
                     let mut buf: Vec<u8> = Vec::new();
-                    img.write_to(
-                        &mut std::io::Cursor::new(&mut buf),
-                        image::ImageFormat::Png,
-                    )
-                    .map_err(|e| e.to_string())?;
+                    img.write_to(&mut std::io::Cursor::new(&mut buf), image::ImageFormat::Png)
+                        .map_err(|e| e.to_string())?;
                     Some(buf)
                 };
                 if let Some(ref png_bytes) = png_bytes_opt {
@@ -767,7 +827,9 @@ pub async fn copy_file_to_clipboard(app: AppHandle, path: String) -> Result<(), 
                 let (w, h) = rgba.dimensions();
                 let raw = rgba.into_raw();
                 let cb_img = tauri::image::Image::new_owned(raw, w, h);
-                app.clipboard().write_image(&cb_img).map_err(|e| e.to_string())?;
+                app.clipboard()
+                    .write_image(&cb_img)
+                    .map_err(|e| e.to_string())?;
             }
         } else {
             // Anything that reads as valid UTF-8 — source code, configs,
@@ -776,7 +838,9 @@ pub async fn copy_file_to_clipboard(app: AppHandle, path: String) -> Result<(), 
             // system clipboard has no good way to carry them.
             let text = std::fs::read_to_string(&path)
                 .map_err(|_| format!("Cannot copy .{ext} files to clipboard"))?;
-            app.clipboard().write_text(text).map_err(|e| e.to_string())?;
+            app.clipboard()
+                .write_text(text)
+                .map_err(|e| e.to_string())?;
         }
         Ok(())
     })
@@ -855,7 +919,10 @@ mod tests {
 
     #[test]
     fn sniff_yaml_falls_back_to_txt() {
-        assert_eq!(sniff_text_format("name: Alice\nage: 30\ncity: NYC\n"), "txt");
+        assert_eq!(
+            sniff_text_format("name: Alice\nage: 30\ncity: NYC\n"),
+            "txt"
+        );
     }
 
     #[test]
@@ -885,12 +952,18 @@ mod tests {
 
     #[test]
     fn percent_decode_spaces() {
-        assert_eq!(percent_decode("/Users/matt/My%20Video.mp4"), "/Users/matt/My Video.mp4");
+        assert_eq!(
+            percent_decode("/Users/matt/My%20Video.mp4"),
+            "/Users/matt/My Video.mp4"
+        );
     }
 
     #[test]
     fn percent_decode_passthrough() {
-        assert_eq!(percent_decode("/no/escapes/here.txt"), "/no/escapes/here.txt");
+        assert_eq!(
+            percent_decode("/no/escapes/here.txt"),
+            "/no/escapes/here.txt"
+        );
     }
 
     #[test]
@@ -1141,9 +1214,15 @@ mod tests {
 
     // ─── dispatch_paste priority ordering ────────────────────────────────
 
-    fn img_bytes() -> (Vec<u8>, &'static str) { (vec![0xFF, 0xD8, 0xFF], "jpg") }
-    fn pdf_bytes() -> (Vec<u8>, &'static str) { (b"%PDF-1.4\n".to_vec(), "pdf") }
-    fn rtf_bytes() -> (Vec<u8>, &'static str) { (b"{\\rtf1}".to_vec(), "rtf") }
+    fn img_bytes() -> (Vec<u8>, &'static str) {
+        (vec![0xFF, 0xD8, 0xFF], "jpg")
+    }
+    fn pdf_bytes() -> (Vec<u8>, &'static str) {
+        (b"%PDF-1.4\n".to_vec(), "pdf")
+    }
+    fn rtf_bytes() -> (Vec<u8>, &'static str) {
+        (b"{\\rtf1}".to_vec(), "rtf")
+    }
 
     fn assert_existing_path(o: PasteOutcome, expected: &str) {
         match o {
@@ -1161,7 +1240,10 @@ mod tests {
         assert!(matches!(o, PasteOutcome::Text), "expected Text outcome");
     }
     fn assert_rgba(o: PasteOutcome) {
-        assert!(matches!(o, PasteOutcome::ReadRgbaImage), "expected ReadRgbaImage");
+        assert!(
+            matches!(o, PasteOutcome::ReadRgbaImage),
+            "expected ReadRgbaImage"
+        );
     }
     fn assert_empty(o: PasteOutcome) {
         assert!(matches!(o, PasteOutcome::Empty), "expected Empty");
@@ -1222,7 +1304,10 @@ mod tests {
     #[test]
     fn macos_image_used_when_no_text() {
         // TIFF-only paste (Notes/Preview "Copy") with no text: read RGBA.
-        let r = ClipboardReads { has_image: true, ..Default::default() };
+        let r = ClipboardReads {
+            has_image: true,
+            ..Default::default()
+        };
         assert_rgba(dispatch_paste_macos(r));
     }
 
@@ -1328,7 +1413,10 @@ mod tests {
         pb_clear_and_set_string("public.utf8-plain-text", "hello-clipboard-test-xyzzy");
         let bytes = pasteboard_data_for_uti("public.utf8-plain-text")
             .expect("pasteboard_data_for_uti returned None — objc2 layer is broken");
-        assert_eq!(std::str::from_utf8(&bytes).unwrap(), "hello-clipboard-test-xyzzy");
+        assert_eq!(
+            std::str::from_utf8(&bytes).unwrap(),
+            "hello-clipboard-test-xyzzy"
+        );
         pb_clear();
     }
 
@@ -1352,8 +1440,8 @@ mod tests {
         std::fs::write(&target, b"x").unwrap();
         let url = format!("file://{}", target.to_string_lossy());
         pb_clear_and_set_string("public.file-url", &url);
-        let got = read_file_path_from_pasteboard()
-            .expect("read_file_path_from_pasteboard returned None");
+        let got =
+            read_file_path_from_pasteboard().expect("read_file_path_from_pasteboard returned None");
         assert_eq!(
             std::path::PathBuf::from(&got).canonicalize().unwrap(),
             target.canonicalize().unwrap(),
@@ -1431,8 +1519,10 @@ mod tests {
                 }
             }
         }
-        println!("=== read_file_path_from_pasteboard() = {:?} ===",
-                 read_file_path_from_pasteboard());
+        println!(
+            "=== read_file_path_from_pasteboard() = {:?} ===",
+            read_file_path_from_pasteboard()
+        );
     }
 
     #[cfg(target_os = "macos")]

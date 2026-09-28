@@ -62,7 +62,14 @@ fn apply_inherited_to_page(doc: &Document, page_id: ObjectId) -> Dictionary {
 
 /// Renumber all objects in `doc` so that every object ID starts at `base`.
 /// Returns the remapping table (old_id → new_id).
-fn renumber_objects(doc: &Document, base: u32) -> (BTreeMap<ObjectId, Object>, BTreeMap<ObjectId, ObjectId>, u32) {
+fn renumber_objects(
+    doc: &Document,
+    base: u32,
+) -> (
+    BTreeMap<ObjectId, Object>,
+    BTreeMap<ObjectId, ObjectId>,
+    u32,
+) {
     // Build a remapping table: old id → new id
     let mut id_map: BTreeMap<ObjectId, ObjectId> = BTreeMap::new();
     let mut counter = base;
@@ -72,7 +79,8 @@ fn renumber_objects(doc: &Document, base: u32) -> (BTreeMap<ObjectId, Object>, B
     }
 
     // Clone + rewrite all Reference objects in place
-    let new_objects: BTreeMap<ObjectId, Object> = doc.objects
+    let new_objects: BTreeMap<ObjectId, Object> = doc
+        .objects
         .iter()
         .map(|(&old_id, obj)| {
             let new_id = id_map[&old_id];
@@ -94,9 +102,7 @@ fn rewrite_refs(obj: &Object, id_map: &BTreeMap<ObjectId, ObjectId>) -> Object {
                 Object::Reference(*id)
             }
         }
-        Object::Array(arr) => Object::Array(
-            arr.iter().map(|o| rewrite_refs(o, id_map)).collect(),
-        ),
+        Object::Array(arr) => Object::Array(arr.iter().map(|o| rewrite_refs(o, id_map)).collect()),
         Object::Dictionary(dict) => {
             let mut new_dict = Dictionary::new();
             for (k, v) in dict.iter() {
@@ -233,7 +239,8 @@ pub fn merge_pdfs(input_paths: &[String], output_dir: Option<&str>) -> Result<St
     out.objects.insert(catalog_id, Object::Dictionary(catalog));
 
     out.trailer.set("Root", Object::Reference(catalog_id));
-    out.trailer.set("Size", Object::Integer(out.max_id as i64 + 1));
+    out.trailer
+        .set("Size", Object::Integer(out.max_id as i64 + 1));
 
     out.save(&out_path).map_err(|e| e.to_string())?;
     Ok(out_path.to_string_lossy().into_owned())

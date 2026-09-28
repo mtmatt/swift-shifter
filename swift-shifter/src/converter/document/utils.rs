@@ -19,13 +19,17 @@ pub fn output_path(input: &str, ext: &str, output_dir: Option<&str>) -> Result<P
 /// Subdirectories are recreated with the same name so relative paths in the
 /// markdown (e.g. `images/_page_4_Figure_7.jpeg`) keep working.
 pub fn copy_dir_contents_except(src_dir: &Path, dst_dir: &Path, skip: &Path) {
-    let Ok(entries) = std::fs::read_dir(src_dir) else { return };
+    let Ok(entries) = std::fs::read_dir(src_dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let src = entry.path();
         if src == skip {
             continue;
         }
-        let Some(name) = src.file_name() else { continue };
+        let Some(name) = src.file_name() else {
+            continue;
+        };
         let dst = dst_dir.join(name);
         if src.is_dir() {
             let _ = std::fs::create_dir_all(&dst);

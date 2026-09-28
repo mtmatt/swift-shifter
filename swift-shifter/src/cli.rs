@@ -1,15 +1,20 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use clap::{Args, Parser, Subcommand};
-use tauri::Manager;
 use crate::config::{AppState, Config};
 use crate::converter;
 use crate::converter::{document, media};
+use clap::{Args, Parser, Subcommand};
+use tauri::Manager;
 
 /// Subcommand names that signal CLI (non-GUI) invocation.
 const SUBCOMMANDS: &[&str] = &[
-    "convert", "detect-formats", "trim", "merge", "duration", "doctor",
+    "convert",
+    "detect-formats",
+    "trim",
+    "merge",
+    "duration",
+    "doctor",
 ];
 
 /// True when the args should route to the developer CLI instead of the GUI.
@@ -102,7 +107,11 @@ enum Commands {
     /// Print the valid target formats for an input file.
     DetectFormats { input: String },
     /// Trim a media file between START and END (HH:MM:SS).
-    Trim { input: String, start: String, end: String },
+    Trim {
+        input: String,
+        start: String,
+        end: String,
+    },
     /// Merge two or more PDFs into one.
     Merge {
         #[arg(required = true, num_args = 2..)]
@@ -239,7 +248,12 @@ where
     0 // unreachable: the spawned task calls std::process::exit
 }
 
-pub fn run_convert(context: tauri::Context, cfg: Config, format: String, inputs: Vec<String>) -> i32 {
+pub fn run_convert(
+    context: tauri::Context,
+    cfg: Config,
+    format: String,
+    inputs: Vec<String>,
+) -> i32 {
     run_with_app(context, cfg, move |app| {
         Box::pin(async move {
             let state = app.state::<AppState>();
@@ -259,7 +273,13 @@ pub fn run_convert(context: tauri::Context, cfg: Config, format: String, inputs:
     })
 }
 
-pub fn run_trim(context: tauri::Context, cfg: Config, input: String, start: String, end: String) -> i32 {
+pub fn run_trim(
+    context: tauri::Context,
+    cfg: Config,
+    input: String,
+    start: String,
+    end: String,
+) -> i32 {
     run_with_app(context, cfg, move |app| {
         Box::pin(async move {
             let state = app.state::<AppState>();
@@ -374,7 +394,13 @@ mod tests {
 
     #[test]
     fn global_flags_before_subcommand_select_cli() {
-        assert!(select(&["--jpeg-quality", "80", "convert", "in.png", "png"]));
+        assert!(select(&[
+            "--jpeg-quality",
+            "80",
+            "convert",
+            "in.png",
+            "png"
+        ]));
         assert!(select(&["convert", "webp", "a.png"]));
     }
 
@@ -394,10 +420,8 @@ mod tests {
 
     #[test]
     fn parses_convert_format_first() {
-        let cli = Cli::try_parse_from([
-            "swift-shifter", "convert", "webp", "a.png", "b.jpg",
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["swift-shifter", "convert", "webp", "a.png", "b.jpg"]).unwrap();
         match cli.command {
             Commands::Convert { format, inputs } => {
                 assert_eq!(format, "webp");

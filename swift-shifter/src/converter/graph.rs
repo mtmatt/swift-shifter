@@ -55,7 +55,12 @@ pub fn edges() -> Vec<Edge> {
     let mut e: Vec<Edge> = Vec::new();
     // Annotated to pin &'static str (Edge.from/to require it; inference is ambiguous otherwise).
     let mut push = |from: &'static str, to: &'static str, cost: u32, cond: EdgeCond| {
-        e.push(Edge { from, to, cost, cond })
+        e.push(Edge {
+            from,
+            to,
+            cost,
+            cond,
+        })
     };
 
     // ---- Raster image inputs (incl. avif) ----
@@ -162,16 +167,16 @@ use std::path::Path;
 /// handled — making it the shared coverage check for the property test.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Hop {
-    ImageRaster,    // image -> pdf (document::convert_image_to_pdf)
+    ImageRaster, // image -> pdf (document::convert_image_to_pdf)
     ImageToAvif,
     ImageToHeic,
-    ImageToGif,     // media::convert_image_to_gif
-    ImageGeneric,   // image::convert_image
-    HeicInput,      // image::convert_heic (heic input, non-pdf target)
-    Media,          // media::convert_media
-    Data,           // data::convert_data
+    ImageToGif,   // media::convert_image_to_gif
+    ImageGeneric, // image::convert_image
+    HeicInput,    // image::convert_heic (heic input, non-pdf target)
+    Media,        // media::convert_media
+    Data,         // data::convert_data
     EpubToMobi,
-    MobiInput,      // document::convert_mobi
+    MobiInput, // document::convert_mobi
     PdfToMobi,
     PdfToHtml,
     PdfToMd,

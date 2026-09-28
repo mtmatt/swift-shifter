@@ -50,8 +50,8 @@ async fn run_single_hop(
     config: &Config,
 ) -> Result<String, String> {
     use graph::Hop;
-    let hop = graph::route_hop(from, to)
-        .ok_or_else(|| format!("No converter handles .{from} → {to}"))?;
+    let hop =
+        graph::route_hop(from, to).ok_or_else(|| format!("No converter handles .{from} → {to}"))?;
 
     match hop {
         Hop::ImageRaster => document::convert_image_to_pdf(app, path, out_dir).await,
@@ -115,8 +115,15 @@ pub async fn convert_file(
 
     // Direct conversion: behave exactly as before.
     if seq.len() == 2 {
-        return run_single_hop(app, path, &seq[0], &seq[1], config.output_dir.as_deref(), config)
-            .await;
+        return run_single_hop(
+            app,
+            path,
+            &seq[0],
+            &seq[1],
+            config.output_dir.as_deref(),
+            config,
+        )
+        .await;
     }
 
     // Multi-hop: run through a temp dir; only the last hop writes to `final_dir`.

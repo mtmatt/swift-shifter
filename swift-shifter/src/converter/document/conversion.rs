@@ -1,9 +1,9 @@
-use std::path::{Path, PathBuf};
-use tauri::Emitter;
-use crate::converter::document::types::*;
-use crate::converter::document::utils::*;
 use crate::converter::document::binaries::*;
 use crate::converter::document::llm::*;
+use crate::converter::document::types::*;
+use crate::converter::document::utils::*;
+use std::path::{Path, PathBuf};
+use tauri::Emitter;
 
 const EPUB_CSS: &str = concat!(
     "code, pre, kbd, samp {\n",
@@ -59,10 +59,15 @@ pub async fn convert_pdf_with_marker(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: path.to_string(), percent: 0.0 },
-    ).ok();
+        ProgressPayload {
+            path: path.to_string(),
+            percent: 0.0,
+        },
+    )
+    .ok();
 
-    let tmp_base = std::env::temp_dir().join(format!("swift_shifter_marker_{}", unique_tmp_suffix()));
+    let tmp_base =
+        std::env::temp_dir().join(format!("swift_shifter_marker_{}", unique_tmp_suffix()));
     let input_dir = tmp_base.join("input");
     let output_dir = tmp_base.join("output");
 
@@ -72,10 +77,13 @@ pub async fn convert_pdf_with_marker(
         .map_err(|e| format!("Failed to create output temp directory: {e}"))?;
 
     let tmp_pdf = input_dir.join("input.pdf");
-    std::fs::copy(path, &tmp_pdf)
-        .map_err(|e| format!("Failed to copy PDF: {e}"))?;
+    std::fs::copy(path, &tmp_pdf).map_err(|e| format!("Failed to copy PDF: {e}"))?;
 
-    let marker_name = marker.file_name().unwrap_or_default().to_string_lossy().to_string();
+    let marker_name = marker
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
     let mut cmd = tokio::process::Command::new(&marker);
     if marker_name.contains("marker_single") {
         // v1.x+ CLI: marker_single FPATH --output_dir DIR
@@ -94,12 +102,17 @@ pub async fn convert_pdf_with_marker(
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 
-    let mut child = cmd.spawn()
+    let mut child = cmd
+        .spawn()
         .map_err(|e| format!("Failed to spawn marker: {e}"))?;
 
-    let stdout = child.stdout.take()
+    let stdout = child
+        .stdout
+        .take()
         .ok_or_else(|| "marker: stdout not piped".to_string())?;
-    let stderr = child.stderr.take()
+    let stderr = child
+        .stderr
+        .take()
         .ok_or_else(|| "marker: stderr not piped".to_string())?;
     let app_handle = app.clone();
     let path_str = path.to_string();
@@ -110,40 +123,50 @@ pub async fn convert_pdf_with_marker(
         let mut err_reader = BufReader::new(stderr).lines();
 
         let stages: &[(&str, f32)] = &[
-            ("load model",          5.0),
-            ("detection model",     8.0),
-            ("texify",             12.0),
-            ("recognition model",  12.0),
-            ("surya",              14.0),
-            ("reading pdf",        18.0),
-            ("pdf loaded",         20.0),
-            ("running layout",     28.0),
-            ("layout detection",   28.0),
-            ("running ocr",        38.0),
-            ("text extraction",    40.0),
-            ("running line",       44.0),
-            ("post-processing",    60.0),
-            ("ordering blocks",    65.0),
-            ("merging lines",      68.0),
-            ("cleaning text",      72.0),
-            ("formatting",         75.0),
-            ("saving output",      88.0),
-            ("writing markdown",   88.0),
-            ("saved to",           90.0),
+            ("load model", 5.0),
+            ("detection model", 8.0),
+            ("texify", 12.0),
+            ("recognition model", 12.0),
+            ("surya", 14.0),
+            ("reading pdf", 18.0),
+            ("pdf loaded", 20.0),
+            ("running layout", 28.0),
+            ("layout detection", 28.0),
+            ("running ocr", 38.0),
+            ("text extraction", 40.0),
+            ("running line", 44.0),
+            ("post-processing", 60.0),
+            ("ordering blocks", 65.0),
+            ("merging lines", 68.0),
+            ("cleaning text", 72.0),
+            ("formatting", 75.0),
+            ("saving output", 88.0),
+            ("writing markdown", 88.0),
+            ("saved to", 90.0),
         ];
 
         let mut current_pct: f32 = 2.0;
         let mut stdout_done = false;
         let mut stderr_done = false;
 
-        app_handle.emit("convert:progress", ProgressPayload { path: path_str.clone(), percent: current_pct }).ok();
+        app_handle
+            .emit(
+                "convert:progress",
+                ProgressPayload {
+                    path: path_str.clone(),
+                    percent: current_pct,
+                },
+            )
+            .ok();
 
         fn advance_from_line(line: &str, stages: &[(&str, f32)], current: f32) -> f32 {
             let lower = line.to_lowercase();
             let mut best = current;
             for (kw, pct) in stages {
                 if *pct > current && lower.contains(kw) {
-                    if *pct > best { best = *pct; }
+                    if *pct > best {
+                        best = *pct;
+                    }
                 }
             }
             best
@@ -157,7 +180,9 @@ pub async fn convert_pdf_with_marker(
         }
 
         loop {
-            if stdout_done && stderr_done { break; }
+            if stdout_done && stderr_done {
+                break;
+            }
 
             tokio::select! {
                 line = reader.next_line(), if !stdout_done => {
@@ -200,7 +225,9 @@ pub async fn convert_pdf_with_marker(
         }
     });
 
-    let status = child.wait().await
+    let status = child
+        .wait()
+        .await
         .map_err(|e| format!("marker wait error: {e}"))?;
     let _ = progress_task.await;
 
@@ -209,8 +236,8 @@ pub async fn convert_pdf_with_marker(
         return convert_pdf_to_epub(app, path, user_output_dir, llm).await;
     }
 
-    let md_file = find_md_file(&output_dir)
-        .ok_or_else(|| "marker produced no Markdown file".to_string())?;
+    let md_file =
+        find_md_file(&output_dir).ok_or_else(|| "marker produced no Markdown file".to_string())?;
 
     if let Ok(mut content) = tokio::fs::read_to_string(&md_file).await {
         // Sanitize <br> — EPUB content is XHTML, bare <br> is invalid XML
@@ -239,8 +266,12 @@ pub async fn convert_pdf_with_marker(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: path.to_string(), percent: 97.0 },
-    ).ok();
+        ProgressPayload {
+            path: path.to_string(),
+            percent: 97.0,
+        },
+    )
+    .ok();
 
     let md_dir = md_file.parent().unwrap_or(&output_dir);
 
@@ -262,22 +293,31 @@ pub async fn convert_pdf_with_marker(
     let mut pandoc_cmd = tokio::process::Command::new(&pandoc);
     pandoc_cmd.current_dir(md_dir);
     pandoc_cmd.args([
-        "-f", "markdown+footnotes+superscript+subscript+tex_math_dollars+tex_math_single_backslash",
-        "-t", "epub3",
+        "-f",
+        "markdown+footnotes+superscript+subscript+tex_math_dollars+tex_math_single_backslash",
+        "-t",
+        "epub3",
         "--mathml",
     ]);
     if let Some(ref css_str) = epub_css_path {
         pandoc_cmd.args(["--css", css_str]);
     }
     pandoc_cmd.args([
-        "--metadata", &format!("title={}", file_title),
-        "-o", out.to_str().unwrap_or(""),
-        md_file.file_name().unwrap_or_default().to_str().unwrap_or(""),
+        "--metadata",
+        &format!("title={}", file_title),
+        "-o",
+        out.to_str().unwrap_or(""),
+        md_file
+            .file_name()
+            .unwrap_or_default()
+            .to_str()
+            .unwrap_or(""),
     ]);
     pandoc_cmd.stdout(std::process::Stdio::null());
     pandoc_cmd.stderr(std::process::Stdio::piped());
 
-    let mut child = pandoc_cmd.spawn()
+    let mut child = pandoc_cmd
+        .spawn()
         .map_err(|e| format!("Failed to spawn pandoc: {e}"))?;
 
     let stderr_out = if let Some(stderr) = child.stderr.take() {
@@ -289,7 +329,9 @@ pub async fn convert_pdf_with_marker(
         String::new()
     };
 
-    let status = child.wait().await
+    let status = child
+        .wait()
+        .await
         .map_err(|e| format!("pandoc wait error: {e}"))?;
 
     let _ = std::fs::remove_dir_all(&tmp_base);
@@ -304,8 +346,12 @@ pub async fn convert_pdf_with_marker(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: path.to_string(), percent: 100.0 },
-    ).ok();
+        ProgressPayload {
+            path: path.to_string(),
+            percent: 100.0,
+        },
+    )
+    .ok();
 
     Ok(out.to_string_lossy().to_string())
 }
@@ -418,7 +464,10 @@ pub async fn convert_typst_to_pdf(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: path.to_string(), percent: 0.0 },
+        ProgressPayload {
+            path: path.to_string(),
+            percent: 0.0,
+        },
     )
     .ok();
 
@@ -435,7 +484,10 @@ pub async fn convert_typst_to_pdf(
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
         return Err(if stderr.trim().is_empty() {
-            format!("typst exited with code {}", output.status.code().unwrap_or(-1))
+            format!(
+                "typst exited with code {}",
+                output.status.code().unwrap_or(-1)
+            )
         } else {
             stderr.trim().to_string()
         });
@@ -443,7 +495,10 @@ pub async fn convert_typst_to_pdf(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: path.to_string(), percent: 100.0 },
+        ProgressPayload {
+            path: path.to_string(),
+            percent: 100.0,
+        },
     )
     .ok();
 
@@ -557,16 +612,15 @@ pub async fn convert_pdf_to_epub(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: path.to_string(), percent: 0.0 },
+        ProgressPayload {
+            path: path.to_string(),
+            percent: 0.0,
+        },
     )
     .ok();
 
-    let tmp_dir = std::env::temp_dir().join(format!(
-        "swift_shifter_epub_{}",
-        unique_tmp_suffix()
-    ));
-    std::fs::create_dir_all(&tmp_dir)
-        .map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    let tmp_dir = std::env::temp_dir().join(format!("swift_shifter_epub_{}", unique_tmp_suffix()));
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
     let tmp_md = tmp_dir.join("output.md");
 
     let tmp_md_str = tmp_md
@@ -607,7 +661,10 @@ pub async fn convert_pdf_to_epub(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: path.to_string(), percent: 40.0 },
+        ProgressPayload {
+            path: path.to_string(),
+            percent: 40.0,
+        },
     )
     .ok();
 
@@ -627,7 +684,10 @@ pub async fn convert_pdf_to_epub(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: path.to_string(), percent: 70.0 },
+        ProgressPayload {
+            path: path.to_string(),
+            percent: 70.0,
+        },
     )
     .ok();
 
@@ -676,7 +736,10 @@ pub async fn convert_pdf_to_epub(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: path.to_string(), percent: 100.0 },
+        ProgressPayload {
+            path: path.to_string(),
+            percent: 100.0,
+        },
     )
     .ok();
     Ok(out.to_string_lossy().to_string())
@@ -690,7 +753,10 @@ async fn run_ebook_convert(
     let ec = get_ebook_convert()?;
     app.emit(
         "convert:progress",
-        ProgressPayload { path: input.to_string(), percent: 0.0 },
+        ProgressPayload {
+            path: input.to_string(),
+            percent: 0.0,
+        },
     )
     .ok();
 
@@ -698,8 +764,10 @@ async fn run_ebook_convert(
         .args([
             input,
             output.to_str().unwrap_or(""),
-            "--filter-css", "background-color,background,color",
-            "--extra-css", "body, html { background-color: white !important; color: black !important; }",
+            "--filter-css",
+            "background-color,background,color",
+            "--extra-css",
+            "body, html { background-color: white !important; color: black !important; }",
         ])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
@@ -710,7 +778,10 @@ async fn run_ebook_convert(
     if !result.status.success() {
         let stderr = String::from_utf8_lossy(&result.stderr);
         return Err(if stderr.trim().is_empty() {
-            format!("ebook-convert exited with code {}", result.status.code().unwrap_or(-1))
+            format!(
+                "ebook-convert exited with code {}",
+                result.status.code().unwrap_or(-1)
+            )
         } else {
             stderr.trim().to_string()
         });
@@ -718,7 +789,10 @@ async fn run_ebook_convert(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: input.to_string(), percent: 100.0 },
+        ProgressPayload {
+            path: input.to_string(),
+            percent: 100.0,
+        },
     )
     .ok();
     Ok(())
@@ -739,21 +813,27 @@ pub async fn convert_mobi(
         "md" => {
             let pandoc = get_pandoc()?;
             let out = output_path(path, "md", output_dir)?;
-            let tmp_epub =
-                std::env::temp_dir().join(format!("swift_shifter_mobi_{}.epub", unique_tmp_suffix()));
+            let tmp_epub = std::env::temp_dir()
+                .join(format!("swift_shifter_mobi_{}.epub", unique_tmp_suffix()));
             run_ebook_convert(app, path, &tmp_epub).await?;
 
             app.emit(
                 "convert:progress",
-                ProgressPayload { path: path.to_string(), percent: 50.0 },
+                ProgressPayload {
+                    path: path.to_string(),
+                    percent: 50.0,
+                },
             )
             .ok();
 
             let status = tokio::process::Command::new(&pandoc)
                 .args([
-                    "-f", "epub",
-                    "-t", "markdown",
-                    "-o", out.to_str().unwrap_or(""),
+                    "-f",
+                    "epub",
+                    "-t",
+                    "markdown",
+                    "-o",
+                    out.to_str().unwrap_or(""),
                     tmp_epub.to_str().unwrap_or(""),
                 ])
                 .stdout(std::process::Stdio::null())
@@ -765,12 +845,18 @@ pub async fn convert_mobi(
             let _ = std::fs::remove_file(&tmp_epub);
 
             if !status.success() {
-                return Err(format!("pandoc exited with code {}", status.code().unwrap_or(-1)));
+                return Err(format!(
+                    "pandoc exited with code {}",
+                    status.code().unwrap_or(-1)
+                ));
             }
 
             app.emit(
                 "convert:progress",
-                ProgressPayload { path: path.to_string(), percent: 100.0 },
+                ProgressPayload {
+                    path: path.to_string(),
+                    percent: 100.0,
+                },
             )
             .ok();
             Ok(out.to_string_lossy().to_string())
@@ -804,12 +890,7 @@ pub async fn convert_pdf_to_mobi(
             unique_tmp_suffix()
         ));
         let tmp_epub_dir = tmp_epub.parent().map(|p| p.to_string_lossy().to_string());
-        let epub_path = convert_pdf_with_marker(
-            app,
-            path,
-            tmp_epub_dir.as_deref(),
-            llm,
-        ).await?;
+        let epub_path = convert_pdf_with_marker(app, path, tmp_epub_dir.as_deref(), llm).await?;
         if std::path::Path::new(&epub_path) != tmp_epub {
             let _ = std::fs::rename(&epub_path, &tmp_epub);
         }
@@ -833,16 +914,15 @@ pub async fn convert_pdf_to_html(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: path.to_string(), percent: 0.0 },
+        ProgressPayload {
+            path: path.to_string(),
+            percent: 0.0,
+        },
     )
     .ok();
 
-    let tmp_dir = std::env::temp_dir().join(format!(
-        "swift_shifter_html_{}",
-        unique_tmp_suffix()
-    ));
-    std::fs::create_dir_all(&tmp_dir)
-        .map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    let tmp_dir = std::env::temp_dir().join(format!("swift_shifter_html_{}", unique_tmp_suffix()));
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
     let tmp_md = tmp_dir.join("output.md");
 
     let tmp_md_str = tmp_md
@@ -888,7 +968,10 @@ pub async fn convert_pdf_to_html(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: path.to_string(), percent: 50.0 },
+        ProgressPayload {
+            path: path.to_string(),
+            percent: 50.0,
+        },
     )
     .ok();
 
@@ -930,7 +1013,10 @@ pub async fn convert_pdf_to_html(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: path.to_string(), percent: 100.0 },
+        ProgressPayload {
+            path: path.to_string(),
+            percent: 100.0,
+        },
     )
     .ok();
     Ok(out.to_string_lossy().to_string())
@@ -947,16 +1033,16 @@ async fn convert_pdf_to_md_via_pymupdf4llm(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: path.to_string(), percent: 0.0 },
+        ProgressPayload {
+            path: path.to_string(),
+            percent: 0.0,
+        },
     )
     .ok();
 
-    let tmp_dir = std::env::temp_dir().join(format!(
-        "swift_shifter_pdf_md_{}",
-        unique_tmp_suffix()
-    ));
-    std::fs::create_dir_all(&tmp_dir)
-        .map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    let tmp_dir =
+        std::env::temp_dir().join(format!("swift_shifter_pdf_md_{}", unique_tmp_suffix()));
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
     let tmp_md = tmp_dir.join("output.md");
 
     let tmp_md_str = tmp_md
@@ -996,7 +1082,10 @@ async fn convert_pdf_to_md_via_pymupdf4llm(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: path.to_string(), percent: 50.0 },
+        ProgressPayload {
+            path: path.to_string(),
+            percent: 50.0,
+        },
     )
     .ok();
 
@@ -1014,7 +1103,10 @@ async fn convert_pdf_to_md_via_pymupdf4llm(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: path.to_string(), percent: 100.0 },
+        ProgressPayload {
+            path: path.to_string(),
+            percent: 100.0,
+        },
     )
     .ok();
     Ok(out.to_string_lossy().to_string())
@@ -1045,27 +1137,36 @@ pub(crate) async fn convert_pdf_with_marker_to_md(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: path.to_string(), percent: 0.0 },
+        ProgressPayload {
+            path: path.to_string(),
+            percent: 0.0,
+        },
     )
     .ok();
 
-    let tmp_base = std::env::temp_dir().join(format!("swift_shifter_marker_md_{}", unique_tmp_suffix()));
+    let tmp_base =
+        std::env::temp_dir().join(format!("swift_shifter_marker_md_{}", unique_tmp_suffix()));
     let input_dir = tmp_base.join("input");
     let output_dir_tmp = tmp_base.join("output");
 
-    std::fs::create_dir_all(&input_dir)
-        .map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    std::fs::create_dir_all(&input_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
     std::fs::create_dir_all(&output_dir_tmp)
         .map_err(|e| format!("Failed to create temp dir: {e}"))?;
 
     let tmp_pdf = input_dir.join("input.pdf");
-    std::fs::copy(path, &tmp_pdf)
-        .map_err(|e| format!("Failed to copy PDF: {e}"))?;
+    std::fs::copy(path, &tmp_pdf).map_err(|e| format!("Failed to copy PDF: {e}"))?;
 
-    let marker_name = marker.file_name().unwrap_or_default().to_string_lossy().to_string();
+    let marker_name = marker
+        .file_name()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
     let mut cmd = tokio::process::Command::new(&marker);
     if marker_name.contains("marker_single") {
-        cmd.args([tmp_pdf.to_str().unwrap_or(""), output_dir_tmp.to_str().unwrap_or("")]);
+        cmd.args([
+            tmp_pdf.to_str().unwrap_or(""),
+            output_dir_tmp.to_str().unwrap_or(""),
+        ]);
     } else {
         cmd.args([
             input_dir.to_str().unwrap_or(""),
@@ -1088,7 +1189,10 @@ pub(crate) async fn convert_pdf_with_marker_to_md(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: path.to_string(), percent: 90.0 },
+        ProgressPayload {
+            path: path.to_string(),
+            percent: 90.0,
+        },
     )
     .ok();
 
@@ -1097,13 +1201,13 @@ pub(crate) async fn convert_pdf_with_marker_to_md(
 
     if llm.enabled {
         if let Ok(content) = tokio::fs::read_to_string(&md_file).await {
-            let processed = llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
+            let processed =
+                llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
             let _ = tokio::fs::write(&md_file, processed).await;
         }
     }
 
-    std::fs::copy(&md_file, &out)
-        .map_err(|e| format!("Failed to copy marker output: {e}"))?;
+    std::fs::copy(&md_file, &out).map_err(|e| format!("Failed to copy marker output: {e}"))?;
 
     let out_dir = out.parent().unwrap_or_else(|| std::path::Path::new("."));
     if let Some(md_parent) = md_file.parent() {
@@ -1114,7 +1218,10 @@ pub(crate) async fn convert_pdf_with_marker_to_md(
 
     app.emit(
         "convert:progress",
-        ProgressPayload { path: path.to_string(), percent: 100.0 },
+        ProgressPayload {
+            path: path.to_string(),
+            percent: 100.0,
+        },
     )
     .ok();
     Ok(out.to_string_lossy().to_string())

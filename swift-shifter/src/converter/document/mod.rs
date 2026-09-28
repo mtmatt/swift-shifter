@@ -1,18 +1,18 @@
 use std::path::PathBuf;
 use std::sync::OnceLock;
 
+pub mod binaries;
+pub mod conversion;
+pub mod llm;
+pub mod merge;
 pub mod types;
 mod utils;
-pub mod binaries;
-pub mod llm;
-pub mod conversion;
-pub mod merge;
 pub use merge::*;
 
-pub use types::*;
 pub use binaries::*;
-pub use llm::*;
 pub use conversion::*;
+pub use llm::*;
+pub use types::*;
 
 pub static PANDOC_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
 pub static TYPST_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();

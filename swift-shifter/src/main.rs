@@ -1,8 +1,8 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod clipboard;
 mod cli;
+mod clipboard;
 mod config;
 mod converter;
 mod downloader;
@@ -183,12 +183,16 @@ fn main() {
                 let cfg = handle.state::<AppState>().config.lock().unwrap().clone();
                 let url = cfg.local_llm_url.clone();
                 let model = cfg.local_llm_model.clone();
-                
+
                 if cfg.use_local_llm {
                     // Try to start Ollama if it's not reachable
                     if !converter::document::ollama_reachable(&url).await {
-                        if let Ok(Some(child)) = converter::document::install_ollama_and_model(&handle, &url, &model).await {
-                            *handle.state::<AppState>().ollama_process.lock().unwrap() = Some(child);
+                        if let Ok(Some(child)) =
+                            converter::document::install_ollama_and_model(&handle, &url, &model)
+                                .await
+                        {
+                            *handle.state::<AppState>().ollama_process.lock().unwrap() =
+                                Some(child);
                         }
                     }
                 }
@@ -241,7 +245,13 @@ fn main() {
         .expect("error while building tauri application")
         .run(|_app_handle, event| match event {
             tauri::RunEvent::ExitRequested { .. } => {
-                if let Some(mut child) = _app_handle.state::<AppState>().ollama_process.lock().unwrap().take() {
+                if let Some(mut child) = _app_handle
+                    .state::<AppState>()
+                    .ollama_process
+                    .lock()
+                    .unwrap()
+                    .take()
+                {
                     let _ = child.start_kill();
                 }
             }
@@ -369,8 +379,7 @@ async fn trim_media(
     end: String,
 ) -> Result<String, String> {
     let cfg = state.config.lock().unwrap().clone();
-    converter::media::trim_media(&app_handle, &path, &start, &end, cfg.output_dir.as_deref())
-        .await
+    converter::media::trim_media(&app_handle, &path, &start, &end, cfg.output_dir.as_deref()).await
 }
 
 #[tauri::command]
@@ -436,13 +445,14 @@ fn get_config(state: tauri::State<'_, AppState>) -> config::Config {
 }
 
 #[tauri::command]
-fn set_config(app: tauri::AppHandle, state: tauri::State<'_, AppState>, new_config: config::Config) -> Result<(), String> {
+fn set_config(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    new_config: config::Config,
+) -> Result<(), String> {
     // Validate local_llm_url is a well-formed HTTP/HTTPS URL
     let llm_url = new_config.local_llm_url.trim().to_string();
-    if !llm_url.is_empty()
-        && !llm_url.starts_with("http://")
-        && !llm_url.starts_with("https://")
-    {
+    if !llm_url.is_empty() && !llm_url.starts_with("http://") && !llm_url.starts_with("https://") {
         return Err(format!(
             "Invalid local LLM URL '{}': must start with http:// or https://",
             llm_url
@@ -455,7 +465,7 @@ fn set_config(app: tauri::AppHandle, state: tauri::State<'_, AppState>, new_conf
         avif_quality: new_config.avif_quality.clamp(1, 100),
         max_concurrent: new_config.max_concurrent.clamp(1, 8),
         use_marker_pdf: new_config.use_marker_pdf,
-        use_local_llm:  new_config.use_local_llm,
+        use_local_llm: new_config.use_local_llm,
         local_llm_model: new_config.local_llm_model,
         local_llm_url: llm_url,
         clipboard_output_mode: match new_config.clipboard_output_mode.as_str() {
@@ -487,7 +497,12 @@ async fn list_ollama_models(state: tauri::State<'_, AppState>) -> Result<Vec<Str
 }
 
 #[tauri::command]
-async fn install_ollama_and_model(app: tauri::AppHandle, state: tauri::State<'_, AppState>, base_url: String, model: String) -> Result<(), String> {
+async fn install_ollama_and_model(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    base_url: String,
+    model: String,
+) -> Result<(), String> {
     match converter::document::install_ollama_and_model(&app, &base_url, &model).await {
         Ok(Some(child)) => {
             *state.ollama_process.lock().unwrap() = Some(child);
@@ -545,9 +560,7 @@ async fn merge_pdfs(
     paths: Vec<String>,
 ) -> Result<String, String> {
     let cfg = state.config.lock().unwrap().clone();
-    tokio::task::spawn_blocking(move || {
-        converter::merge_pdfs(&paths, cfg.output_dir.as_deref())
-    })
-    .await
-    .map_err(|e| format!("task panicked: {e}"))?
+    tokio::task::spawn_blocking(move || converter::merge_pdfs(&paths, cfg.output_dir.as_deref()))
+        .await
+        .map_err(|e| format!("task panicked: {e}"))?
 }

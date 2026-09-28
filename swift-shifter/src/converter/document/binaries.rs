@@ -1,6 +1,6 @@
+use crate::converter::document::{EBOOK_CONVERT_PATH, PANDOC_PATH, PYMUPDF4LLM_PYTHON, TYPST_PATH};
 use std::path::PathBuf;
 use tauri::Emitter;
-use crate::converter::document::{PANDOC_PATH, TYPST_PATH, EBOOK_CONVERT_PATH, PYMUPDF4LLM_PYTHON};
 
 #[cfg(target_os = "macos")]
 pub const BREW_PATHS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
@@ -42,8 +42,14 @@ pub fn find_pandoc_binary() -> Option<PathBuf> {
     }
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     {
-        let bin_name = if cfg!(target_os = "windows") { "pandoc.exe" } else { "pandoc" };
-        let candidate = crate::downloader::user_tool_dir().join("bin").join(bin_name);
+        let bin_name = if cfg!(target_os = "windows") {
+            "pandoc.exe"
+        } else {
+            "pandoc"
+        };
+        let candidate = crate::downloader::user_tool_dir()
+            .join("bin")
+            .join(bin_name);
         if candidate.exists() {
             return Some(candidate);
         }
@@ -242,10 +248,15 @@ pub async fn ensure_ebook_convert(app: &tauri::AppHandle) -> Result<(), String> 
         let ok = if which::which("winget").is_ok() {
             tokio::process::Command::new("winget")
                 .args([
-                    "install", "--id", "calibre.calibre",
-                    "--version", &version,
-                    "--scope", "user",
-                    "-e", "--silent",
+                    "install",
+                    "--id",
+                    "calibre.calibre",
+                    "--version",
+                    &version,
+                    "--scope",
+                    "user",
+                    "-e",
+                    "--silent",
                 ])
                 .status()
                 .await
@@ -313,9 +324,7 @@ pub fn find_pymupdf4llm_python() -> Option<PathBuf> {
     // Default PIPX_HOME is ~/.local/pipx (not ~/.local/share/pipx)
     let pipx_home = std::env::var_os("PIPX_HOME")
         .map(PathBuf::from)
-        .or_else(|| {
-            dirs::home_dir().map(|h| h.join(".local").join("pipx"))
-        });
+        .or_else(|| dirs::home_dir().map(|h| h.join(".local").join("pipx")));
     if let Some(pipx_home) = pipx_home {
         #[cfg(not(target_os = "windows"))]
         let venv_python = pipx_home
@@ -351,7 +360,11 @@ pub fn find_pymupdf4llm_python() -> Option<PathBuf> {
     }
 
     #[cfg(target_os = "linux")]
-    for path in &["/usr/bin/python3", "/usr/local/bin/python3", "/usr/bin/python"] {
+    for path in &[
+        "/usr/bin/python3",
+        "/usr/local/bin/python3",
+        "/usr/bin/python",
+    ] {
         candidates.push(PathBuf::from(path));
     }
 
@@ -457,8 +470,14 @@ pub fn find_typst_binary() -> Option<PathBuf> {
     }
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     {
-        let bin_name = if cfg!(target_os = "windows") { "typst.exe" } else { "typst" };
-        let candidate = crate::downloader::user_tool_dir().join("bin").join(bin_name);
+        let bin_name = if cfg!(target_os = "windows") {
+            "typst.exe"
+        } else {
+            "typst"
+        };
+        let candidate = crate::downloader::user_tool_dir()
+            .join("bin")
+            .join(bin_name);
         if candidate.exists() {
             return Some(candidate);
         }
@@ -513,7 +532,12 @@ pub fn detect_pdf_engine() -> Option<&'static str> {
     // LaTeX engines first (best fidelity for .tex), then typst as a capable,
     // dependency-light fallback that also renders Markdown PDFs well.
     const ENGINES: &[&str] = &[
-        "tectonic", "xelatex", "pdflatex", "lualatex", "wkhtmltopdf", "typst",
+        "tectonic",
+        "xelatex",
+        "pdflatex",
+        "lualatex",
+        "wkhtmltopdf",
+        "typst",
     ];
     for engine in ENGINES {
         if which::which(engine).is_ok() {
@@ -540,7 +564,11 @@ pub fn find_any_binary(names: &[&str]) -> Option<PathBuf> {
         }
     }
     let home = std::env::var("HOME").unwrap_or_default();
-    let extra: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin", &format!("{home}/.local/bin")];
+    let extra: &[&str] = &[
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        &format!("{home}/.local/bin"),
+    ];
     for dir in extra {
         for name in names {
             let p = PathBuf::from(dir).join(name);
@@ -619,12 +647,16 @@ pub async fn install_marker(app: &tauri::AppHandle) -> Result<(), String> {
             run_silent(
                 &PathBuf::from("winget"),
                 &["install", "--id", "pypa.pipx", "-e", "--silent"],
-            ).await.ok();
+            )
+            .await
+            .ok();
         }
         #[cfg(target_os = "linux")]
         if let Some(python) = find_any_binary(&["python3", "python"]) {
             // Install pipx to user space — no sudo needed
-            run_silent(&python, &["-m", "pip", "install", "--user", "pipx"]).await.ok();
+            run_silent(&python, &["-m", "pip", "install", "--user", "pipx"])
+                .await
+                .ok();
         }
         find_any_binary(&["pipx"])
     };
@@ -633,7 +665,9 @@ pub async fn install_marker(app: &tauri::AppHandle) -> Result<(), String> {
         marker_step(app, "Downloading marker-pdf — this may take a few minutes…");
         match run_silent(pipx, &["install", "marker-pdf"]).await {
             Ok(()) => {
-                run_silent(pipx, &["inject", "marker-pdf", "psutil"]).await.ok();
+                run_silent(pipx, &["inject", "marker-pdf", "psutil"])
+                    .await
+                    .ok();
                 return Ok(());
             }
             Err(e) => {
@@ -655,16 +689,22 @@ pub async fn install_marker(app: &tauri::AppHandle) -> Result<(), String> {
             run_silent(
                 &PathBuf::from("winget"),
                 &["install", "--id", "Python.Python.3", "-e", "--silent"],
-            ).await.ok();
+            )
+            .await
+            .ok();
         }
         find_any_binary(&["pip3", "pip"])
     };
 
     if let Some(ref pip) = pip {
         marker_step(app, "Downloading marker-pdf — this may take a few minutes…");
-        return run_silent(pip, &["install", "--user", "marker-pdf", "psutil"]).await
+        return run_silent(pip, &["install", "--user", "marker-pdf", "psutil"])
+            .await
             .map_err(|e| format!("Installation failed: {e}"));
     }
 
-    Err("Could not install marker-pdf automatically. Please install pipx or pip and try again.".to_string())
+    Err(
+        "Could not install marker-pdf automatically. Please install pipx or pip and try again."
+            .to_string(),
+    )
 }

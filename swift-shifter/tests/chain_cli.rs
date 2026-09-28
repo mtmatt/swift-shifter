@@ -78,7 +78,10 @@ fn run_png_to_html_chain(output_dir_flag: OutputDirFlag) {
     let printed = String::from_utf8_lossy(&out.stdout);
     let produced = printed.trim().lines().last().unwrap_or("").trim();
     assert!(!produced.is_empty(), "no output path printed");
-    assert!(produced.ends_with(".html"), "expected .html output, got {produced}");
+    assert!(
+        produced.ends_with(".html"),
+        "expected .html output, got {produced}"
+    );
     let meta = std::fs::metadata(produced).expect("output file missing");
     assert!(meta.len() > 0, "output file is empty");
     // Canonicalize both sides: on macOS the temp dir sits behind a /var symlink.
@@ -96,7 +99,10 @@ fn run_png_to_html_chain(output_dir_flag: OutputDirFlag) {
         .filter_map(|e| e.ok())
         .filter(|e| e.path().extension().is_some_and(|x| x == "pdf"))
         .collect();
-    assert!(leaked.is_empty(), "intermediate pdf leaked into output dir: {leaked:?}");
+    assert!(
+        leaked.is_empty(),
+        "intermediate pdf leaked into output dir: {leaked:?}"
+    );
 }
 
 /// Write a minimal valid 1x1 PNG.

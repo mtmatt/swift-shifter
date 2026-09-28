@@ -93,7 +93,9 @@ async fn push_ogg_codec_args(cmd: &mut tokio::process::Command, ffmpeg: &Path) {
         // The native encoder is flagged experimental (-strict -2) and only
         // supports 2 channels, so force stereo (-ac 2) or mono/surround input
         // fails with "only supports 2 channels".
-        cmd.args(["-codec:a", "vorbis", "-strict", "-2", "-ac", "2", "-q:a", "4"]);
+        cmd.args([
+            "-codec:a", "vorbis", "-strict", "-2", "-ac", "2", "-q:a", "4",
+        ]);
     }
 }
 
@@ -187,8 +189,14 @@ fn find_ffmpeg_binary() -> Option<PathBuf> {
     }
     #[cfg(any(target_os = "linux", target_os = "windows"))]
     {
-        let bin_name = if cfg!(target_os = "windows") { "ffmpeg.exe" } else { "ffmpeg" };
-        let candidate = crate::downloader::user_tool_dir().join("bin").join(bin_name);
+        let bin_name = if cfg!(target_os = "windows") {
+            "ffmpeg.exe"
+        } else {
+            "ffmpeg"
+        };
+        let candidate = crate::downloader::user_tool_dir()
+            .join("bin")
+            .join(bin_name);
         if candidate.exists() {
             return Some(candidate);
         }
@@ -463,7 +471,10 @@ pub async fn convert_image_to_gif(
                 app_handle
                     .emit(
                         "convert:progress",
-                        ProgressPayload { path: path_string.clone(), percent: p },
+                        ProgressPayload {
+                            path: path_string.clone(),
+                            percent: p,
+                        },
                     )
                     .ok();
             }
@@ -602,8 +613,8 @@ pub async fn trim_media(
             if let Some(val) = line.strip_prefix("out_time_us=") {
                 if let Ok(us) = val.trim().parse::<f64>() {
                     if effective_duration_secs > 0.0 {
-                        let percent =
-                            ((us / 1_000_000.0) / effective_duration_secs * 100.0).min(100.0) as f32;
+                        let percent = ((us / 1_000_000.0) / effective_duration_secs * 100.0)
+                            .min(100.0) as f32;
                         app_handle
                             .emit(
                                 "convert:progress",

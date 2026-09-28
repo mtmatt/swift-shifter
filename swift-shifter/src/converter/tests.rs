@@ -29,11 +29,9 @@ mod tests {
 
     #[test]
     fn test_trim_output_path_uses_output_dir() {
-        let out = crate::converter::media::trim_output_path(
-            "/home/user/clip.mp4",
-            Some("/tmp/output"),
-        )
-        .unwrap();
+        let out =
+            crate::converter::media::trim_output_path("/home/user/clip.mp4", Some("/tmp/output"))
+                .unwrap();
         assert_eq!(out.file_name().unwrap().to_str().unwrap(), "clip-trim.mp4");
         assert!(out.starts_with("/tmp/output"));
     }
@@ -42,7 +40,10 @@ mod tests {
     fn test_csv_does_not_offer_toml() {
         // CSV is always an array of records; TOML has no top-level array-of-tables.
         let formats = crate::converter::detect_output_formats("/tmp/data.csv").unwrap();
-        assert!(!formats.contains(&"toml".to_string()), "csv should not offer toml");
+        assert!(
+            !formats.contains(&"toml".to_string()),
+            "csv should not offer toml"
+        );
         assert!(formats.contains(&"json".to_string()));
         assert!(formats.contains(&"yaml".to_string()));
     }
@@ -77,45 +78,102 @@ mod tests {
     fn test_detect_output_formats_snapshot() {
         use crate::converter::detect_output_formats as d;
         let cases: &[(&str, &[&str])] = &[
-            ("/x.png",  &["jpg","webp","avif","gif","bmp","tiff","heic","pdf"]),
-            ("/x.jpg",  &["png","webp","avif","gif","bmp","tiff","heic","pdf"]),
-            ("/x.jpeg", &["png","webp","avif","gif","bmp","tiff","heic","pdf"]),
-            ("/x.webp", &["png","jpg","avif","gif","bmp","tiff","heic","pdf"]),
-            ("/x.gif",  &["png","jpg","webp","avif","bmp","tiff","heic","pdf"]),
-            ("/x.bmp",  &["png","jpg","webp","avif","gif","tiff","heic","pdf"]),
-            ("/x.tiff", &["png","jpg","webp","avif","gif","bmp","heic","pdf"]),
+            (
+                "/x.png",
+                &["jpg", "webp", "avif", "gif", "bmp", "tiff", "heic", "pdf"],
+            ),
+            (
+                "/x.jpg",
+                &["png", "webp", "avif", "gif", "bmp", "tiff", "heic", "pdf"],
+            ),
+            (
+                "/x.jpeg",
+                &["png", "webp", "avif", "gif", "bmp", "tiff", "heic", "pdf"],
+            ),
+            (
+                "/x.webp",
+                &["png", "jpg", "avif", "gif", "bmp", "tiff", "heic", "pdf"],
+            ),
+            (
+                "/x.gif",
+                &["png", "jpg", "webp", "avif", "bmp", "tiff", "heic", "pdf"],
+            ),
+            (
+                "/x.bmp",
+                &["png", "jpg", "webp", "avif", "gif", "tiff", "heic", "pdf"],
+            ),
+            (
+                "/x.tiff",
+                &["png", "jpg", "webp", "avif", "gif", "bmp", "heic", "pdf"],
+            ),
             // .tif normalizes to tiff in the graph, so the pointless tif->tiff
             // identity conversion is no longer offered (intentional delta).
-            ("/x.tif",  &["png","jpg","webp","avif","gif","bmp","heic","pdf"]),
-            ("/x.avif", &["png","jpg","webp","gif","bmp","tiff","heic","pdf"]),
-            ("/x.heic", &["jpg","png","tiff","gif","bmp","pdf"]),
-            ("/x.heif", &["jpg","png","tiff","gif","bmp","pdf"]),
-            ("/x.mp4",  &["mov","mkv","webm","avi","gif","mp3","aac","flac","ogg","wav","opus","m4a"]),
-            ("/x.mov",  &["mp4","mkv","webm","avi","gif","mp3","aac","flac","ogg","wav","opus","m4a"]),
-            ("/x.mkv",  &["mp4","mov","webm","avi","gif","mp3","aac","flac","ogg","wav","opus","m4a"]),
-            ("/x.webm", &["mp4","mov","mkv","avi","gif","mp3","aac","flac","ogg","wav","opus","m4a"]),
-            ("/x.avi",  &["mp4","mov","mkv","webm","gif","mp3","aac","flac","ogg","wav","opus","m4a"]),
-            ("/x.mp3",  &["aac","flac","ogg","wav","opus","m4a"]),
-            ("/x.aac",  &["mp3","flac","ogg","wav","opus","m4a"]),
-            ("/x.flac", &["mp3","aac","ogg","wav","opus","m4a"]),
-            ("/x.ogg",  &["mp3","aac","flac","wav","opus","m4a"]),
-            ("/x.wav",  &["mp3","aac","flac","ogg","opus","m4a"]),
-            ("/x.opus", &["mp3","aac","flac","ogg","wav","m4a"]),
-            ("/x.m4a",  &["mp3","aac","flac","ogg","wav","opus"]),
-            ("/x.json", &["yaml","toml","csv"]),
-            ("/x.yaml", &["json","toml","csv"]),
-            ("/x.yml",  &["json","toml","csv"]),
-            ("/x.toml", &["json","yaml","csv"]),
-            ("/x.csv",  &["json","yaml"]),
-            ("/x.md",   &["txt","html","pdf","tex","typst"]),
-            ("/x.markdown", &["txt","html","pdf","tex","typst"]),
-            ("/x.txt",  &["md","html","pdf","tex","typst"]),
-            ("/x.tex",  &["md","html","pdf","typst"]),
-            ("/x.latex",&["md","html","pdf","typst"]),
-            ("/x.typst",&["md","html","pdf","tex"]),
-            ("/x.epub", &["pdf","mobi","md","html"]),
-            ("/x.mobi", &["epub","pdf","html","md"]),
-            ("/x.pdf",  &["epub","mobi","html","md"]),
+            (
+                "/x.tif",
+                &["png", "jpg", "webp", "avif", "gif", "bmp", "heic", "pdf"],
+            ),
+            (
+                "/x.avif",
+                &["png", "jpg", "webp", "gif", "bmp", "tiff", "heic", "pdf"],
+            ),
+            ("/x.heic", &["jpg", "png", "tiff", "gif", "bmp", "pdf"]),
+            ("/x.heif", &["jpg", "png", "tiff", "gif", "bmp", "pdf"]),
+            (
+                "/x.mp4",
+                &[
+                    "mov", "mkv", "webm", "avi", "gif", "mp3", "aac", "flac", "ogg", "wav", "opus",
+                    "m4a",
+                ],
+            ),
+            (
+                "/x.mov",
+                &[
+                    "mp4", "mkv", "webm", "avi", "gif", "mp3", "aac", "flac", "ogg", "wav", "opus",
+                    "m4a",
+                ],
+            ),
+            (
+                "/x.mkv",
+                &[
+                    "mp4", "mov", "webm", "avi", "gif", "mp3", "aac", "flac", "ogg", "wav", "opus",
+                    "m4a",
+                ],
+            ),
+            (
+                "/x.webm",
+                &[
+                    "mp4", "mov", "mkv", "avi", "gif", "mp3", "aac", "flac", "ogg", "wav", "opus",
+                    "m4a",
+                ],
+            ),
+            (
+                "/x.avi",
+                &[
+                    "mp4", "mov", "mkv", "webm", "gif", "mp3", "aac", "flac", "ogg", "wav", "opus",
+                    "m4a",
+                ],
+            ),
+            ("/x.mp3", &["aac", "flac", "ogg", "wav", "opus", "m4a"]),
+            ("/x.aac", &["mp3", "flac", "ogg", "wav", "opus", "m4a"]),
+            ("/x.flac", &["mp3", "aac", "ogg", "wav", "opus", "m4a"]),
+            ("/x.ogg", &["mp3", "aac", "flac", "wav", "opus", "m4a"]),
+            ("/x.wav", &["mp3", "aac", "flac", "ogg", "opus", "m4a"]),
+            ("/x.opus", &["mp3", "aac", "flac", "ogg", "wav", "m4a"]),
+            ("/x.m4a", &["mp3", "aac", "flac", "ogg", "wav", "opus"]),
+            ("/x.json", &["yaml", "toml", "csv"]),
+            ("/x.yaml", &["json", "toml", "csv"]),
+            ("/x.yml", &["json", "toml", "csv"]),
+            ("/x.toml", &["json", "yaml", "csv"]),
+            ("/x.csv", &["json", "yaml"]),
+            ("/x.md", &["txt", "html", "pdf", "tex", "typst"]),
+            ("/x.markdown", &["txt", "html", "pdf", "tex", "typst"]),
+            ("/x.txt", &["md", "html", "pdf", "tex", "typst"]),
+            ("/x.tex", &["md", "html", "pdf", "typst"]),
+            ("/x.latex", &["md", "html", "pdf", "typst"]),
+            ("/x.typst", &["md", "html", "pdf", "tex"]),
+            ("/x.epub", &["pdf", "mobi", "md", "html"]),
+            ("/x.mobi", &["epub", "pdf", "html", "md"]),
+            ("/x.pdf", &["epub", "mobi", "html", "md"]),
         ];
         for (path, expected) in cases {
             let mut got = d(path).unwrap();
@@ -154,7 +212,8 @@ mod tests {
             assert!(
                 crate::converter::graph::route_hop(&w[0], &w[1]).is_some(),
                 "hop {:?}->{:?} not routable",
-                w[0], w[1]
+                w[0],
+                w[1]
             );
         }
     }
@@ -184,7 +243,8 @@ mod tests {
                 assert!(
                     crate::converter::graph::route_hop(e.from, e.to).is_some(),
                     "edge {}->{} is offered but route_hop returns None",
-                    e.from, e.to
+                    e.from,
+                    e.to
                 );
             }
         }
@@ -198,14 +258,21 @@ mod tests {
         // mobi is NOT direct from png
         assert!(!r.direct.contains(&"mobi".to_string()));
         // ...but appears as a chained target with a route through pdf
-        let mobi = r.chained.iter().find(|c| c.format == "mobi")
+        let mobi = r
+            .chained
+            .iter()
+            .find(|c| c.format == "mobi")
             .expect("mobi should be a chained target for png");
         assert!(mobi.hops >= 2);
         assert_eq!(mobi.route.first().unwrap(), "png");
         assert_eq!(mobi.route.last().unwrap(), "mobi");
         // chained never repeats a direct target
         for c in &r.chained {
-            assert!(!r.direct.contains(&c.format), "{} is both direct and chained", c.format);
+            assert!(
+                !r.direct.contains(&c.format),
+                "{} is both direct and chained",
+                c.format
+            );
         }
     }
 
@@ -213,7 +280,10 @@ mod tests {
     fn test_video_to_audio_is_direct_edge() {
         let formats = crate::converter::detect_output_formats("/x.mp4").unwrap();
         for audio in ["mp3", "aac", "flac", "ogg", "wav", "opus", "m4a"] {
-            assert!(formats.contains(&audio.to_string()), "mp4 should offer {audio}");
+            assert!(
+                formats.contains(&audio.to_string()),
+                "mp4 should offer {audio}"
+            );
             assert!(
                 crate::converter::graph::route_hop("mp4", audio).is_some(),
                 "mp4->{audio} not routable"
