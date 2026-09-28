@@ -2,14 +2,10 @@
 //! Skipped when the tools the chain needs are unavailable (e.g. CI without
 //! pandoc / typst / pymupdf4llm).
 
-use std::process::Command;
+mod common;
 
-/// True if `doctor` reports the named tool with a leading "✓".
-fn tool_present(doctor_stdout: &str, name: &str) -> bool {
-    doctor_stdout
-        .lines()
-        .any(|l| l.starts_with('\u{2713}') && l.contains(name))
-}
+use common::{missing_tools, write_tiny_png};
+use std::process::Command;
 
 #[test]
 fn png_to_html_chain_produces_file() {
@@ -30,22 +26,11 @@ enum OutputDirFlag {
 }
 
 fn run_png_to_html_chain(output_dir_flag: OutputDirFlag) {
-    // 1. Ask the CLI which tools exist.
-    let doctor = Command::new(env!("CARGO_BIN_EXE_swift-shifter"))
-        .arg("doctor")
-        .output()
-        .expect("failed to run doctor");
-    let report = String::from_utf8_lossy(&doctor.stdout);
-
-    // The chain is png -> pdf -> html (png has no direct html edge):
+    // 1. Ask the CLI which tools exist. The chain is png -> pdf -> html
+    //    (png has no direct html edge):
     //   png -> pdf  needs pandoc + a typst PDF engine,
     //   pdf -> html needs pymupdf4llm (then pandoc).
-    let needed = ["pandoc", "typst", "pymupdf4llm"];
-    let missing: Vec<&str> = needed
-        .iter()
-        .copied()
-        .filter(|t| !tool_present(&report, t))
-        .collect();
+    let missing = missing_tools(&["pandoc", "typst", "pymupdf4llm"]);
     if !missing.is_empty() {
         eprintln!("SKIP: png->html chain e2e; missing tools: {missing:?}");
         return;
@@ -103,16 +88,4 @@ fn run_png_to_html_chain(output_dir_flag: OutputDirFlag) {
         leaked.is_empty(),
         "intermediate pdf leaked into output dir: {leaked:?}"
     );
-}
-
-/// Write a minimal valid 1x1 PNG.
-fn write_tiny_png(path: &std::path::Path) {
-    const PNG: &[u8] = &[
-        0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44,
-        0x52, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x08, 0x06, 0x00, 0x00, 0x00, 0x1F,
-        0x15, 0xC4, 0x89, 0x00, 0x00, 0x00, 0x0A, 0x49, 0x44, 0x41, 0x54, 0x78, 0x9C, 0x63, 0x00,
-        0x01, 0x00, 0x00, 0x05, 0x00, 0x01, 0x0D, 0x0A, 0x2D, 0xB4, 0x00, 0x00, 0x00, 0x00, 0x49,
-        0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82,
-    ];
-    std::fs::write(path, PNG).expect("write png");
 }

@@ -520,35 +520,6 @@ pub async fn ensure_typst(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
-pub fn detect_pdf_engine() -> Option<&'static str> {
-    // LaTeX engines first (best fidelity for .tex), then typst as a capable,
-    // dependency-light fallback that also renders Markdown PDFs well.
-    const ENGINES: &[&str] = &[
-        "tectonic",
-        "xelatex",
-        "pdflatex",
-        "lualatex",
-        "wkhtmltopdf",
-        "typst",
-    ];
-    for engine in ENGINES {
-        if which::which(engine).is_ok() {
-            return Some(engine);
-        }
-        #[cfg(target_os = "macos")]
-        for dir in BREW_PATHS {
-            if std::path::Path::new(dir).join(engine).exists() {
-                return Some(engine);
-            }
-        }
-    }
-    // typst may live in a managed/user dir that isn't on PATH.
-    if find_typst_binary().is_some() {
-        return Some("typst");
-    }
-    None
-}
-
 pub fn find_any_binary(names: &[&str]) -> Option<PathBuf> {
     for name in names {
         if let Ok(p) = which::which(name) {
