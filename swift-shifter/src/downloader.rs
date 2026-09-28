@@ -1,3 +1,9 @@
+// Which parts of this module are used depends on the target: each build
+// reads only its own OS/arch manifest entry, some helpers are Windows-only,
+// and macOS (system/Homebrew binaries) uses none of it. Its tests run
+// everywhere, so allow the per-target dead code rather than cfg-gating it.
+#![allow(dead_code)]
+
 use std::path::PathBuf;
 
 const MANIFEST: &str = include_str!("../../tools.toml");
@@ -219,8 +225,6 @@ async fn download_bytes(
 }
 
 pub async fn ensure_tool(app: &tauri::AppHandle, tool_name: &str) -> Result<PathBuf, String> {
-    use tauri::Emitter;
-
     let manifest = parse_manifest()?;
     let spec = match tool_name {
         "ffmpeg" => &manifest.ffmpeg,

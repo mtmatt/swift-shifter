@@ -2,7 +2,7 @@ use crate::converter::document::binaries::*;
 use crate::converter::document::llm::*;
 use crate::converter::document::types::*;
 use crate::converter::document::utils::*;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use tauri::Emitter;
 
 const EPUB_CSS: &str = concat!(
@@ -84,7 +84,7 @@ pub async fn convert_pdf_with_marker(
         .unwrap_or_default()
         .to_string_lossy()
         .to_string();
-    let mut cmd = tokio::process::Command::new(&marker);
+    let mut cmd = crate::process::async_command(&marker);
     if marker_name.contains("marker_single") {
         // v1.x+ CLI: marker_single FPATH --output_dir DIR
         cmd.args([
@@ -163,10 +163,8 @@ pub async fn convert_pdf_with_marker(
             let lower = line.to_lowercase();
             let mut best = current;
             for (kw, pct) in stages {
-                if *pct > current && lower.contains(kw) {
-                    if *pct > best {
-                        best = *pct;
-                    }
+                if *pct > current && lower.contains(kw) && *pct > best {
+                    best = *pct;
                 }
             }
             best
@@ -290,7 +288,7 @@ pub async fn convert_pdf_with_marker(
         }
     };
 
-    let mut pandoc_cmd = tokio::process::Command::new(&pandoc);
+    let mut pandoc_cmd = crate::process::async_command(&pandoc);
     pandoc_cmd.current_dir(md_dir);
     pandoc_cmd.args([
         "-f",
@@ -390,7 +388,7 @@ pub async fn convert_document(
     let from_fmt = ext_to_pandoc_input_format(&input_ext);
     let to_fmt = ext_to_pandoc_format(target_format);
 
-    let mut cmd = tokio::process::Command::new(&pandoc);
+    let mut cmd = crate::process::async_command(&pandoc);
     cmd.args([
         "-f",
         from_fmt,
@@ -400,10 +398,10 @@ pub async fn convert_document(
         out.to_str().unwrap_or(""),
     ]);
 
-    if target_format == "pdf" {
-        if let Some(engine) = detect_pdf_engine() {
-            cmd.args(["--pdf-engine", engine]);
-        }
+    if target_format == "pdf"
+        && let Some(engine) = detect_pdf_engine()
+    {
+        cmd.args(["--pdf-engine", engine]);
     }
 
     cmd.arg(path);
@@ -471,7 +469,7 @@ pub async fn convert_typst_to_pdf(
     )
     .ok();
 
-    let output = tokio::process::Command::new(&typst)
+    let output = crate::process::async_command(&typst)
         .arg("compile")
         .arg(path)
         .arg(out.to_str().unwrap_or(""))
@@ -539,7 +537,7 @@ pub async fn convert_image_to_pdf(
     std::fs::write(&tmp_md, format!("![]({})", filename))
         .map_err(|e| format!("Failed to create temp file: {e}"))?;
 
-    let mut cmd = tokio::process::Command::new(&pandoc);
+    let mut cmd = crate::process::async_command(&pandoc);
     cmd.args([
         "-f",
         "markdown",
@@ -628,7 +626,7 @@ pub async fn convert_pdf_to_epub(
         .ok_or_else(|| "Temp path contains non-UTF-8 characters".to_string())?;
 
     // Step 1: PDF → Markdown via pymupdf4llm
-    let result = tokio::process::Command::new(&python)
+    let result = crate::process::async_command(&python)
         .args([
             "-c",
             "import pymupdf4llm, sys; open(sys.argv[2], 'w', encoding='utf-8').write(pymupdf4llm.to_markdown(sys.argv[1]))",
@@ -674,12 +672,11 @@ pub async fn convert_pdf_to_epub(
     }
 
     // Optional LLM post-processing
-    if llm.enabled {
-        if let Ok(content) = tokio::fs::read_to_string(&tmp_md).await {
-            let processed =
-                llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
-            let _ = tokio::fs::write(&tmp_md, processed).await;
-        }
+    if llm.enabled
+        && let Ok(content) = tokio::fs::read_to_string(&tmp_md).await
+    {
+        let processed = llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
+        let _ = tokio::fs::write(&tmp_md, processed).await;
     }
 
     app.emit(
@@ -698,7 +695,7 @@ pub async fn convert_pdf_to_epub(
         .to_string_lossy()
         .to_string();
 
-    let pandoc_result = tokio::process::Command::new(&pandoc)
+    let pandoc_result = crate::process::async_command(&pandoc)
         .current_dir(&tmp_dir)
         .args([
             "-f",
@@ -748,7 +745,7 @@ pub async fn convert_pdf_to_epub(
 async fn run_ebook_convert(
     app: &tauri::AppHandle,
     input: &str,
-    output: &PathBuf,
+    output: &Path,
 ) -> Result<(), String> {
     let ec = get_ebook_convert()?;
     app.emit(
@@ -760,7 +757,7 @@ async fn run_ebook_convert(
     )
     .ok();
 
-    let result = tokio::process::Command::new(&ec)
+    let result = crate::process::async_command(&ec)
         .args([
             input,
             output.to_str().unwrap_or(""),
@@ -826,7 +823,7 @@ pub async fn convert_mobi(
             )
             .ok();
 
-            let status = tokio::process::Command::new(&pandoc)
+            let status = crate::process::async_command(&pandoc)
                 .args([
                     "-f",
                     "epub",
@@ -930,7 +927,7 @@ pub async fn convert_pdf_to_html(
         .ok_or_else(|| "Temp path contains non-UTF-8 characters".to_string())?;
 
     // Step 1: PDF → Markdown via pymupdf4llm
-    let result = tokio::process::Command::new(&python)
+    let result = crate::process::async_command(&python)
         .args([
             "-c",
             "import pymupdf4llm, sys; open(sys.argv[2], 'w', encoding='utf-8').write(pymupdf4llm.to_markdown(sys.argv[1]))",
@@ -977,7 +974,7 @@ pub async fn convert_pdf_to_html(
 
     // Step 2: Markdown → HTML via pandoc
     // --standalone adds <!DOCTYPE html> so browsers use HTML5 parsing (fixes <br> in tables)
-    let pandoc_result = tokio::process::Command::new(&pandoc)
+    let pandoc_result = crate::process::async_command(&pandoc)
         .args([
             "-f",
             "markdown",
@@ -1049,7 +1046,7 @@ async fn convert_pdf_to_md_via_pymupdf4llm(
         .to_str()
         .ok_or_else(|| "Temp path contains non-UTF-8 characters".to_string())?;
 
-    let result = tokio::process::Command::new(&python)
+    let result = crate::process::async_command(&python)
         .args([
             "-c",
             "import pymupdf4llm, sys; open(sys.argv[2], 'w', encoding='utf-8').write(pymupdf4llm.to_markdown(sys.argv[1]))",
@@ -1089,12 +1086,11 @@ async fn convert_pdf_to_md_via_pymupdf4llm(
     )
     .ok();
 
-    if llm.enabled {
-        if let Ok(content) = tokio::fs::read_to_string(&tmp_md).await {
-            let processed =
-                llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
-            let _ = tokio::fs::write(&tmp_md, processed).await;
-        }
+    if llm.enabled
+        && let Ok(content) = tokio::fs::read_to_string(&tmp_md).await
+    {
+        let processed = llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
+        let _ = tokio::fs::write(&tmp_md, processed).await;
     }
 
     let copy_result = std::fs::copy(&tmp_md, &out);
@@ -1161,7 +1157,7 @@ pub(crate) async fn convert_pdf_with_marker_to_md(
         .unwrap_or_default()
         .to_string_lossy()
         .to_string();
-    let mut cmd = tokio::process::Command::new(&marker);
+    let mut cmd = crate::process::async_command(&marker);
     if marker_name.contains("marker_single") {
         cmd.args([
             tmp_pdf.to_str().unwrap_or(""),
@@ -1199,12 +1195,11 @@ pub(crate) async fn convert_pdf_with_marker_to_md(
     let md_file = find_md_file(&output_dir_tmp)
         .ok_or_else(|| "marker produced no Markdown file".to_string())?;
 
-    if llm.enabled {
-        if let Ok(content) = tokio::fs::read_to_string(&md_file).await {
-            let processed =
-                llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
-            let _ = tokio::fs::write(&md_file, processed).await;
-        }
+    if llm.enabled
+        && let Ok(content) = tokio::fs::read_to_string(&md_file).await
+    {
+        let processed = llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
+        let _ = tokio::fs::write(&md_file, processed).await;
     }
 
     std::fs::copy(&md_file, &out).map_err(|e| format!("Failed to copy marker output: {e}"))?;

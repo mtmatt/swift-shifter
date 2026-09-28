@@ -1,5 +1,7 @@
 use crate::converter::document::OLLAMA_CLIENT;
-use crate::converter::document::binaries::{find_any_binary, run_silent};
+use crate::converter::document::binaries::find_any_binary;
+#[cfg(any(target_os = "macos", target_os = "windows"))] // installers below
+use crate::converter::document::binaries::run_silent;
 use tauri::Emitter;
 
 #[cfg(target_os = "macos")]
@@ -245,7 +247,7 @@ pub async fn install_ollama_and_model(
     if !reachable {
         app.emit("ollama:step", "Starting Ollama server…").ok();
         if let Some(bin) = find_any_binary(&["ollama", "ollama.exe"]) {
-            let mut cmd = tokio::process::Command::new(&bin);
+            let mut cmd = crate::process::async_command(&bin);
             cmd.arg("serve");
             // Prevent child from inheriting stdout/stderr which could keep app alive or spam logs
             cmd.stdout(std::process::Stdio::null());
@@ -305,15 +307,13 @@ pub async fn install_ollama_and_model(
     while let Some(item) = stream.next().await {
         let Ok(chunk) = item else { break };
         for line in String::from_utf8_lossy(&chunk).lines() {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
-                if let (Some(completed), Some(total)) =
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line)
+                && let (Some(completed), Some(total)) =
                     (json["completed"].as_f64(), json["total"].as_f64())
-                {
-                    if total > 0.0 {
-                        let pct = (completed / total * 100.0) as f32;
-                        app.emit("ollama:progress", pct).ok();
-                    }
-                }
+                && total > 0.0
+            {
+                let pct = (completed / total * 100.0) as f32;
+                app.emit("ollama:progress", pct).ok();
             }
         }
     }

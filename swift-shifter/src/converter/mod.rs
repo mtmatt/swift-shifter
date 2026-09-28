@@ -159,4 +159,6 @@ pub async fn convert_file(
     // `tmp` drops here, removing all intermediates; the final file is in `final_dir`.
     Ok(current)
 }
+
+#[cfg(test)]
 mod tests;

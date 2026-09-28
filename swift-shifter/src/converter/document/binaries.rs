@@ -59,7 +59,7 @@ pub fn find_pandoc_binary() -> Option<PathBuf> {
 
 #[cfg(target_os = "macos")]
 pub async fn brew_install(brew: &PathBuf, args: &[&str]) -> bool {
-    let out = tokio::process::Command::new(brew)
+    let out = crate::process::async_command(brew)
         .args(args)
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
@@ -81,7 +81,7 @@ pub async fn brew_install(brew: &PathBuf, args: &[&str]) -> bool {
         if let Some(lock_path) = extract_brew_incomplete_path(&stderr) {
             let _ = std::fs::remove_file(&lock_path);
         }
-        return tokio::process::Command::new(brew)
+        return crate::process::async_command(brew)
             .args(args)
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -140,12 +140,10 @@ pub async fn ensure_pandoc(app: &tauri::AppHandle) -> Result<(), String> {
             app.emit("pandoc:installing", ()).ok();
             let ok = brew_install(&brew, &["install", "pandoc"]).await;
 
-            if ok {
-                if let Some(path) = find_pandoc_binary() {
-                    PANDOC_PATH.set(Some(path)).ok();
-                    app.emit("pandoc:installed", ()).ok();
-                    return Ok(());
-                }
+            if ok && let Some(path) = find_pandoc_binary() {
+                PANDOC_PATH.set(Some(path)).ok();
+                app.emit("pandoc:installed", ()).ok();
+                return Ok(());
             }
         }
     }
@@ -231,12 +229,10 @@ pub async fn ensure_ebook_convert(app: &tauri::AppHandle) -> Result<(), String> 
         if let Some(brew) = find_brew_binary() {
             app.emit("ebook-convert:installing", ()).ok();
             let ok = brew_install(&brew, &["install", "--cask", "calibre"]).await;
-            if ok {
-                if let Some(path) = find_ebook_convert_binary() {
-                    EBOOK_CONVERT_PATH.set(Some(path)).ok();
-                    app.emit("ebook-convert:installed", ()).ok();
-                    return Ok(());
-                }
+            if ok && let Some(path) = find_ebook_convert_binary() {
+                EBOOK_CONVERT_PATH.set(Some(path)).ok();
+                app.emit("ebook-convert:installed", ()).ok();
+                return Ok(());
             }
         }
     }
@@ -246,7 +242,7 @@ pub async fn ensure_ebook_convert(app: &tauri::AppHandle) -> Result<(), String> 
         app.emit("ebook-convert:installing", ()).ok();
         let version = crate::downloader::tool_version("calibre").unwrap_or_default();
         let ok = if which::which("winget").is_ok() {
-            tokio::process::Command::new("winget")
+            crate::process::async_command("winget")
                 .args([
                     "install",
                     "--id",
@@ -266,12 +262,10 @@ pub async fn ensure_ebook_convert(app: &tauri::AppHandle) -> Result<(), String> 
             false
         };
 
-        if ok {
-            if let Some(path) = find_ebook_convert_binary() {
-                EBOOK_CONVERT_PATH.set(Some(path)).ok();
-                app.emit("ebook-convert:installed", ()).ok();
-                return Ok(());
-            }
+        if ok && let Some(path) = find_ebook_convert_binary() {
+            EBOOK_CONVERT_PATH.set(Some(path)).ok();
+            app.emit("ebook-convert:installed", ()).ok();
+            return Ok(());
         }
     }
 
@@ -308,7 +302,7 @@ pub fn ebook_convert_available() -> bool {
 }
 
 fn python_has_pymupdf4llm(python: &PathBuf) -> bool {
-    std::process::Command::new(python)
+    crate::process::sync_command(python)
         .args(["-c", "import pymupdf4llm"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
@@ -391,7 +385,7 @@ pub fn find_pymupdf4llm_python() -> Option<PathBuf> {
     let mut seen = std::collections::HashSet::new();
     candidates.retain(|p| seen.insert(p.clone()));
 
-    candidates.into_iter().find(|p| python_has_pymupdf4llm(p))
+    candidates.into_iter().find(python_has_pymupdf4llm)
 }
 
 pub async fn ensure_pymupdf4llm(app: &tauri::AppHandle) -> Result<(), String> {
@@ -410,7 +404,7 @@ pub async fn ensure_pymupdf4llm(app: &tauri::AppHandle) -> Result<(), String> {
     // Install via pipx (isolated venv, works with externally-managed Python)
     // --include-deps is required because pymupdf4llm exposes no CLI entry points itself
     if let Ok(pipx_path) = which::which("pipx") {
-        let ok = tokio::process::Command::new(&pipx_path)
+        let ok = crate::process::async_command(&pipx_path)
             .args(["install", "pymupdf4llm", "--include-deps"])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -418,12 +412,10 @@ pub async fn ensure_pymupdf4llm(app: &tauri::AppHandle) -> Result<(), String> {
             .await
             .map(|s| s.success())
             .unwrap_or(false);
-        if ok {
-            if let Some(path) = find_pymupdf4llm_python() {
-                PYMUPDF4LLM_PYTHON.set(Some(path)).ok();
-                app.emit("pymupdf:installed", ()).ok();
-                return Ok(());
-            }
+        if ok && let Some(path) = find_pymupdf4llm_python() {
+            PYMUPDF4LLM_PYTHON.set(Some(path)).ok();
+            app.emit("pymupdf:installed", ()).ok();
+            return Ok(());
         }
     }
 
@@ -613,7 +605,7 @@ pub fn marker_step(app: &tauri::AppHandle, msg: &str) {
 }
 
 pub async fn run_silent(program: &PathBuf, args: &[&str]) -> Result<(), String> {
-    let out = tokio::process::Command::new(program)
+    let out = crate::process::async_command(program)
         .args(args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

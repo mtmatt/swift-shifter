@@ -2,6 +2,8 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use tauri::Emitter;
 
+// Streaming installs only happen via Homebrew on macOS.
+#[cfg(target_os = "macos")]
 #[derive(serde::Serialize, Clone)]
 struct InstallLogPayload {
     line: String,
@@ -10,6 +12,7 @@ struct InstallLogPayload {
 
 /// Run a command, streaming every stdout/stderr line as an `install:log` event.
 /// Returns whether the process exited successfully.
+#[cfg(target_os = "macos")]
 async fn run_streamed(
     app: &tauri::AppHandle,
     mut cmd: tokio::process::Command,
@@ -76,7 +79,7 @@ async fn push_ogg_codec_args(cmd: &mut tokio::process::Command, ffmpeg: &Path) {
     let has_libvorbis = match LIBVORBIS_AVAILABLE.get() {
         Some(&v) => v,
         None => {
-            let available = tokio::process::Command::new(ffmpeg)
+            let available = crate::process::async_command(ffmpeg)
                 .args(["-hide_banner", "-encoders"])
                 .output()
                 .await
@@ -174,7 +177,7 @@ fn find_ffmpeg_binary() -> Option<PathBuf> {
     // Last resort: ask the user's login shell — picks up nix, MacPorts, custom PATH
     #[cfg(target_os = "macos")]
     {
-        if let Ok(out) = std::process::Command::new("/bin/zsh")
+        if let Ok(out) = crate::process::sync_command("/bin/zsh")
             .args(["-l", "-c", "command -v ffmpeg"])
             .output()
         {
@@ -223,18 +226,16 @@ fn find_brew_binary() -> Option<PathBuf> {
 async fn install_brew(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     app.emit("brew:installing", ()).ok();
 
-    let mut cmd = tokio::process::Command::new("/bin/bash");
+    let mut cmd = crate::process::async_command("/bin/bash");
     cmd.arg("-c")
         .arg("curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | /bin/bash")
         .env("NONINTERACTIVE", "1");
 
     let ok = run_streamed(app, cmd, "brew").await?;
 
-    if ok {
-        if let Some(p) = find_brew_binary() {
-            app.emit("brew:installed", ()).ok();
-            return Ok(p);
-        }
+    if ok && let Some(p) = find_brew_binary() {
+        app.emit("brew:installed", ()).ok();
+        return Ok(p);
     }
 
     Err("Homebrew installation failed or brew binary not found after install".to_string())
@@ -265,7 +266,7 @@ pub async fn ensure_ffmpeg(app: &tauri::AppHandle) -> Result<(), String> {
 
         app.emit("ffmpeg:installing", ()).ok();
 
-        let mut cmd = tokio::process::Command::new(&brew);
+        let mut cmd = crate::process::async_command(&brew);
         cmd.args(["install", "ffmpeg"]);
         let ok = run_streamed(app, cmd, "ffmpeg").await?;
 
@@ -323,7 +324,7 @@ pub async fn convert_media(
     // Get duration for progress reporting
     let duration_secs = get_duration(&ffmpeg, path).await.unwrap_or(0.0);
 
-    let mut cmd = tokio::process::Command::new(&ffmpeg);
+    let mut cmd = crate::process::async_command(&ffmpeg);
     cmd.args(["-y", "-i", path]);
 
     // Format-specific flags
@@ -383,22 +384,20 @@ pub async fn convert_media(
         use tokio::io::{AsyncBufReadExt, BufReader};
         let mut reader = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
-            if let Some(val) = line.strip_prefix("out_time_us=") {
-                if let Ok(us) = val.trim().parse::<f64>() {
-                    if duration_secs > 0.0 {
-                        let percent =
-                            ((us / 1_000_000.0) / duration_secs * 100.0).min(100.0) as f32;
-                        app_handle
-                            .emit(
-                                "convert:progress",
-                                ProgressPayload {
-                                    path: path_string.clone(),
-                                    percent,
-                                },
-                            )
-                            .ok();
-                    }
-                }
+            if let Some(val) = line.strip_prefix("out_time_us=")
+                && let Ok(us) = val.trim().parse::<f64>()
+                && duration_secs > 0.0
+            {
+                let percent = ((us / 1_000_000.0) / duration_secs * 100.0).min(100.0) as f32;
+                app_handle
+                    .emit(
+                        "convert:progress",
+                        ProgressPayload {
+                            path: path_string.clone(),
+                            percent,
+                        },
+                    )
+                    .ok();
             }
         }
     }
@@ -431,7 +430,7 @@ pub async fn convert_image_to_gif(
     let ffmpeg = get_ffmpeg()?;
     let out = output_path(path, "gif", output_dir)?;
 
-    let mut cmd = tokio::process::Command::new(&ffmpeg);
+    let mut cmd = crate::process::async_command(&ffmpeg);
     cmd.args([
         "-y",
         "-i",
@@ -501,7 +500,7 @@ pub async fn media_duration_secs(path: &str) -> Result<f64, String> {
 }
 
 async fn get_duration(ffmpeg: &Path, path: &str) -> Option<f64> {
-    let out = tokio::process::Command::new(ffmpeg)
+    let out = crate::process::async_command(ffmpeg)
         .args(["-i", path, "-hide_banner"])
         .output()
         .await
@@ -561,10 +560,10 @@ pub async fn trim_media(
         .then(|| parse_time_to_secs(end))
         .flatten();
 
-    if let (Some(s), Some(e)) = (start_secs, end_secs) {
-        if e <= s {
-            return Err("End time must be after start time".to_string());
-        }
+    if let (Some(s), Some(e)) = (start_secs, end_secs)
+        && e <= s
+    {
+        return Err("End time must be after start time".to_string());
     }
 
     // ffmpeg resets output timestamps to 0 after an input-side -ss, so the
@@ -576,7 +575,7 @@ pub async fn trim_media(
         (None, None) => source_duration_secs,
     };
 
-    let mut cmd = tokio::process::Command::new(&ffmpeg);
+    let mut cmd = crate::process::async_command(&ffmpeg);
     cmd.arg("-y");
     if !start.trim().is_empty() {
         cmd.args(["-ss", start.trim()]);
@@ -611,20 +610,20 @@ pub async fn trim_media(
         let mut reader = BufReader::new(stderr).lines();
         while let Ok(Some(line)) = reader.next_line().await {
             if let Some(val) = line.strip_prefix("out_time_us=") {
-                if let Ok(us) = val.trim().parse::<f64>() {
-                    if effective_duration_secs > 0.0 {
-                        let percent = ((us / 1_000_000.0) / effective_duration_secs * 100.0)
-                            .min(100.0) as f32;
-                        app_handle
-                            .emit(
-                                "convert:progress",
-                                ProgressPayload {
-                                    path: path_string.clone(),
-                                    percent,
-                                },
-                            )
-                            .ok();
-                    }
+                if let Ok(us) = val.trim().parse::<f64>()
+                    && effective_duration_secs > 0.0
+                {
+                    let percent =
+                        ((us / 1_000_000.0) / effective_duration_secs * 100.0).min(100.0) as f32;
+                    app_handle
+                        .emit(
+                            "convert:progress",
+                            ProgressPayload {
+                                path: path_string.clone(),
+                                percent,
+                            },
+                        )
+                        .ok();
                 }
                 continue;
             }

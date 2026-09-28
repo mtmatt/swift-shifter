@@ -47,10 +47,10 @@ pub fn find_md_file(dir: &Path) -> Option<PathBuf> {
         if path.is_file() && path.extension().and_then(|e| e.to_str()) == Some("md") {
             return Some(path);
         }
-        if path.is_dir() {
-            if let Some(found) = find_md_file(&path) {
-                return Some(found);
-            }
+        if path.is_dir()
+            && let Some(found) = find_md_file(&path)
+        {
+            return Some(found);
         }
     }
     None

@@ -83,11 +83,17 @@ jobs:
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: swift-shifter
+
+      - name: Check version files agree
+        if: matrix.name == 'Ubuntu'
+        run: scripts/check-version.sh
 
       - name: Install npm dependencies
         run: npm ci
@@ -97,6 +103,17 @@ jobs:
 
       - name: Build frontend
         run: npm run build
+
+      - name: Rust format check
+        if: matrix.name == 'Ubuntu'
+        working-directory: swift-shifter
+        run: cargo fmt --check
+
+      # Per OS, since each compiles different cfg-gated code. Needs the
+      # frontend built first: tauri's generate_context! embeds ui/dist.
+      - name: Clippy
+        working-directory: swift-shifter
+        run: cargo clippy --all-targets -- -D warnings
 
       - name: Build Tauri app (compile check, no bundle)
         run: npm run tauri -- build --no-bundle

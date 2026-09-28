@@ -50,39 +50,36 @@ fn read_raw_image_from_clipboard_linux() -> Option<(Vec<u8>, &'static str)> {
     if let Ok(targets) = Command::new("xclip")
         .args(["-selection", "clipboard", "-t", "TARGETS", "-o"])
         .output()
+        && targets.status.success()
     {
-        if targets.status.success() {
-            let listed = String::from_utf8_lossy(&targets.stdout);
-            for &(mime, ext) in MIME_TYPES {
-                if listed.lines().any(|l| l.trim() == mime) {
-                    if let Ok(data) = Command::new("xclip")
-                        .args(["-selection", "clipboard", "-t", mime, "-o"])
-                        .output()
-                    {
-                        if data.status.success() && !data.stdout.is_empty() {
-                            return Some((data.stdout, ext));
-                        }
-                    }
-                }
+        let listed = String::from_utf8_lossy(&targets.stdout);
+        for &(mime, ext) in MIME_TYPES {
+            if listed.lines().any(|l| l.trim() == mime)
+                && let Ok(data) = Command::new("xclip")
+                    .args(["-selection", "clipboard", "-t", mime, "-o"])
+                    .output()
+                && data.status.success()
+                && !data.stdout.is_empty()
+            {
+                return Some((data.stdout, ext));
             }
         }
     }
 
     // Wayland (wl-paste).
-    if let Ok(targets) = Command::new("wl-paste").arg("--list-types").output() {
-        if targets.status.success() {
-            let listed = String::from_utf8_lossy(&targets.stdout);
-            for &(mime, ext) in MIME_TYPES {
-                if listed.lines().any(|l| l.trim() == mime) {
-                    if let Ok(data) = Command::new("wl-paste")
-                        .args(["--type", mime, "--no-newline"])
-                        .output()
-                    {
-                        if data.status.success() && !data.stdout.is_empty() {
-                            return Some((data.stdout, ext));
-                        }
-                    }
-                }
+    if let Ok(targets) = Command::new("wl-paste").arg("--list-types").output()
+        && targets.status.success()
+    {
+        let listed = String::from_utf8_lossy(&targets.stdout);
+        for &(mime, ext) in MIME_TYPES {
+            if listed.lines().any(|l| l.trim() == mime)
+                && let Ok(data) = Command::new("wl-paste")
+                    .args(["--type", mime, "--no-newline"])
+                    .output()
+                && data.status.success()
+                && !data.stdout.is_empty()
+            {
+                return Some((data.stdout, ext));
             }
         }
     }
@@ -192,6 +189,7 @@ fn pasteboard_available_types() -> Vec<String> {
 /// path. Pure helper so the parsing rules are testable without a live
 /// pasteboard. Trims surrounding whitespace and trailing NULs, so callers
 /// can pass whatever NSPasteboard / xclip / wl-paste handed them.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))] // see `ClipboardReads`
 fn parse_file_url_string(s: &str) -> Option<String> {
     let url = s.trim_matches(|c: char| c.is_whitespace() || c == '\0');
     let path = url.strip_prefix("file://")?;
@@ -207,11 +205,12 @@ fn parse_file_url_string(s: &str) -> Option<String> {
 /// Tries plain UTF-8 first, then heuristically scans for an embedded
 /// `file://` substring — this catches archived-NSURL or property-list
 /// wrappers that some macOS apps put on the pasteboard.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))] // see `ClipboardReads`
 fn parse_file_url_bytes(bytes: &[u8]) -> Option<String> {
-    if let Ok(s) = std::str::from_utf8(bytes) {
-        if let Some(p) = parse_file_url_string(s) {
-            return Some(p);
-        }
+    if let Ok(s) = std::str::from_utf8(bytes)
+        && let Some(p) = parse_file_url_string(s)
+    {
+        return Some(p);
     }
     // Lossy scan for an embedded URL.
     let lossy = String::from_utf8_lossy(bytes);
@@ -280,10 +279,10 @@ fn read_file_path_from_pasteboard() -> Option<String> {
         if let Some(p) = parse_file_url_bytes(&bytes) {
             return Some(p);
         }
-        if let Ok(s) = std::str::from_utf8(&bytes) {
-            if let Some(p) = resolve_file_reference_url(s.trim_end_matches('\0')) {
-                return Some(p);
-            }
+        if let Ok(s) = std::str::from_utf8(&bytes)
+            && let Some(p) = resolve_file_reference_url(s.trim_end_matches('\0'))
+        {
+            return Some(p);
         }
     }
     None
@@ -504,6 +503,11 @@ fn write_image_as_png(img: &tauri::image::Image) -> Result<PasteResult, String> 
 /// at the start of a paste. Held in a plain struct so the dispatch
 /// decision (`dispatch_paste_macos` / `dispatch_paste_other`) becomes a
 /// pure function we can unit-test against any clipboard configuration.
+///
+/// The macOS-only parts of this (and the pure helpers that feed it) are
+/// compiled on every OS so their unit tests run everywhere, which leaves
+/// them unused in non-test builds off macOS.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Default)]
 struct ClipboardReads {
     /// macOS only: `public.file-url` resolved to an existing path.
@@ -527,6 +531,7 @@ struct ClipboardReads {
 /// this into a `PasteResult` is the caller's job (it needs Tauri's
 /// `AppHandle` for `Text` and `ReadRgbaImage`); separating decision from
 /// effect is what makes the priority ordering testable.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))] // see `ClipboardReads`
 enum PasteOutcome {
     /// File on disk — return the path directly, no temp file.
     ExistingPath(String),
@@ -540,6 +545,7 @@ enum PasteOutcome {
     Empty,
 }
 
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))] // see `ClipboardReads`
 fn dispatch_paste_macos(r: ClipboardReads) -> PasteOutcome {
     if let Some(p) = r.file_path {
         return PasteOutcome::ExistingPath(p);
@@ -604,10 +610,10 @@ fn finalize_outcome(app: &AppHandle, outcome: PasteOutcome) -> Result<PasteResul
             if let Ok(img) = app.clipboard().read_image() {
                 return write_image_as_png(&img);
             }
-            if let Ok(text) = app.clipboard().read_text() {
-                if !text.trim().is_empty() {
-                    return write_text_paste(&text);
-                }
+            if let Ok(text) = app.clipboard().read_text()
+                && !text.trim().is_empty()
+            {
+                return write_text_paste(&text);
             }
             Err("Clipboard is empty".to_string())
         }
@@ -666,7 +672,7 @@ pub async fn paste_diagnostics() -> Result<Vec<String>, String> {
     tokio::task::spawn_blocking(|| -> Vec<String> {
         #[cfg(target_os = "macos")]
         {
-            return pasteboard_available_types();
+            pasteboard_available_types()
         }
         #[cfg(target_os = "linux")]
         {
@@ -674,23 +680,22 @@ pub async fn paste_diagnostics() -> Result<Vec<String>, String> {
             if let Ok(o) = Command::new("xclip")
                 .args(["-selection", "clipboard", "-t", "TARGETS", "-o"])
                 .output()
+                && o.status.success()
             {
-                if o.status.success() {
-                    return String::from_utf8_lossy(&o.stdout)
-                        .lines()
-                        .map(|l| l.trim().to_string())
-                        .filter(|l| !l.is_empty())
-                        .collect();
-                }
+                return String::from_utf8_lossy(&o.stdout)
+                    .lines()
+                    .map(|l| l.trim().to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect();
             }
-            if let Ok(o) = Command::new("wl-paste").arg("--list-types").output() {
-                if o.status.success() {
-                    return String::from_utf8_lossy(&o.stdout)
-                        .lines()
-                        .map(|l| l.trim().to_string())
-                        .filter(|l| !l.is_empty())
-                        .collect();
-                }
+            if let Ok(o) = Command::new("wl-paste").arg("--list-types").output()
+                && o.status.success()
+            {
+                return String::from_utf8_lossy(&o.stdout)
+                    .lines()
+                    .map(|l| l.trim().to_string())
+                    .filter(|l| !l.is_empty())
+                    .collect();
             }
             Vec::new()
         }
@@ -1363,17 +1368,23 @@ mod tests {
 
     // ─── Real NSPasteboard integration tests (macOS only) ────────────
     //
-    // These tests touch the *actual* general pasteboard. They restore
-    // it at the end so they don't permanently clobber the user's
-    // clipboard, but they DO interact with shared OS state — run them
-    // serialised. They're the only way to verify our objc2 plumbing
+    // These tests touch the *actual* general pasteboard (and clear it
+    // when done). They're the only way to verify our objc2 plumbing
     // talks to NSPasteboard correctly; the dispatch tests above only
     // exercise pure logic.
     //
-    // Marked `#[serial]` would be ideal; we rely on cargo test's
-    // default single-threaded behaviour for `--test-threads=1` runs and
-    // accept transient failures otherwise (the helpers re-write before
-    // each read).
+    // The pasteboard is process-wide shared state and cargo runs tests
+    // in parallel, so every test here holds `pasteboard_lock()` for its
+    // whole body; otherwise one test's write clobbers another's read.
+
+    /// Serialises the tests that touch the real pasteboard.
+    #[cfg(target_os = "macos")]
+    fn pasteboard_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        // A failed test poisons the lock; the pasteboard itself is still
+        // usable, so keep going rather than failing every later test.
+        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     #[cfg(target_os = "macos")]
     fn pb_clear_and_set_string(uti: &str, content: &str) {
@@ -1407,6 +1418,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn pasteboard_round_trip_utf8_string() {
+        let _pasteboard = pasteboard_lock();
         // Sanity check: if `pasteboard_data_for_uti` is broken at the
         // objc2 layer, every macOS paste falls through to text. This
         // test fails *loudly* in that case.
@@ -1423,6 +1435,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn pasteboard_string_for_uti_round_trip() {
+        let _pasteboard = pasteboard_lock();
         pb_clear_and_set_string("public.utf8-plain-text", "string-rt-test");
         let s = pasteboard_string_for_uti("public.utf8-plain-text")
             .expect("stringForType: returned nil");
@@ -1433,6 +1446,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn read_file_path_finds_file_url_via_string_form() {
+        let _pasteboard = pasteboard_lock();
         // The user's reported bug: copying a file should resolve to the
         // file path. Simulate the Finder copy by setting a `public.file-url`
         // string entry pointing at a real temp file.
@@ -1482,6 +1496,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn read_file_path_finds_finder_style_write_objects() {
+        let _pasteboard = pasteboard_lock();
         let target = temp_path("txt");
         std::fs::write(&target, b"x").unwrap();
         let url = format!("file://{}", target.to_string_lossy());
@@ -1505,6 +1520,7 @@ mod tests {
     #[test]
     #[ignore]
     fn diagnose_current_pasteboard() {
+        let _pasteboard = pasteboard_lock();
         println!("=== Available pasteboard types ===");
         for t in pasteboard_available_types() {
             println!("- {t}");
@@ -1528,6 +1544,7 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[test]
     fn pasteboard_available_types_includes_what_we_set() {
+        let _pasteboard = pasteboard_lock();
         pb_clear_and_set_string("public.utf8-plain-text", "x");
         let types = pasteboard_available_types();
         assert!(

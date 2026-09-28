@@ -39,11 +39,11 @@ fn apply_inherited_to_page(doc: &Document, page_id: ObjectId) -> Dictionary {
         };
 
         for key in INHERITABLE {
-            if !seen_keys.contains(*key) {
-                if let Ok(val) = dict.get(*key) {
-                    seen_keys.insert(key.to_vec());
-                    inherited.push((key.to_vec(), val.clone()));
-                }
+            if !seen_keys.contains(*key)
+                && let Ok(val) = dict.get(key)
+            {
+                seen_keys.insert(key.to_vec());
+                inherited.push((key.to_vec(), val.clone()));
             }
         }
 
@@ -180,14 +180,13 @@ pub fn merge_pdfs(input_paths: &[String], output_dir: Option<&str>) -> Result<St
                 // Copy inherited attributes onto the page if it doesn't already
                 // define them explicitly. This preserves /MediaBox etc. that
                 // were set on the source /Pages node rather than the page itself.
-                if let Some(inherited) = inherited_by_page.get(&orig_page_id) {
-                    if let Some(obj) = new_objects.get_mut(&new_page_id) {
-                        if let Ok(dict) = obj.as_dict_mut() {
-                            for (key, val) in inherited.iter() {
-                                if dict.get(key.as_slice()).is_err() {
-                                    dict.set(key.clone(), rewrite_refs(val, &id_map));
-                                }
-                            }
+                if let Some(inherited) = inherited_by_page.get(&orig_page_id)
+                    && let Some(obj) = new_objects.get_mut(&new_page_id)
+                    && let Ok(dict) = obj.as_dict_mut()
+                {
+                    for (key, val) in inherited.iter() {
+                        if dict.get(key.as_slice()).is_err() {
+                            dict.set(key.clone(), rewrite_refs(val, &id_map));
                         }
                     }
                 }
@@ -209,10 +208,10 @@ pub fn merge_pdfs(input_paths: &[String], output_dir: Option<&str>) -> Result<St
 
     // Update every page's /Parent to point at the new Pages node
     for &page_id in &all_page_ids {
-        if let Some(obj) = out.objects.get_mut(&page_id) {
-            if let Ok(dict) = obj.as_dict_mut() {
-                dict.set("Parent", Object::Reference(pages_id));
-            }
+        if let Some(obj) = out.objects.get_mut(&page_id)
+            && let Ok(dict) = obj.as_dict_mut()
+        {
+            dict.set("Parent", Object::Reference(pages_id));
         }
     }
 
