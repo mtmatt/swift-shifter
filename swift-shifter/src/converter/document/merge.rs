@@ -39,11 +39,11 @@ fn apply_inherited_to_page(doc: &Document, page_id: ObjectId) -> Dictionary {
         };
 
         for key in INHERITABLE {
-            if !seen_keys.contains(*key) {
-                if let Ok(val) = dict.get(*key) {
-                    seen_keys.insert(key.to_vec());
-                    inherited.push((key.to_vec(), val.clone()));
-                }
+            if !seen_keys.contains(*key)
+                && let Ok(val) = dict.get(key)
+            {
+                seen_keys.insert(key.to_vec());
+                inherited.push((key.to_vec(), val.clone()));
             }
         }
 
@@ -62,7 +62,14 @@ fn apply_inherited_to_page(doc: &Document, page_id: ObjectId) -> Dictionary {
 
 /// Renumber all objects in `doc` so that every object ID starts at `base`.
 /// Returns the remapping table (old_id → new_id).
-fn renumber_objects(doc: &Document, base: u32) -> (BTreeMap<ObjectId, Object>, BTreeMap<ObjectId, ObjectId>, u32) {
+fn renumber_objects(
+    doc: &Document,
+    base: u32,
+) -> (
+    BTreeMap<ObjectId, Object>,
+    BTreeMap<ObjectId, ObjectId>,
+    u32,
+) {
     // Build a remapping table: old id → new id
     let mut id_map: BTreeMap<ObjectId, ObjectId> = BTreeMap::new();
     let mut counter = base;
@@ -72,7 +79,8 @@ fn renumber_objects(doc: &Document, base: u32) -> (BTreeMap<ObjectId, Object>, B
     }
 
     // Clone + rewrite all Reference objects in place
-    let new_objects: BTreeMap<ObjectId, Object> = doc.objects
+    let new_objects: BTreeMap<ObjectId, Object> = doc
+        .objects
         .iter()
         .map(|(&old_id, obj)| {
             let new_id = id_map[&old_id];
@@ -94,9 +102,7 @@ fn rewrite_refs(obj: &Object, id_map: &BTreeMap<ObjectId, ObjectId>) -> Object {
                 Object::Reference(*id)
             }
         }
-        Object::Array(arr) => Object::Array(
-            arr.iter().map(|o| rewrite_refs(o, id_map)).collect(),
-        ),
+        Object::Array(arr) => Object::Array(arr.iter().map(|o| rewrite_refs(o, id_map)).collect()),
         Object::Dictionary(dict) => {
             let mut new_dict = Dictionary::new();
             for (k, v) in dict.iter() {
@@ -174,14 +180,13 @@ pub fn merge_pdfs(input_paths: &[String], output_dir: Option<&str>) -> Result<St
                 // Copy inherited attributes onto the page if it doesn't already
                 // define them explicitly. This preserves /MediaBox etc. that
                 // were set on the source /Pages node rather than the page itself.
-                if let Some(inherited) = inherited_by_page.get(&orig_page_id) {
-                    if let Some(obj) = new_objects.get_mut(&new_page_id) {
-                        if let Ok(dict) = obj.as_dict_mut() {
-                            for (key, val) in inherited.iter() {
-                                if dict.get(key.as_slice()).is_err() {
-                                    dict.set(key.clone(), rewrite_refs(val, &id_map));
-                                }
-                            }
+                if let Some(inherited) = inherited_by_page.get(&orig_page_id)
+                    && let Some(obj) = new_objects.get_mut(&new_page_id)
+                    && let Ok(dict) = obj.as_dict_mut()
+                {
+                    for (key, val) in inherited.iter() {
+                        if dict.get(key.as_slice()).is_err() {
+                            dict.set(key.clone(), rewrite_refs(val, &id_map));
                         }
                     }
                 }
@@ -203,10 +208,10 @@ pub fn merge_pdfs(input_paths: &[String], output_dir: Option<&str>) -> Result<St
 
     // Update every page's /Parent to point at the new Pages node
     for &page_id in &all_page_ids {
-        if let Some(obj) = out.objects.get_mut(&page_id) {
-            if let Ok(dict) = obj.as_dict_mut() {
-                dict.set("Parent", Object::Reference(pages_id));
-            }
+        if let Some(obj) = out.objects.get_mut(&page_id)
+            && let Ok(dict) = obj.as_dict_mut()
+        {
+            dict.set("Parent", Object::Reference(pages_id));
         }
     }
 
@@ -233,7 +238,8 @@ pub fn merge_pdfs(input_paths: &[String], output_dir: Option<&str>) -> Result<St
     out.objects.insert(catalog_id, Object::Dictionary(catalog));
 
     out.trailer.set("Root", Object::Reference(catalog_id));
-    out.trailer.set("Size", Object::Integer(out.max_id as i64 + 1));
+    out.trailer
+        .set("Size", Object::Integer(out.max_id as i64 + 1));
 
     out.save(&out_path).map_err(|e| e.to_string())?;
     Ok(out_path.to_string_lossy().into_owned())

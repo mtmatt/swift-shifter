@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Usage: scripts/bump-version.sh <version>
-# Updates the version in package.json, Cargo.toml, and tauri.conf.json,
-# then commits the change. Pushing to main will auto-create the git tag.
+# Updates the version in package.json, Cargo.toml, and tauri.conf.json.
+# Committing, tagging, and pushing are left to you (see the steps printed at
+# the end); scripts/check-version.sh verifies the result.
 set -euo pipefail
 
 VERSION="${1:?Usage: scripts/bump-version.sh <version>}"
@@ -44,6 +45,7 @@ echo "Review the diff, then:"
 echo "  git add package.json swift-shifter/Cargo.toml swift-shifter/tauri.conf.json"
 echo "  git commit -m \"chore: bump version to $VERSION\""
 echo "  git push"
+echo "  git tag v$VERSION && git push origin v$VERSION"
 echo ""
-echo "Pushing to main will trigger the auto-tag workflow which creates v$VERSION,"
-echo "which in turn triggers the release workflow."
+echo "Pushing the tag triggers the release workflow, which first checks that"
+echo "the tag matches all three version files."

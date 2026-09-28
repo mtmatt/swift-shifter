@@ -1,11 +1,17 @@
+// Which parts of this module are used depends on the target: each build
+// reads only its own OS/arch manifest entry, some helpers are Windows-only,
+// and macOS (system/Homebrew binaries) uses none of it. Its tests run
+// everywhere, so allow the per-target dead code rather than cfg-gating it.
+#![allow(dead_code)]
+
 use std::path::PathBuf;
 
 const MANIFEST: &str = include_str!("../../tools.toml");
 
 #[derive(serde::Deserialize)]
 struct Manifest {
-    ffmpeg:  ToolSpec,
-    pandoc:  ToolSpec,
+    ffmpeg: ToolSpec,
+    pandoc: ToolSpec,
     calibre: ToolSpec,
 }
 
@@ -22,11 +28,11 @@ struct ToolSpec {
 
 #[derive(serde::Deserialize, Clone)]
 pub struct PlatformEntry {
-    pub url:      String,
-    pub sha256:   String,
-    pub archive:  String,   // "tar.gz" | "tar.xz" | "zip"
-    pub mode:     String,   // "binary" | "dir"
-    pub binary:   String,   // path-in-archive (binary mode) or filename within dest_dir (dir mode)
+    pub url: String,
+    pub sha256: String,
+    pub archive: String,          // "tar.gz" | "tar.xz" | "zip"
+    pub mode: String,             // "binary" | "dir"
+    pub binary: String, // path-in-archive (binary mode) or filename within dest_dir (dir mode)
     pub dest_dir: Option<String>, // dir mode only
 }
 
@@ -35,20 +41,28 @@ fn parse_manifest() -> Result<Manifest, String> {
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn get_current_entry(spec: &ToolSpec) -> Option<PlatformEntry> { spec.linux_x86_64.clone() }
+fn get_current_entry(spec: &ToolSpec) -> Option<PlatformEntry> {
+    spec.linux_x86_64.clone()
+}
 
 #[cfg(all(target_os = "linux", target_arch = "aarch64"))]
-fn get_current_entry(spec: &ToolSpec) -> Option<PlatformEntry> { spec.linux_aarch64.clone() }
+fn get_current_entry(spec: &ToolSpec) -> Option<PlatformEntry> {
+    spec.linux_aarch64.clone()
+}
 
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-fn get_current_entry(spec: &ToolSpec) -> Option<PlatformEntry> { spec.windows_x86_64.clone() }
+fn get_current_entry(spec: &ToolSpec) -> Option<PlatformEntry> {
+    spec.windows_x86_64.clone()
+}
 
 #[cfg(not(any(
-    all(target_os = "linux",   target_arch = "x86_64"),
-    all(target_os = "linux",   target_arch = "aarch64"),
+    all(target_os = "linux", target_arch = "x86_64"),
+    all(target_os = "linux", target_arch = "aarch64"),
     all(target_os = "windows", target_arch = "x86_64"),
 )))]
-fn get_current_entry(_spec: &ToolSpec) -> Option<PlatformEntry> { None }
+fn get_current_entry(_spec: &ToolSpec) -> Option<PlatformEntry> {
+    None
+}
 
 pub fn user_tool_dir() -> PathBuf {
     dirs::data_local_dir()
@@ -59,10 +73,10 @@ pub fn user_tool_dir() -> PathBuf {
 pub fn tool_version(name: &str) -> Option<String> {
     let m = parse_manifest().ok()?;
     match name {
-        "ffmpeg"  => Some(m.ffmpeg.version),
-        "pandoc"  => Some(m.pandoc.version),
+        "ffmpeg" => Some(m.ffmpeg.version),
+        "pandoc" => Some(m.pandoc.version),
         "calibre" => Some(m.calibre.version),
-        _         => None,
+        _ => None,
     }
 }
 
@@ -76,23 +90,25 @@ pub fn verify_sha256(bytes: &[u8], expected: &str) -> Result<(), String> {
     use sha2::{Digest, Sha256};
     let actual = format!("{:x}", Sha256::digest(bytes));
     if actual != expected {
-        return Err(format!("SHA256 mismatch: expected {expected}, got {actual}"));
+        return Err(format!(
+            "SHA256 mismatch: expected {expected}, got {actual}"
+        ));
     }
     Ok(())
 }
 
 fn extract_binary(bytes: &[u8], archive: &str, path_in_archive: &str) -> Result<Vec<u8>, String> {
     match archive {
-        "tar.gz"  => extract_from_tar(
+        "tar.gz" => extract_from_tar(
             flate2::read::GzDecoder::new(std::io::Cursor::new(bytes)),
             path_in_archive,
         ),
-        "tar.xz"  => extract_from_tar(
+        "tar.xz" => extract_from_tar(
             xz2::read::XzDecoder::new(std::io::Cursor::new(bytes)),
             path_in_archive,
         ),
-        "zip"     => extract_from_zip(bytes, path_in_archive),
-        other     => Err(format!("unsupported archive type: {other}")),
+        "zip" => extract_from_zip(bytes, path_in_archive),
+        other => Err(format!("unsupported archive type: {other}")),
     }
 }
 
@@ -125,19 +141,19 @@ fn extract_from_zip(bytes: &[u8], path_in_archive: &str) -> Result<Vec<u8>, Stri
 
 fn extract_dir(bytes: &[u8], archive: &str, dest: &std::path::Path) -> Result<(), String> {
     match archive {
-        "tar.gz"  => {
+        "tar.gz" => {
             let dec = flate2::read::GzDecoder::new(std::io::Cursor::new(bytes));
             tar::Archive::new(dec)
                 .unpack(dest)
                 .map_err(|e| format!("tar.gz unpack: {e}"))
         }
-        "tar.xz"  => {
+        "tar.xz" => {
             let dec = xz2::read::XzDecoder::new(std::io::Cursor::new(bytes));
             tar::Archive::new(dec)
                 .unpack(dest)
                 .map_err(|e| format!("tar.xz unpack: {e}"))
         }
-        "zip"     => {
+        "zip" => {
             let cursor = std::io::Cursor::new(bytes);
             zip::ZipArchive::new(cursor)
                 .map_err(|e| e.to_string())?
@@ -209,14 +225,12 @@ async fn download_bytes(
 }
 
 pub async fn ensure_tool(app: &tauri::AppHandle, tool_name: &str) -> Result<PathBuf, String> {
-    use tauri::Emitter;
-
     let manifest = parse_manifest()?;
     let spec = match tool_name {
-        "ffmpeg"  => &manifest.ffmpeg,
-        "pandoc"  => &manifest.pandoc,
+        "ffmpeg" => &manifest.ffmpeg,
+        "pandoc" => &manifest.pandoc,
         "calibre" => &manifest.calibre,
-        other     => return Err(format!("unknown tool: {other}")),
+        other => return Err(format!("unknown tool: {other}")),
     };
 
     let entry = get_current_entry(spec)
@@ -224,8 +238,8 @@ pub async fn ensure_tool(app: &tauri::AppHandle, tool_name: &str) -> Result<Path
 
     match entry.mode.as_str() {
         "binary" => ensure_binary_mode(app, tool_name, &entry).await,
-        "dir"    => ensure_dir_mode(app, tool_name, &entry).await,
-        m        => Err(format!("{tool_name}: unknown mode {m}")),
+        "dir" => ensure_dir_mode(app, tool_name, &entry).await,
+        m => Err(format!("{tool_name}: unknown mode {m}")),
     }
 }
 
@@ -308,7 +322,7 @@ mod tests {
     // ── helpers ──────────────────────────────────────────────────────────────
 
     fn make_tar_gz(name: &str, content: &[u8]) -> Vec<u8> {
-        use flate2::{write::GzEncoder, Compression};
+        use flate2::{Compression, write::GzEncoder};
         let enc = GzEncoder::new(Vec::new(), Compression::default());
         let mut tar = tar::Builder::new(enc);
         let mut hdr = tar::Header::new_gnu();
@@ -333,7 +347,7 @@ mod tests {
 
     fn make_zip(name: &str, content: &[u8]) -> Vec<u8> {
         use std::io::Write;
-        use zip::{write::SimpleFileOptions, ZipWriter};
+        use zip::{ZipWriter, write::SimpleFileOptions};
         let mut z = ZipWriter::new(std::io::Cursor::new(Vec::new()));
         z.start_file(name, SimpleFileOptions::default()).unwrap();
         z.write_all(content).unwrap();
@@ -351,7 +365,10 @@ mod tests {
     fn user_tool_dir_is_under_home() {
         let dir = user_tool_dir();
         let home = dirs::home_dir().unwrap();
-        assert!(dir.starts_with(&home), "{dir:?} should be under home {home:?}");
+        assert!(
+            dir.starts_with(&home),
+            "{dir:?} should be under home {home:?}"
+        );
     }
 
     #[test]
@@ -364,12 +381,19 @@ mod tests {
 
     #[test]
     fn sha256_accepts_correct_hash() {
-        verify_sha256(b"", "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855").unwrap();
+        verify_sha256(
+            b"",
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        )
+        .unwrap();
     }
 
     #[test]
     fn sha256_rejects_wrong_hash() {
-        let err = verify_sha256(b"", "0000000000000000000000000000000000000000000000000000000000000000");
+        let err = verify_sha256(
+            b"",
+            "0000000000000000000000000000000000000000000000000000000000000000",
+        );
         assert!(err.is_err(), "should reject wrong hash");
     }
 
@@ -416,7 +440,7 @@ mod tests {
 
     #[test]
     fn extract_dir_tar_gz_writes_files() {
-        use flate2::{write::GzEncoder, Compression};
+        use flate2::{Compression, write::GzEncoder};
         let enc = GzEncoder::new(Vec::new(), Compression::default());
         let mut tar = tar::Builder::new(enc);
         for (name, content) in [("alpha", b"aaa" as &[u8]), ("beta", b"bbb")] {

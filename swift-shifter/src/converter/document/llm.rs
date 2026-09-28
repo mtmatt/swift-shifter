@@ -1,6 +1,8 @@
+use crate::converter::document::OLLAMA_CLIENT;
+use crate::converter::document::binaries::find_any_binary;
+#[cfg(any(target_os = "macos", target_os = "windows"))] // installers below
+use crate::converter::document::binaries::run_silent;
 use tauri::Emitter;
-use crate::converter::document::{OLLAMA_CLIENT};
-use crate::converter::document::binaries::{find_any_binary, run_silent};
 
 #[cfg(target_os = "macos")]
 use crate::converter::document::binaries::find_brew_binary;
@@ -14,7 +16,12 @@ pub async fn ollama_reachable(base_url: &str) -> bool {
             .expect("reqwest client with timeout should always build")
     });
     let url = format!("{}/api/tags", base_url.trim_end_matches('/'));
-    client.get(url).send().await.map(|r| r.status().is_success()).unwrap_or(false)
+    client
+        .get(url)
+        .send()
+        .await
+        .map(|r| r.status().is_success())
+        .unwrap_or(false)
 }
 
 /// Lists all models currently pulled on the local Ollama server.
@@ -26,9 +33,13 @@ pub async fn ollama_list_models(base_url: &str) -> Vec<String> {
             .expect("reqwest client with timeout should always build")
     });
     let url = format!("{}/api/tags", base_url.trim_end_matches('/'));
-    let Ok(resp) = client.get(url).send().await else { return vec![] };
-    let Ok(json) = resp.json::<serde_json::Value>().await else { return vec![] };
-    
+    let Ok(resp) = client.get(url).send().await else {
+        return vec![];
+    };
+    let Ok(json) = resp.json::<serde_json::Value>().await else {
+        return vec![];
+    };
+
     json["models"]
         .as_array()
         .map(|arr| {
@@ -120,10 +131,14 @@ async fn llm_fix_chunk(
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
                 if let Some(token) = json["response"].as_str() {
                     out.push_str(token);
-                    app.emit("llm:progress", serde_json::json!({
-                        "path": input_path,
-                        "token": token,
-                    })).ok();
+                    app.emit(
+                        "llm:progress",
+                        serde_json::json!({
+                            "path": input_path,
+                            "token": token,
+                        }),
+                    )
+                    .ok();
                 }
                 if json["done"].as_bool() == Some(true) {
                     break;
@@ -132,23 +147,18 @@ async fn llm_fix_chunk(
         }
     }
 
-    let trimmed = out.trim()
+    let trimmed = out
+        .trim()
         .trim_start_matches("```markdown")
         .trim_start_matches("```")
         .trim_end_matches("```")
         .trim();
-    let trimmed = trimmed
-        .strip_prefix("Fixed:")
-        .unwrap_or(trimmed)
-        .trim();
+    let trimmed = trimmed.strip_prefix("Fixed:").unwrap_or(trimmed).trim();
 
     // Sanity check: output should be roughly the same size as input.
     // Bail out if empty, ballooned (hallucination), or suspiciously short (truncation).
     let output_chars = trimmed.chars().count();
-    if output_chars == 0
-        || output_chars > input_chars * 2
-        || output_chars < input_chars * 3 / 10
-    {
+    if output_chars == 0 || output_chars > input_chars * 2 || output_chars < input_chars * 3 / 10 {
         return chunk;
     }
 
@@ -202,7 +212,9 @@ pub async fn install_ollama_and_model(
         {
             if let Some(brew) = find_brew_binary() {
                 run_silent(&brew, &["install", "ollama"]).await.ok();
-                run_silent(&brew, &["services", "start", "ollama"]).await.ok();
+                run_silent(&brew, &["services", "start", "ollama"])
+                    .await
+                    .ok();
             }
         }
         #[cfg(target_os = "windows")]
@@ -220,9 +232,11 @@ pub async fn install_ollama_and_model(
         {
             // Automated install via curl|sh is a security risk and violates project policy.
             // Instruct the user to install Ollama manually.
-            app.emit("ollama:step",
-                "Ollama not found. On Linux, install manually: https://ollama.com/download/linux"
-            ).ok();
+            app.emit(
+                "ollama:step",
+                "Ollama not found. On Linux, install manually: https://ollama.com/download/linux",
+            )
+            .ok();
         }
     }
 
@@ -233,7 +247,7 @@ pub async fn install_ollama_and_model(
     if !reachable {
         app.emit("ollama:step", "Starting Ollama server…").ok();
         if let Some(bin) = find_any_binary(&["ollama", "ollama.exe"]) {
-            let mut cmd = tokio::process::Command::new(&bin);
+            let mut cmd = crate::process::async_command(&bin);
             cmd.arg("serve");
             // Prevent child from inheriting stdout/stderr which could keep app alive or spam logs
             cmd.stdout(std::process::Stdio::null());
@@ -255,10 +269,13 @@ pub async fn install_ollama_and_model(
     }
 
     if !reachable {
-        return Err("Ollama server is not reachable and could not be started automatically.".to_string());
+        return Err(
+            "Ollama server is not reachable and could not be started automatically.".to_string(),
+        );
     }
 
-    app.emit("ollama:step", format!("Pulling model {}…", model)).ok();
+    app.emit("ollama:step", format!("Pulling model {}…", model))
+        .ok();
 
     let client = OLLAMA_CLIENT.get_or_init(|| {
         reqwest::Client::builder()
@@ -273,7 +290,11 @@ pub async fn install_ollama_and_model(
         "stream": true,
     });
 
-    let resp = client.post(&url).json(&payload).send().await
+    let resp = client
+        .post(&url)
+        .json(&payload)
+        .send()
+        .await
         .map_err(|e| format!("Failed to connect to Ollama: {}", e))?;
 
     if !resp.status().is_success() {
@@ -286,13 +307,13 @@ pub async fn install_ollama_and_model(
     while let Some(item) = stream.next().await {
         let Ok(chunk) = item else { break };
         for line in String::from_utf8_lossy(&chunk).lines() {
-            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line) {
-                if let (Some(completed), Some(total)) = (json["completed"].as_f64(), json["total"].as_f64()) {
-                    if total > 0.0 {
-                        let pct = (completed / total * 100.0) as f32;
-                        app.emit("ollama:progress", pct).ok();
-                    }
-                }
+            if let Ok(json) = serde_json::from_str::<serde_json::Value>(line)
+                && let (Some(completed), Some(total)) =
+                    (json["completed"].as_f64(), json["total"].as_f64())
+                && total > 0.0
+            {
+                let pct = (completed / total * 100.0) as f32;
+                app.emit("ollama:progress", pct).ok();
             }
         }
     }

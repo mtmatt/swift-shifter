@@ -21,7 +21,7 @@ fn sips_convert(path: &str, sips_format: &str, out: &Path) -> Result<(), String>
     // sips echoes the input/output paths to stdout. Null it so the CLI's stdout
     // stays clean (the converted path is the only thing callers should see);
     // capture stderr so a failure reports sips's actual diagnostic.
-    let output = std::process::Command::new("sips")
+    let output = crate::process::sync_command("sips")
         .args([
             "-s",
             "format",

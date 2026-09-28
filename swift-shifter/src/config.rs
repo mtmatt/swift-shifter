@@ -33,24 +33,36 @@ pub struct Config {
     pub clipboard_output_mode: String,
 }
 
-fn default_jpeg_quality() -> u8 { 75 }
-fn default_avif_quality() -> u8 { 65 }
-fn default_max_concurrent() -> usize { 4 }
-fn default_local_llm_model() -> String { "gemma4:e2b".to_string() }
-fn default_local_llm_url() -> String { "http://localhost:11434".to_string() }
-fn default_clipboard_output_mode() -> String { "clipboard".to_string() }
+fn default_jpeg_quality() -> u8 {
+    75
+}
+fn default_avif_quality() -> u8 {
+    65
+}
+fn default_max_concurrent() -> usize {
+    4
+}
+fn default_local_llm_model() -> String {
+    "gemma4:e2b".to_string()
+}
+fn default_local_llm_url() -> String {
+    "http://localhost:11434".to_string()
+}
+fn default_clipboard_output_mode() -> String {
+    "clipboard".to_string()
+}
 
 impl Default for Config {
     fn default() -> Self {
         Self {
             output_dir: None,
-            jpeg_quality:   default_jpeg_quality(),
-            avif_quality:   default_avif_quality(),
+            jpeg_quality: default_jpeg_quality(),
+            avif_quality: default_avif_quality(),
             max_concurrent: default_max_concurrent(),
             use_marker_pdf: false,
-            use_local_llm:  false,
+            use_local_llm: false,
             local_llm_model: default_local_llm_model(),
-            local_llm_url:   default_local_llm_url(),
+            local_llm_url: default_local_llm_url(),
             clipboard_output_mode: default_clipboard_output_mode(),
         }
     }

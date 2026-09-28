@@ -1,12 +1,13 @@
 // Prevents additional console window on Windows in release, DO NOT REMOVE!!
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-mod clipboard;
 mod cli;
+mod clipboard;
 mod config;
 mod converter;
 mod downloader;
 mod hotkey;
+mod process;
 mod tray;
 
 use serde::{Deserialize, Serialize};
@@ -111,23 +112,7 @@ fn main() {
             let menu_handle = app.handle().clone();
             app.on_menu_event(move |_app, event| {
                 if event.id() == "preferences" {
-                    // Focus existing settings window if already open
-                    if let Some(win) = menu_handle.get_webview_window("settings") {
-                        let _ = win.show();
-                        let _ = win.set_focus();
-                        return;
-                    }
-                    let _ = tauri::WebviewWindowBuilder::new(
-                        &menu_handle,
-                        "settings",
-                        tauri::WebviewUrl::App("settings.html".into()),
-                    )
-                    .title("Preferences")
-                    .inner_size(420.0, 440.0)
-                    .resizable(false)
-                    .always_on_top(true)
-                    .center()
-                    .build();
+                    tray::open_or_focus_settings(&menu_handle);
                 }
             });
 
@@ -183,13 +168,15 @@ fn main() {
                 let cfg = handle.state::<AppState>().config.lock().unwrap().clone();
                 let url = cfg.local_llm_url.clone();
                 let model = cfg.local_llm_model.clone();
-                
+
                 if cfg.use_local_llm {
                     // Try to start Ollama if it's not reachable
-                    if !converter::document::ollama_reachable(&url).await {
-                        if let Ok(Some(child)) = converter::document::install_ollama_and_model(&handle, &url, &model).await {
-                            *handle.state::<AppState>().ollama_process.lock().unwrap() = Some(child);
-                        }
+                    if !converter::document::ollama_reachable(&url).await
+                        && let Ok(Some(child)) =
+                            converter::document::install_ollama_and_model(&handle, &url, &model)
+                                .await
+                    {
+                        *handle.state::<AppState>().ollama_process.lock().unwrap() = Some(child);
                     }
                 }
 
@@ -206,9 +193,13 @@ fn main() {
         })
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                // Hide instead of close so the app stays in tray
-                window.hide().unwrap_or_default();
-                api.prevent_close();
+                // Hide the main drop-zone window instead of closing it so the
+                // app stays resident in the tray. Other windows (settings)
+                // close normally and are recreated on next open.
+                if window.label() == "main" {
+                    window.hide().unwrap_or_default();
+                    api.prevent_close();
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -239,13 +230,17 @@ fn main() {
         ])
         .build(context)
         .expect("error while building tauri application")
-        .run(|_app_handle, event| match event {
-            tauri::RunEvent::ExitRequested { .. } => {
-                if let Some(mut child) = _app_handle.state::<AppState>().ollama_process.lock().unwrap().take() {
-                    let _ = child.start_kill();
-                }
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::ExitRequested { .. } = event
+                && let Some(mut child) = app_handle
+                    .state::<AppState>()
+                    .ollama_process
+                    .lock()
+                    .unwrap()
+                    .take()
+            {
+                let _ = child.start_kill();
             }
-            _ => {}
         });
 }
 
@@ -369,8 +364,7 @@ async fn trim_media(
     end: String,
 ) -> Result<String, String> {
     let cfg = state.config.lock().unwrap().clone();
-    converter::media::trim_media(&app_handle, &path, &start, &end, cfg.output_dir.as_deref())
-        .await
+    converter::media::trim_media(&app_handle, &path, &start, &end, cfg.output_dir.as_deref()).await
 }
 
 #[tauri::command]
@@ -436,13 +430,14 @@ fn get_config(state: tauri::State<'_, AppState>) -> config::Config {
 }
 
 #[tauri::command]
-fn set_config(app: tauri::AppHandle, state: tauri::State<'_, AppState>, new_config: config::Config) -> Result<(), String> {
+fn set_config(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    new_config: config::Config,
+) -> Result<(), String> {
     // Validate local_llm_url is a well-formed HTTP/HTTPS URL
     let llm_url = new_config.local_llm_url.trim().to_string();
-    if !llm_url.is_empty()
-        && !llm_url.starts_with("http://")
-        && !llm_url.starts_with("https://")
-    {
+    if !llm_url.is_empty() && !llm_url.starts_with("http://") && !llm_url.starts_with("https://") {
         return Err(format!(
             "Invalid local LLM URL '{}': must start with http:// or https://",
             llm_url
@@ -455,7 +450,7 @@ fn set_config(app: tauri::AppHandle, state: tauri::State<'_, AppState>, new_conf
         avif_quality: new_config.avif_quality.clamp(1, 100),
         max_concurrent: new_config.max_concurrent.clamp(1, 8),
         use_marker_pdf: new_config.use_marker_pdf,
-        use_local_llm:  new_config.use_local_llm,
+        use_local_llm: new_config.use_local_llm,
         local_llm_model: new_config.local_llm_model,
         local_llm_url: llm_url,
         clipboard_output_mode: match new_config.clipboard_output_mode.as_str() {
@@ -487,7 +482,12 @@ async fn list_ollama_models(state: tauri::State<'_, AppState>) -> Result<Vec<Str
 }
 
 #[tauri::command]
-async fn install_ollama_and_model(app: tauri::AppHandle, state: tauri::State<'_, AppState>, base_url: String, model: String) -> Result<(), String> {
+async fn install_ollama_and_model(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, AppState>,
+    base_url: String,
+    model: String,
+) -> Result<(), String> {
     match converter::document::install_ollama_and_model(&app, &base_url, &model).await {
         Ok(Some(child)) => {
             *state.ollama_process.lock().unwrap() = Some(child);
@@ -522,17 +522,17 @@ async fn open_output_folder(path: String) -> Result<(), String> {
         p.parent().ok_or("No parent directory")?.to_path_buf()
     };
     #[cfg(target_os = "macos")]
-    std::process::Command::new("open")
+    crate::process::sync_command("open")
         .arg(&dir)
         .spawn()
         .map_err(|e| e.to_string())?;
     #[cfg(target_os = "windows")]
-    std::process::Command::new("explorer")
+    crate::process::sync_command("explorer")
         .arg(&dir)
         .spawn()
         .map_err(|e| e.to_string())?;
     #[cfg(target_os = "linux")]
-    std::process::Command::new("xdg-open")
+    crate::process::sync_command("xdg-open")
         .arg(&dir)
         .spawn()
         .map_err(|e| e.to_string())?;
@@ -545,9 +545,7 @@ async fn merge_pdfs(
     paths: Vec<String>,
 ) -> Result<String, String> {
     let cfg = state.config.lock().unwrap().clone();
-    tokio::task::spawn_blocking(move || {
-        converter::merge_pdfs(&paths, cfg.output_dir.as_deref())
-    })
-    .await
-    .map_err(|e| format!("task panicked: {e}"))?
+    tokio::task::spawn_blocking(move || converter::merge_pdfs(&paths, cfg.output_dir.as_deref()))
+        .await
+        .map_err(|e| format!("task panicked: {e}"))?
 }

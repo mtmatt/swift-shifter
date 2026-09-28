@@ -15,7 +15,8 @@ npm run build               # frontend only: tsc typecheck + vite build
 # Rust (run from swift-shifter/)
 cargo test                          # all Rust tests
 cargo test test_merge_pdfs          # single test by name substring
-cargo clippy                        # lint (CI runs this; keep it clean)
+cargo clippy --all-targets -- -D warnings  # lint (CI enforces this)
+cargo fmt                           # format (CI runs `cargo fmt --check`)
 cargo build                         # compile check without bundling
 ```
 
@@ -77,11 +78,11 @@ Releases are cut from a long-lived `release` branch, not automatically from ever
 1. Features land on `main` via small, single-purpose PRs (squash-merged).
 2. Periodically, `main` is merged into `release` (`Merge branch 'main' into release`).
 3. On `release`, run `./scripts/bump-version.sh X.Y.Z` and commit the result as `chore: bump version to X.Y.Z`. The script syncs `package.json`, `swift-shifter/Cargo.toml`, and `swift-shifter/tauri.conf.json` — these three **must agree**, since the release build matrix reads them.
-4. Push the bump commit, then create and push the tag by hand: `git tag vX.Y.Z && git push origin vX.Y.Z`. An earlier `tag.yml` workflow auto-created this tag on every push to `release`, gating on the three version files matching; it was deleted in `chore: remove unused workflow` (commit `aa66082`), so tagging is now a manual step — nothing currently re-validates that the three files agree before a tag is pushed.
+4. Push the bump commit, then create and push the tag by hand: `git tag vX.Y.Z && git push origin vX.Y.Z`. An earlier `tag.yml` workflow auto-created this tag on every push to `release`, gating on the three version files matching; it was deleted in `chore: remove unused workflow` (commit `aa66082`), so tagging is now a manual step. `release.yml` starts with a `verify-version` job that runs `scripts/check-version.sh <tag>` and fails the release if the tag and the three files disagree; run that script yourself before tagging to catch it earlier.
 5. The `v*` tag push triggers `.github/workflows/release.yml`, which builds signed bundles across a matrix — macOS (dmg + universal updater artifact), Windows (msi/nsis, Authenticode-signed if `WINDOWS_CERTIFICATE`/`WINDOWS_CERTIFICATE_PASSWORD` are configured), Ubuntu (deb + AppImage), and Fedora (rpm only, built inside a `fedora:latest` container since AppImage needs FUSE, which containers don't have) — via `tauri-apps/tauri-action`. macOS builds are signed/notarized when `APPLE_*` secrets are present. Each target with a `rust-target` also gets a raw `swift-shifter` binary archive uploaded for `cargo binstall`. Everything is published as a **draft** GitHub release (`releaseDraft: true`) — a maintainer reviews and publishes it manually afterward.
 6. `release` is then merged back into `main` (`Merge branch 'release'`) so `main` picks up the version bump.
 
-Every push to `main` or `release`, and every pull request, also runs `.github/workflows/build.yml`: a compile-only matrix (macOS, Windows, Ubuntu, Fedora, Arch) running `tsc --noEmit`, `npm run build`, and `tauri build --no-bundle` — a build-health gate producing no artifacts, distinct from the signed release build.
+Every push to `main` or `release`, and every pull request, also runs `.github/workflows/build.yml`: a compile-only matrix (macOS, Windows, Ubuntu, Fedora, Arch) running `tsc --noEmit`, `npm run build`, `cargo clippy --all-targets -- -D warnings` (per OS, since cfg-gated code differs), and `tauri build --no-bundle`, plus `cargo fmt --check` and `scripts/check-version.sh` on Ubuntu — a build-health gate producing no artifacts, distinct from the signed release build.
 
 ## Rules
 
