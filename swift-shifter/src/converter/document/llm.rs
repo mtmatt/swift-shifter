@@ -234,6 +234,7 @@ pub async fn install_ollama_and_model(
         app.emit("ollama:step", "Starting Ollama server…").ok();
         if let Some(bin) = find_any_binary(&["ollama", "ollama.exe"]) {
             let mut cmd = tokio::process::Command::new(&bin);
+            crate::no_window!(cmd);
             cmd.arg("serve");
             // Prevent child from inheriting stdout/stderr which could keep app alive or spam logs
             cmd.stdout(std::process::Stdio::null());

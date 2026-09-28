@@ -240,8 +240,9 @@ pub async fn ensure_ebook_convert(app: &tauri::AppHandle) -> Result<(), String> 
         app.emit("ebook-convert:installing", ()).ok();
         let version = crate::downloader::tool_version("calibre").unwrap_or_default();
         let ok = if which::which("winget").is_ok() {
-            tokio::process::Command::new("winget")
-                .args([
+            let mut cmd = tokio::process::Command::new("winget");
+            crate::no_window!(cmd);
+            cmd.args([
                     "install", "--id", "calibre.calibre",
                     "--version", &version,
                     "--scope", "user",
@@ -297,8 +298,9 @@ pub fn ebook_convert_available() -> bool {
 }
 
 fn python_has_pymupdf4llm(python: &PathBuf) -> bool {
-    std::process::Command::new(python)
-        .args(["-c", "import pymupdf4llm"])
+    let mut cmd = std::process::Command::new(python);
+    crate::no_window!(cmd);
+    cmd.args(["-c", "import pymupdf4llm"])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .status()
@@ -397,7 +399,9 @@ pub async fn ensure_pymupdf4llm(app: &tauri::AppHandle) -> Result<(), String> {
     // Install via pipx (isolated venv, works with externally-managed Python)
     // --include-deps is required because pymupdf4llm exposes no CLI entry points itself
     if let Ok(pipx_path) = which::which("pipx") {
-        let ok = tokio::process::Command::new(&pipx_path)
+        let mut cmd = tokio::process::Command::new(&pipx_path);
+        crate::no_window!(cmd);
+        let ok = cmd
             .args(["install", "pymupdf4llm", "--include-deps"])
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
@@ -585,7 +589,9 @@ pub fn marker_step(app: &tauri::AppHandle, msg: &str) {
 }
 
 pub async fn run_silent(program: &PathBuf, args: &[&str]) -> Result<(), String> {
-    let out = tokio::process::Command::new(program)
+    let mut cmd = tokio::process::Command::new(program);
+    crate::no_window!(cmd);
+    let out = cmd
         .args(args)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
