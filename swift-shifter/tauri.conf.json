@@ -1,6 +1,6 @@
 {
   "productName": "Swift Shifter",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "identifier": "com.swiftshifter.app",
   "build": {
     "beforeDevCommand": "npm run dev",
