@@ -167,6 +167,7 @@ fn test_detect_output_formats_snapshot() {
         ("/x.tex", &["md", "html", "pdf", "typst"]),
         ("/x.latex", &["md", "html", "pdf", "typst"]),
         ("/x.typst", &["md", "html", "pdf", "tex"]),
+        ("/x.typ", &["md", "html", "pdf", "tex"]),
         ("/x.epub", &["pdf", "mobi", "md", "html"]),
         ("/x.mobi", &["epub", "pdf", "html", "md"]),
         ("/x.pdf", &["epub", "mobi", "html", "md"]),
@@ -218,6 +219,13 @@ fn test_find_path_multi_hop_png_to_mobi() {
 fn test_find_path_normalizes_aliases() {
     let p = crate::converter::graph::find_path("jpeg", "png").unwrap();
     assert_eq!(p, vec!["jpg".to_string(), "png".to_string()]);
+}
+
+#[test]
+fn test_find_path_accepts_typ_extension() {
+    // `.typ` is Typst's real extension; it must route like `.typst`.
+    let p = crate::converter::graph::find_path("typ", "pdf").unwrap();
+    assert_eq!(p, vec!["typst".to_string(), "pdf".to_string()]);
 }
 
 #[test]

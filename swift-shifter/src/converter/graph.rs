@@ -40,6 +40,7 @@ pub fn normalize_ext(ext: &str) -> &str {
         "tif" => "tiff",
         "markdown" => "md",
         "latex" => "tex",
+        "typ" => "typst",
         "heif" => "heic",
         other => other,
     }
