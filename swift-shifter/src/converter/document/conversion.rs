@@ -3,6 +3,7 @@ use crate::converter::document::llm::*;
 use crate::converter::document::pdf;
 use crate::converter::document::types::*;
 use crate::converter::document::utils::*;
+use crate::converter::graph::normalize_ext;
 use std::path::Path;
 use tauri::Emitter;
 
@@ -369,7 +370,7 @@ pub async fn convert_document(
 
     // typst → pdf is best served by `typst compile` directly: it's the native
     // toolchain, needs no LaTeX/PDF engine, and renders faster than pandoc.
-    if input_ext == "typst" && target_format == "pdf" {
+    if normalize_ext(&input_ext) == "typst" && target_format == "pdf" {
         return convert_typst_to_pdf(app, path, output_dir).await;
     }
 

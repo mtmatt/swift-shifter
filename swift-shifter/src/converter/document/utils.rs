@@ -62,7 +62,7 @@ pub fn ext_to_pandoc_format(ext: &str) -> &str {
         "md" | "markdown" => "markdown",
         "txt" => "plain",
         "tex" | "latex" => "latex",
-        "typst" => "typst",
+        "typ" | "typst" => "typst",
         "epub" => "epub",
         "pdf" => "pdf",
         _ => ext,
@@ -79,10 +79,12 @@ pub fn ext_to_pandoc_input_format(ext: &str) -> &str {
     }
 }
 
-/// Output file extension for a given target format keyword.
+/// Output file extension for a given target format keyword. Typst output is
+/// written as `.typ`, the extension `typst compile` and editors expect.
 pub fn target_to_ext(target: &str) -> &str {
     match target {
         "latex" => "tex",
+        "typst" => "typ",
         _ => target,
     }
 }
@@ -101,8 +103,16 @@ mod tests {
 
     #[test]
     fn input_format_matches_output_for_non_txt() {
-        for ext in ["md", "tex", "latex", "typst", "epub", "pdf"] {
+        for ext in ["md", "tex", "latex", "typ", "typst", "epub", "pdf"] {
             assert_eq!(ext_to_pandoc_input_format(ext), ext_to_pandoc_format(ext));
         }
+    }
+
+    #[test]
+    fn typst_reads_from_typ_and_writes_typ() {
+        assert_eq!(ext_to_pandoc_input_format("typ"), "typst");
+        assert_eq!(target_to_ext("typst"), "typ");
+        assert_eq!(target_to_ext("latex"), "tex");
+        assert_eq!(target_to_ext("md"), "md");
     }
 }
