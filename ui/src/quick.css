@@ -1,0 +1,211 @@
+@import "./tokens.css";
+
+/* Heights here must match the layout constants in quick.ts. */
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html,
+body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background: var(--bg);
+}
+
+/* macOS: the window is transparent, so the panel itself draws the shape. */
+:root[data-platform="macos"],
+:root[data-platform="macos"] body {
+    background: transparent;
+}
+
+#panel {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    border: 1px solid var(--border-hi);
+    color: var(--text);
+    font-family: var(--font-ui);
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+}
+
+:root[data-platform="macos"] #panel {
+    border-radius: 12px;
+}
+
+/* ─── Search field ────────────────────────────────────────────────────── */
+#bar {
+    flex: 0 0 54px; /* 56px window minus the 1px borders */
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 18px;
+}
+
+#search-icon {
+    flex-shrink: 0;
+    color: var(--text-3);
+}
+
+#query {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    background: transparent;
+    border: none;
+    outline: none;
+    color: inherit;
+    font: inherit;
+    font-size: 20px;
+    caret-color: var(--accent);
+}
+
+#query::placeholder {
+    color: var(--text-3);
+}
+
+#hint {
+    flex-shrink: 0;
+    padding: 2px 6px;
+    border: 1px solid var(--border-hi);
+    border-radius: 4px;
+    color: var(--text-3);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    white-space: nowrap;
+}
+
+/* ─── Results ─────────────────────────────────────────────────────────── */
+#results {
+    list-style: none;
+    padding: 8px;
+    border-top: 1px solid var(--border);
+}
+
+#results:empty {
+    display: none;
+}
+
+.row {
+    height: 48px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 0 10px;
+    border-radius: 8px;
+    cursor: default;
+}
+
+.row[aria-selected="true"] {
+    background: var(--surface-hi);
+}
+
+.ext {
+    flex: 0 0 44px;
+    padding: 3px 0;
+    border-radius: 4px;
+    background: var(--accent-dim);
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-align: center;
+    text-transform: uppercase;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.name,
+.meta {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.name {
+    font-size: 14px;
+}
+
+.meta {
+    font-size: 11px;
+    color: var(--text-3);
+}
+
+/* ─── Format picker ───────────────────────────────────────────────────── */
+.formats {
+    flex-shrink: 1;
+    min-width: 0;
+    display: flex;
+    gap: 4px;
+    overflow: hidden;
+}
+
+.formats::before {
+    content: "→";
+    align-self: center;
+    margin-right: 2px;
+    color: var(--text-3);
+}
+
+.format {
+    flex-shrink: 0;
+    padding: 3px 7px;
+    background: transparent;
+    border: 1px solid var(--border-hi);
+    border-radius: 4px;
+    color: var(--text-2);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.format:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.format.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--on-accent);
+}
+
+/* ─── Status line ─────────────────────────────────────────────────────── */
+#status {
+    flex: 0 0 32px;
+    display: flex;
+    align-items: center;
+    padding: 0 18px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-2);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#status.idle {
+    display: none;
+}
+
+#status.done {
+    color: var(--success);
+}
+
+#status.failed {
+    color: var(--danger);
+}

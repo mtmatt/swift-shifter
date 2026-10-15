@@ -10,6 +10,8 @@
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,
     "skipLibCheck": true,
+    // Type-check only; Vite compiles the TypeScript.
+    "noEmit": true,
   },
   "include": ["ui/src"],
 }

@@ -1,6 +1,6 @@
 # Swift Shifter
 
-A featherweight, always-on file converter that lives in your menu bar. Drop any file onto the floating window, or select files and hit a hotkey, and get instant format conversion without opening a browser or bulky software.
+A featherweight, always-on file converter that lives in your menu bar. Press a hotkey, type a few letters of a recent file, and convert it, or drop files onto the main window, all without opening a browser or bulky software.
 
 <div align="center">
 <img src="docs/assets/example.png" alt="Description of the image">
@@ -8,8 +8,8 @@ A featherweight, always-on file converter that lives in your menu bar. Drop any 
 
 ## Features
 
-- **Floating drop zone** -- a small, always-on-top window accepts drag-and-drop from Finder or any file manager
-- **Global hotkey** -- cmd + shift + Space toggles the window; conversion options appear immediately
+- **Quick bar** -- Ctrl + Shift + Space (or a click on the tray icon) opens a Spotlight-style search bar that suggests recently changed files from Desktop, Documents and Downloads; type to filter, Tab to pick a format (or type "photo to jpg"), Enter to convert
+- **Drop zone** -- the main window, opened from the Dock / Start menu or the tray menu, accepts drag-and-drop from Finder or any file manager
 - **Zero-friction UX** -- one click to pick the output format, conversion starts instantly
 - **Broad format support**
   - Images: WebP, PNG, JPEG, AVIF, GIF, BMP, TIFF, HEIC/HEIF
@@ -153,7 +153,7 @@ This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Push
 
 - [x] Core Tauri shell + system tray
 - [x] Drop zone window with drag-and-drop
-- [x] Global hotkey (⌘⇧Space) → file picker fallback
+- [x] Global hotkey (Ctrl+Shift+Space) → quick bar with recent-file search
 - [x] Image conversion (PNG/WebP/JPEG/AVIF/HEIC)
 - [x] Data conversion (JSON/YAML/TOML/CSV)
 - [x] Video/audio via ffmpeg subprocess

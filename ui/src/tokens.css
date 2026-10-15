@@ -9,6 +9,9 @@
     --font-mono:
         "SF Mono", "Menlo", "Cascadia Code", "Consolas", "DejaVu Sans Mono",
         "Liberation Mono", ui-monospace, monospace;
+    --font-ui:
+        -apple-system, BlinkMacSystemFont, "Segoe UI", "Cantarell", "Ubuntu",
+        system-ui, sans-serif;
 
     /* Background */
     --bg: #0d0d10;

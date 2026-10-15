@@ -8,6 +8,8 @@ mod converter;
 mod downloader;
 mod hotkey;
 mod process;
+mod quick;
+mod recent;
 mod tray;
 
 use serde::{Deserialize, Serialize};
@@ -83,6 +85,7 @@ fn main() {
                 ollama_process: std::sync::Mutex::new(None),
             });
 
+            quick::create(app)?;
             tray::setup_tray(app)?;
             if let Err(e) = hotkey::register_shortcut(app) {
                 eprintln!("Hotkey registration failed (non-fatal): {e}");
@@ -191,16 +194,18 @@ fn main() {
             });
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                // Hide the main drop-zone window instead of closing it so the
-                // app stays resident in the tray. Other windows (settings)
-                // close normally and are recreated on next open.
-                if window.label() == "main" {
-                    window.hide().unwrap_or_default();
-                    api.prevent_close();
-                }
+        .on_window_event(|window, event| match event {
+            // Hide the main drop-zone window instead of closing it so the
+            // app stays resident in the tray. Other windows (settings)
+            // close normally and are recreated on next open.
+            WindowEvent::CloseRequested { api, .. } if window.label() == "main" => {
+                window.hide().unwrap_or_default();
+                api.prevent_close();
             }
+            WindowEvent::Focused(false) if window.label() == quick::LABEL => {
+                quick::hide_on_blur(window);
+            }
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             clipboard::paste_from_clipboard,
@@ -208,6 +213,8 @@ fn main() {
             clipboard::copy_file_to_clipboard,
             clipboard::remove_temp_file,
             detect_format,
+            recent_files,
+            quick::hide_quick_bar,
             convert,
             convert_batch,
             trim_media,
@@ -290,6 +297,15 @@ async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 async fn detect_format(path: String) -> Result<converter::graph::DetectResult, String> {
     converter::graph::detect_with_chains(&path)
+}
+
+/// Convertible files from Desktop, Documents and Downloads, newest first, for
+/// the quick bar.
+#[tauri::command]
+async fn recent_files() -> Result<Vec<recent::RecentFile>, String> {
+    tokio::task::spawn_blocking(|| recent::scan(&recent::default_roots(), recent::MAX_RESULTS))
+        .await
+        .map_err(|e| format!("task panicked: {e}"))
 }
 
 #[tauri::command]
@@ -578,6 +594,15 @@ mod window_config_tests {
         let main = main_window(include_str!("../tauri.conf.json"));
         assert_eq!(main["decorations"], true);
         assert_eq!(main["transparent"], false);
+    }
+
+    #[test]
+    fn main_window_is_a_regular_window() {
+        // The quick bar is the floating surface now; the main window opens
+        // centred like any app window and doesn't stay on top.
+        let main = main_window(include_str!("../tauri.conf.json"));
+        assert_eq!(main["alwaysOnTop"], false);
+        assert_eq!(main["center"], true);
     }
 
     #[test]

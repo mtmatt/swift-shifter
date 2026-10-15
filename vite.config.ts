@@ -16,6 +16,9 @@ export default defineConfig({
   },
   // to access Tauri environment variables set by the CLI with information about the current target
   envPrefix: ["VITE_", "TAURI_ENV_*"],
+  test: {
+    include: ["src/**/*.test.ts"],
+  },
   build: {
     // Tauri uses Chromium on Windows and WebKit on macOS and Linux
     target:
@@ -29,6 +32,7 @@ export default defineConfig({
       input: {
         main: resolve(__dirname, "ui/index.html"),
         settings: resolve(__dirname, "ui/settings.html"),
+        quick: resolve(__dirname, "ui/quick.html"),
       },
     },
   },
