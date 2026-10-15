@@ -7,6 +7,15 @@ use tauri::{
 /// Id Tauri gives the tray it creates from `app.trayIcon` in tauri.conf.json.
 const CONFIG_TRAY_ID: &str = "main";
 
+/// Show and focus the main window. Closing it only hides it, so this is how
+/// it comes back.
+pub fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        window.show().unwrap_or_default();
+        window.set_focus().unwrap_or_default();
+    }
+}
+
 /// Show the settings window, focusing it if it is already open.
 pub fn open_or_focus_settings(app: &tauri::AppHandle) {
     if let Some(win) = app.get_webview_window("settings") {
@@ -41,12 +50,7 @@ pub fn setup_tray(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         .ok_or("tray icon from tauri.conf.json `app.trayIcon` is missing")?;
     tray.set_menu(Some(menu))?;
     tray.on_menu_event(|app, event| match event.id.as_ref() {
-        "show" => {
-            if let Some(window) = app.get_webview_window("main") {
-                window.show().unwrap_or_default();
-                window.set_focus().unwrap_or_default();
-            }
-        }
+        "show" => show_main_window(app),
         "preferences" => open_or_focus_settings(app),
         "quit" => {
             app.exit(0);

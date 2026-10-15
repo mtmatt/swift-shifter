@@ -15,6 +15,10 @@
         "visible": true,
         "center": false
       }
-    ]
+    ],
+    "trayIcon": {
+      "iconPath": "icons/tray-template.png",
+      "iconAsTemplate": true
+    }
   }
 }
