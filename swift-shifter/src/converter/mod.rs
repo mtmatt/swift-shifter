@@ -65,6 +65,7 @@ async fn run_single_hop(
         Hop::EpubToMobi => document::convert_epub_to_mobi(app, path, out_dir).await,
         Hop::MobiInput => document::convert_mobi(app, path, to, out_dir).await,
         Hop::DocumentPandoc => document::convert_document(app, path, to, out_dir).await,
+        Hop::DocumentNative => document::native::convert_document(app, path, to, out_dir).await,
         Hop::PdfToMobi => {
             let llm = pdf_llm_cfg(config);
             document::convert_pdf_to_mobi(app, path, out_dir, config.use_marker_pdf, llm).await

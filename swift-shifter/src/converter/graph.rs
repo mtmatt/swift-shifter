@@ -39,6 +39,7 @@ pub fn normalize_ext(ext: &str) -> &str {
         "yml" => "yaml",
         "tif" => "tiff",
         "markdown" => "md",
+        "htm" => "html",
         "latex" => "tex",
         "typ" => "typst",
         "heif" => "heic",
@@ -122,7 +123,9 @@ pub fn edges() -> Vec<Edge> {
     push("csv", "yaml", 1, Always);
 
     // ---- Documents & ebooks ----
-    // cost rule: render to pdf = 6, extract from pdf = 8, otherwise 4.
+    // cost rule: render to pdf = 6, extract from pdf = 8, to plain text = 5
+    // (it drops all formatting, so chains shouldn't pass through it),
+    // otherwise 4.
     let doc: &[(&str, &[&str])] = &[
         ("md", &["txt", "html", "pdf", "tex", "typst"]),
         ("txt", &["md", "html", "pdf", "tex", "typst"]),
@@ -131,6 +134,8 @@ pub fn edges() -> Vec<Edge> {
         ("epub", &["pdf", "mobi", "md", "html"]),
         ("mobi", &["epub", "pdf", "html", "md"]),
         ("pdf", &["epub", "mobi", "html", "md"]),
+        // Reached as an input only; md covers html's other targets by chaining.
+        ("html", &["md", "txt"]),
     ];
     for &(from, tos) in doc {
         for &to in tos {
@@ -138,6 +143,8 @@ pub fn edges() -> Vec<Edge> {
                 6
             } else if from == "pdf" {
                 8
+            } else if to == "txt" {
+                5
             } else {
                 4
             };
@@ -183,6 +190,7 @@ pub enum Hop {
     PdfToMd,
     PdfToEpubOrMarker,
     DocumentPandoc, // document::convert_document (md/txt/tex/typst, epub non-mobi)
+    DocumentNative, // document::native (md/txt/html ↔ md/txt/html)
 }
 
 /// Classify a single hop. Inputs MUST already be normalized.
@@ -227,6 +235,9 @@ pub fn route_hop(from: &str, to: &str) -> Option<Hop> {
             "epub" => Some(PdfToEpubOrMarker),
             _ => None,
         },
+        "md" | "txt" | "html" if crate::converter::document::native::handles(from, to) => {
+            Some(DocumentNative)
+        }
         "md" | "txt" | "tex" | "typst" => Some(DocumentPandoc),
         _ => None,
     }

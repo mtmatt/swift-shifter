@@ -317,3 +317,48 @@ fn test_chain_output_dir_bare_filename_uses_cwd() {
 fn test_detect_with_chains_unknown_errors() {
     assert!(crate::converter::graph::detect_with_chains("/x.xyz").is_err());
 }
+
+#[test]
+fn test_native_engine_routes_md_txt_html_hops() {
+    use crate::converter::graph::{Hop, route_hop};
+    for (from, to) in [
+        ("md", "html"),
+        ("md", "txt"),
+        ("txt", "md"),
+        ("txt", "html"),
+        ("html", "md"),
+        ("html", "txt"),
+    ] {
+        assert_eq!(
+            route_hop(from, to),
+            Some(Hop::DocumentNative),
+            "{from}->{to}"
+        );
+    }
+    // Not covered natively yet: still pandoc.
+    for (from, to) in [
+        ("md", "pdf"),
+        ("tex", "html"),
+        ("typst", "md"),
+        ("epub", "html"),
+    ] {
+        assert_eq!(
+            route_hop(from, to),
+            Some(Hop::DocumentPandoc),
+            "{from}->{to}"
+        );
+    }
+}
+
+#[test]
+fn test_html_is_an_input_and_chains_through_markdown() {
+    use crate::converter::graph::{direct_targets, find_path, normalize_ext};
+    assert_eq!(normalize_ext("htm"), "html");
+    let mut direct = direct_targets("html");
+    direct.sort();
+    assert_eq!(direct, ["md", "txt"]);
+    assert_eq!(
+        find_path("html", "pdf").expect("html reaches pdf"),
+        ["html", "md", "pdf"]
+    );
+}
