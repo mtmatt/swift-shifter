@@ -7,16 +7,17 @@
         <link rel="stylesheet" href="src/settings.css" />
     </head>
     <body>
-        <div class="tab-bar">
-            <button class="tab active" data-panel="image">image</button>
-            <button class="tab" data-panel="engines">engines</button>
-            <button class="tab" data-panel="output">output</button>
+        <div class="tab-bar" role="tablist">
+            <button class="tab active" role="tab" id="tab-image" data-panel="image" aria-controls="panel-image" aria-selected="true">image</button>
+            <button class="tab" role="tab" id="tab-engines" data-panel="engines" aria-controls="panel-engines" aria-selected="false" tabindex="-1">engines</button>
+            <button class="tab" role="tab" id="tab-output" data-panel="output" aria-controls="panel-output" aria-selected="false" tabindex="-1">output</button>
+            <button class="tab" role="tab" id="tab-quick" data-panel="quick" aria-controls="panel-quick" aria-selected="false" tabindex="-1">quick</button>
         </div>
 
         <div class="content">
 
             <!-- ── image ────────────────────────────────────────── -->
-            <div class="panel active" id="panel-image">
+            <div class="panel active" id="panel-image" role="tabpanel" aria-labelledby="tab-image">
                 <div class="group">
                     <div class="row">
                         <label for="jpeg-q">jpeg</label>
@@ -32,7 +33,7 @@
             </div>
 
             <!-- ── engines ──────────────────────────────────────── -->
-            <div class="panel" id="panel-engines">
+            <div class="panel" id="panel-engines" role="tabpanel" aria-labelledby="tab-engines">
                 <div class="group">
                     <h3 class="subheader">pdf</h3>
                     <div class="row">
@@ -77,7 +78,7 @@
             </div>
 
             <!-- ── output ───────────────────────────────────────── -->
-            <div class="panel" id="panel-output">
+            <div class="panel" id="panel-output" role="tabpanel" aria-labelledby="tab-output">
                 <div class="group">
                     <div class="row">
                         <label for="clipboard-mode">paste output</label>
@@ -94,12 +95,37 @@
                 </div>
             </div>
 
+            <!-- ── quick bar ────────────────────────────────────── -->
+            <div class="panel" id="panel-quick" role="tabpanel" aria-labelledby="tab-quick">
+                <div class="group">
+                    <div class="row">
+                        <label id="shortcut-label">shortcut</label>
+                        <button
+                            id="btn-shortcut"
+                            class="shortcut-btn"
+                            aria-labelledby="shortcut-label btn-shortcut"
+                            aria-describedby="shortcut-hint"
+                            disabled
+                        >…</button>
+                    </div>
+                    <p id="shortcut-hint" class="hint hint--warn" aria-live="polite">click to change</p>
+
+                    <h3 class="subheader">recent files from</h3>
+                    <ul id="folder-list" class="folder-list" aria-label="Folders the quick bar scans"></ul>
+                    <p id="folder-empty" class="hint hint--warn" hidden>no folders · the quick bar will show nothing</p>
+                    <div class="row folder-actions">
+                        <button id="btn-add-folder" class="btn-inline" disabled>add folder…</button>
+                        <button id="btn-reset-folders" class="btn-inline" disabled>restore defaults</button>
+                    </div>
+                </div>
+            </div>
+
         </div>
 
         <footer>
-            <span id="status"></span>
+            <span id="status" role="status"></span>
             <button id="btn-cancel">cancel</button>
-            <button id="btn-save">save</button>
+            <button id="btn-save" disabled>save</button>
         </footer>
 
         <script type="module" src="src/settings.ts"></script>

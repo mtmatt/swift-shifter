@@ -34,6 +34,10 @@
     --accent-glow: rgba(167, 139, 250, 0.35);
     --on-accent: #0d0d10;
 
+    /* Toggle switch knob */
+    --knob: rgba(255, 255, 255, 0.95);
+    --knob-shadow: none;
+
     /* Semantic */
     --danger: #f87171;
     --success: #4ade80;
@@ -59,6 +63,10 @@
         --accent-mid: rgba(124, 58, 237, 0.2);
         --accent-glow: rgba(124, 58, 237, 0.28);
         --on-accent: #ffffff;
+
+        /* A white knob needs an edge to stand out on the light-grey track. */
+        --knob: #ffffff;
+        --knob-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.18), 0 1px 2px rgba(0, 0, 0, 0.22);
 
         --danger: #dc2626;
         --success: #16a34a;

@@ -1,5 +1,5 @@
 import { resolve } from "path";
-import { defineConfig } from "vite";
+import { defineConfig, normalizePath } from "vite";
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -10,8 +10,10 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     watch: {
-      // Tell Vite to ignore watching `src-tauri`
-      ignored: ["**/swift-shifter/**"],
+      // Don't watch the Rust crate. Anchored to this config's directory: the
+      // repo folder itself is usually named swift-shifter too, so a bare
+      // "**/swift-shifter/**" glob would ignore every file.
+      ignored: [normalizePath(resolve(__dirname, "swift-shifter")) + "/**"],
     },
   },
   // to access Tauri environment variables set by the CLI with information about the current target

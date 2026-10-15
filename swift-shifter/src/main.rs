@@ -80,6 +80,7 @@ fn main() {
         .setup(|app| {
             // Load persisted config and register managed state
             let cfg = config::load();
+            let shortcut = cfg.quick_bar_shortcut.clone();
             app.manage(AppState {
                 config: std::sync::Mutex::new(cfg),
                 ollama_process: std::sync::Mutex::new(None),
@@ -87,7 +88,7 @@ fn main() {
 
             quick::create(app)?;
             tray::setup_tray(app)?;
-            if let Err(e) = hotkey::register_shortcut(app) {
+            if let Err(e) = hotkey::register(app.handle(), &shortcut) {
                 eprintln!("Hotkey registration failed (non-fatal): {e}");
             }
 
@@ -214,6 +215,8 @@ fn main() {
             clipboard::remove_temp_file,
             detect_format,
             recent_files,
+            default_recent_folders,
+            validate_shortcut,
             quick::hide_quick_bar,
             convert,
             convert_batch,
@@ -299,13 +302,37 @@ async fn detect_format(path: String) -> Result<converter::graph::DetectResult, S
     converter::graph::detect_with_chains(&path)
 }
 
-/// Convertible files from Desktop, Documents and Downloads, newest first, for
-/// the quick bar.
+/// Convertible files from the configured folders, newest first, for the
+/// quick bar.
 #[tauri::command]
-async fn recent_files() -> Result<Vec<recent::RecentFile>, String> {
-    tokio::task::spawn_blocking(|| recent::scan(&recent::default_roots(), recent::MAX_RESULTS))
+async fn recent_files(
+    state: tauri::State<'_, AppState>,
+) -> Result<Vec<recent::RecentFile>, String> {
+    let roots: Vec<std::path::PathBuf> = state
+        .config
+        .lock()
+        .unwrap()
+        .recent_folders
+        .iter()
+        .map(std::path::PathBuf::from)
+        .collect();
+    tokio::task::spawn_blocking(move || recent::scan(&roots, recent::MAX_RESULTS))
         .await
         .map_err(|e| format!("task panicked: {e}"))
+}
+
+/// Check a shortcut recorded in Settings before it is saved, so an unusable
+/// key is reported right away instead of on Save.
+#[tauri::command]
+fn validate_shortcut(accelerator: String) -> Result<(), String> {
+    hotkey::parse_shortcut(&accelerator).map(|_| ())
+}
+
+/// The folders the quick bar scans out of the box, for Settings' "restore
+/// defaults".
+#[tauri::command]
+fn default_recent_folders() -> Vec<String> {
+    config::default_recent_folders()
 }
 
 #[tauri::command]
@@ -479,8 +506,25 @@ fn set_config(
             "download" => "download".to_string(),
             _ => "clipboard".to_string(),
         },
+        quick_bar_shortcut: new_config.quick_bar_shortcut.trim().to_string(),
+        recent_folders: config::normalize_folders(new_config.recent_folders),
     };
-    config::save(&validated)?;
+
+    // Swap the live shortcut first: if the OS refuses it, nothing is saved.
+    let old_shortcut = state.config.lock().unwrap().quick_bar_shortcut.clone();
+    let shortcut_changed = validated.quick_bar_shortcut != old_shortcut;
+    if shortcut_changed {
+        hotkey::replace(&app, &old_shortcut, &validated.quick_bar_shortcut)?;
+    }
+    if let Err(e) = config::save(&validated) {
+        if shortcut_changed
+            && let Err(rollback_err) =
+                hotkey::replace(&app, &validated.quick_bar_shortcut, &old_shortcut)
+        {
+            eprintln!("Couldn't restore shortcut {old_shortcut}: {rollback_err}");
+        }
+        return Err(e);
+    }
     *state.config.lock().unwrap() = validated;
     app.emit("config:updated", ()).ok();
     Ok(())
