@@ -1,6 +1,7 @@
 pub mod html;
 pub mod markdown;
 pub mod plain;
+pub mod typst;
 
 use std::collections::{HashMap, HashSet};
 

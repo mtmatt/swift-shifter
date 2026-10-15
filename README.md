@@ -16,7 +16,7 @@ A featherweight, always-on file converter that lives in your menu bar. Press a h
   - Video: MP4, MOV, MKV, WebM, AVI, GIF (video-to-GIF and GIF-to-video)
   - Audio: MP3, AAC, FLAC, OGG, WAV, OPUS, M4A
   - Data: JSON, YAML, TOML, CSV
-  - Documents: Markdown, plain text, HTML, LaTeX, Typst, PDF, EPUB, MOBI (via pandoc + pymupdf4llm/marker-pdf/Calibre)
+  - Documents: Markdown, plain text, HTML, LaTeX, Typst, PDF, EPUB, MOBI (native engine + embedded typst for PDF; pandoc, pymupdf4llm/marker-pdf and Calibre for the rest)
 - **PDF merge** -- combine multiple PDF files into one in a dedicated merge mode
 - **Clipboard integration** -- paste (⌘V) to load clipboard content for conversion; result written back to clipboard or saved to disk (configurable)
 - **Local LLM post-processing** -- optional Ollama integration cleans up extracted PDF text (configurable model and endpoint)
@@ -35,7 +35,8 @@ A featherweight, always-on file converter that lives in your menu bar. Press a h
 | Backend logic          | Rust                                                                                                                         |
 | Image processing       | [`image`](https://crates.io/crates/image) crate + [`ravif`](https://crates.io/crates/ravif) for AVIF + macOS `sips` for HEIC |
 | Video / audio          | System `ffmpeg` (auto-installed via Homebrew if missing)                                                                     |
-| Document conversion    | System `pandoc` (auto-installed via Homebrew / winget / apt if missing)                                                      |
+| Document conversion    | Native Rust engine for Markdown / plain text / HTML; `pandoc` for LaTeX, Typst and EPUB input (auto-installed if missing)    |
+| PDF output             | [typst](https://typst.app) compiler linked in (no install, CJK font selection, TeX math via `mitex`)                         |
 | PDF ↔ EPUB / HTML / MD | `pymupdf4llm` (auto-installed via pipx); optional ML engine via `marker-pdf`                                                 |
 | MOBI conversion        | System `ebook-convert` / Calibre (auto-installed via Homebrew cask / winget / apt)                                           |
 | Local LLM              | [Ollama](https://ollama.com) (optional); cleans up PDF extraction output                                                     |
@@ -61,7 +62,7 @@ swift-shifter/
 │   │       ├── image.rs     # image crate + ravif (AVIF) + sips (HEIC)
 │   │       ├── media.rs     # ffmpeg subprocess wrapper
 │   │       ├── data.rs      # JSON/YAML/TOML/CSV converters
-│   │       └── document/    # pandoc + pymupdf4llm + marker-pdf + Calibre (md/txt/html/pdf/epub/mobi/tex/typst)
+│   │       └── document/    # native engine + embedded typst, pandoc, pymupdf4llm/marker-pdf, Calibre
 │   │           ├── mod.rs
 │   │           ├── binaries.rs  # dependency detection and auto-install
 │   │           ├── conversion.rs # conversion logic per format
@@ -159,7 +160,7 @@ This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Push
 - [x] Auto-update via Tauri updater plugin
 - [x] Windows and Linux support
 - [x] CI/CD pipeline with automatic tagging and signed releases
-- [x] Document conversion via pandoc
+- [x] Document conversion (native engine, embedded typst for PDF; pandoc for the rest)
 - [x] Images to PDF
 - [x] EPUB <-> PDF
 - [x] MOBI <-> PDF/EPUB/HTML/MD

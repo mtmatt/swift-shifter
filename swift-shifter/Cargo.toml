@@ -25,7 +25,7 @@ rgb = "0.8"
 tokio = { version = "1", features = ["full"] }
 which = "7"
 dirs = "5"
-reqwest = { version = "0.12", features = ["stream", "json"] }
+reqwest = { version = "0.12", features = ["stream", "json", "blocking"] }
 sha2 = "0.10"
 flate2 = "1"
 tar = "0.4"
@@ -40,6 +40,13 @@ scraper = "0.27"
 pulldown-latex = { version = "0.8", default-features = false }
 unicode-width = "0.2"
 url = "2"
+typst = "0.15"
+typst-pdf = "0.15"
+typst-layout = "0.15"
+mitex = "0.2"
+typst-kit = { version = "0.15", default-features = false, features = ["embedded-fonts", "scan-fonts", "system-files"] }
+chrono = "0.4"
+sys-locale = "0.3"
 
 [dev-dependencies]
 

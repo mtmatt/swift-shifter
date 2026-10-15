@@ -370,7 +370,7 @@ mod tests {
         let html = write(&markdown::read(
             "---\ntitle: A & B\nauthor: Ann\n---\n\n文字內容很多很多\n",
         ));
-        assert!(html.starts_with("<!DOCTYPE html>\n<html lang=\"zh\">"));
+        assert!(html.starts_with("<!DOCTYPE html>\n<html lang=\"zh-Hant\">"));
         assert!(html.contains("<title>A &amp; B</title>"));
         assert!(html.contains("<meta name=\"author\" content=\"Ann\">"));
         assert!(html.contains("<meta charset=\"utf-8\">"));

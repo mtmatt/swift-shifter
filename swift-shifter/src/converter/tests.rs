@@ -62,11 +62,6 @@ fn test_data_array_to_toml_errors_clearly() {
     );
 }
 
-#[test]
-fn test_find_typst_binary_does_not_panic() {
-    let _ = crate::converter::document::find_typst_binary();
-}
-
 /// Locks the exact direct-output surface before the graph refactor.
 /// macOS values (HEIC offered) — see platform test for the non-macOS delta.
 #[test]
@@ -328,6 +323,11 @@ fn test_native_engine_routes_md_txt_html_hops() {
         ("txt", "html"),
         ("html", "md"),
         ("html", "txt"),
+        ("md", "pdf"),
+        ("txt", "pdf"),
+        ("html", "pdf"),
+        ("md", "typst"),
+        ("html", "typst"),
     ] {
         assert_eq!(
             route_hop(from, to),
@@ -337,10 +337,11 @@ fn test_native_engine_routes_md_txt_html_hops() {
     }
     // Not covered natively yet: still pandoc.
     for (from, to) in [
-        ("md", "pdf"),
+        ("md", "tex"),
+        ("txt", "tex"),
         ("tex", "html"),
         ("typst", "md"),
-        ("epub", "html"),
+        ("epub", "pdf"),
     ] {
         assert_eq!(
             route_hop(from, to),
@@ -356,9 +357,9 @@ fn test_html_is_an_input_and_chains_through_markdown() {
     assert_eq!(normalize_ext("htm"), "html");
     let mut direct = direct_targets("html");
     direct.sort();
-    assert_eq!(direct, ["md", "txt"]);
+    assert_eq!(direct, ["md", "pdf", "txt", "typst"]);
     assert_eq!(
-        find_path("html", "pdf").expect("html reaches pdf"),
-        ["html", "md", "pdf"]
+        find_path("html", "tex").expect("html reaches tex"),
+        ["html", "md", "tex"]
     );
 }

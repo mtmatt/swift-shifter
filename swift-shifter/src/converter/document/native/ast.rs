@@ -187,16 +187,50 @@ fn push_block_text(out: &mut String, block: &Block) {
     }
 }
 
-/// `zh`, `ja` or `ko` when at least a third of the letters are CJK. Kana means
-/// Japanese and Hangul means Korean; Han alone is taken as Chinese.
-fn detect_cjk_lang(text: &str) -> Option<&'static str> {
+/// Whether `text` contains CJK letters (ideographs, kana, Hangul). CJK
+/// punctuation and fullwidth forms alone don't count: they turn up in
+/// otherwise Latin text.
+pub fn contains_cjk(text: &str) -> bool {
+    text.chars().any(is_cjk_letter)
+}
+
+fn is_cjk_letter(c: char) -> bool {
+    matches!(c,
+        '\u{1100}'..='\u{11FF}'     // Hangul Jamo
+        | '\u{2E80}'..='\u{2FDF}'   // CJK and Kangxi radicals
+        | '\u{3040}'..='\u{30FF}'   // Hiragana, Katakana
+        | '\u{3100}'..='\u{31FF}'   // Bopomofo, Hangul compatibility Jamo, …
+        | '\u{3400}'..='\u{4DBF}'   // CJK Unified Ideographs Extension A
+        | '\u{4E00}'..='\u{9FFF}'   // CJK Unified Ideographs
+        | '\u{AC00}'..='\u{D7AF}'   // Hangul syllables
+        | '\u{F900}'..='\u{FAFF}'   // CJK compatibility ideographs
+        | '\u{20000}'..='\u{3134F}' // CJK Unified Ideographs Extensions B–G
+    )
+}
+
+/// Common characters written differently in Traditional and Simplified
+/// Chinese (paired by position), to tell the two apart.
+const TRADITIONAL_ONLY: &str = "這們個來說對時會為國過還發後經點裡麼體與學實現無開關問長樣電話應書見務於當讓間灣臺從邊幾華認頭東車馬鳥魚內";
+const SIMPLIFIED_ONLY: &str = "这们个来说对时会为国过还发后经点里么体与学实现无开关问长样电话应书见务于当让间湾台从边几华认头东车马鸟鱼内";
+
+/// `zh-Hant`, `zh-Hans`, `ja` or `ko` when at least a third of the letters
+/// are CJK. Japanese mixes kanji with kana, so it needs a real share of
+/// kana (a stray Japanese phrase in Chinese text doesn't count); Hangul
+/// means Korean; otherwise it's Chinese, told apart by script-specific
+/// characters (Simplified when undecided).
+pub fn detect_cjk_lang(text: &str) -> Option<&'static str> {
     let (mut letters, mut han, mut kana, mut hangul) = (0usize, 0usize, 0usize, 0usize);
+    let (mut traditional, mut simplified) = (0usize, 0usize);
     for c in text.chars().filter(|c| c.is_alphabetic()) {
         letters += 1;
         match c as u32 {
             0x3040..=0x30FF | 0x31F0..=0x31FF => kana += 1,
             0xAC00..=0xD7AF | 0x1100..=0x11FF | 0x3130..=0x318F => hangul += 1,
-            0x4E00..=0x9FFF | 0x3400..=0x4DBF | 0x20000..=0x2A6DF | 0xF900..=0xFAFF => han += 1,
+            0x4E00..=0x9FFF | 0x3400..=0x4DBF | 0x20000..=0x2A6DF | 0xF900..=0xFAFF => {
+                han += 1;
+                traditional += usize::from(TRADITIONAL_ONLY.contains(c));
+                simplified += usize::from(SIMPLIFIED_ONLY.contains(c));
+            }
             _ => {}
         }
     }
@@ -204,12 +238,14 @@ fn detect_cjk_lang(text: &str) -> Option<&'static str> {
     if letters == 0 || cjk * 3 < letters {
         return None;
     }
-    Some(if kana > 0 {
+    Some(if kana * 5 >= cjk {
         "ja"
     } else if hangul > han {
         "ko"
+    } else if traditional > simplified {
+        "zh-Hant"
     } else {
-        "zh"
+        "zh-Hans"
     })
 }
 
@@ -231,11 +267,32 @@ mod tests {
 
     #[test]
     fn detects_cjk_languages() {
-        assert_eq!(detect_cjk_lang("這是一個中文句子"), Some("zh"));
+        assert_eq!(detect_cjk_lang("這是一個中文句子"), Some("zh-Hant"));
+        assert_eq!(detect_cjk_lang("这是一个中文句子"), Some("zh-Hans"));
+        assert_eq!(
+            detect_cjk_lang("中文"),
+            Some("zh-Hans"),
+            "undecided defaults to Simplified"
+        );
+        // A short Japanese phrase inside Chinese text stays Chinese.
+        assert_eq!(
+            detect_cjk_lang("這是一段很長的中文內容與說明，還有實際的例子。日本語の文"),
+            Some("zh-Hant")
+        );
         assert_eq!(detect_cjk_lang("これは日本語の文です"), Some("ja"));
         assert_eq!(detect_cjk_lang("이것은 한국어 문장입니다"), Some("ko"));
         assert_eq!(detect_cjk_lang("Plain English with one 字"), None);
         assert_eq!(detect_cjk_lang(""), None);
+    }
+
+    #[test]
+    fn contains_cjk_ignores_stray_punctuation() {
+        assert!(contains_cjk("Hello 世界"));
+        assert!(contains_cjk("ひらがな"));
+        assert!(contains_cjk("한국어"));
+        assert!(!contains_cjk(
+            "Plain text with fullwidth punctuation，and「quotes」"
+        ));
     }
 
     #[test]
