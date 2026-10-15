@@ -4,7 +4,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { folderLabel } from "./paths";
-import { formatShortcut, recordKeyPress } from "./shortcut";
+import { recordKeyPress, shortcutKeyNames } from "./shortcut";
 
 // Tab switching (ARIA tabs: only the selected tab is in the Tab order;
 // arrow keys, Home and End move between tabs)
@@ -372,9 +372,19 @@ installBtn.addEventListener("click", async () => {
 // ─── Quick bar: shortcut ──────────────────────────────────────────────────
 
 function renderShortcut(): void {
-  shortcutBtn.textContent = recording
-    ? "press keys…"
-    : formatShortcut(quickBarShortcut, isMac, superKeyName);
+  if (recording) {
+    shortcutBtn.textContent = "press keys…";
+  } else {
+    // One keycap per key; the "+" text between them also gives screen readers
+    // "Control + Shift + Space" instead of one run-together word.
+    const caps = shortcutKeyNames(quickBarShortcut, isMac, superKeyName).map((name) => {
+      const cap = document.createElement("kbd");
+      cap.className = "keycap";
+      cap.textContent = name;
+      return cap;
+    });
+    shortcutBtn.replaceChildren(...caps.flatMap((cap, i) => (i === 0 ? [cap] : [" + ", cap])));
+  }
   shortcutBtn.classList.toggle("recording", recording);
   shortcutBtn.setAttribute("aria-pressed", String(recording));
 }

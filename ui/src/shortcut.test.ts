@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatShortcut, recordKeyPress, type KeyPress } from "./shortcut";
+import { recordKeyPress, shortcutKeyNames, type KeyPress } from "./shortcut";
 
 function press(code: string, held: Partial<KeyPress> = {}): KeyPress {
   return { code, ctrlKey: false, altKey: false, shiftKey: false, metaKey: false, ...held };
@@ -33,25 +33,25 @@ describe("recordKeyPress", () => {
   });
 });
 
-describe("formatShortcut", () => {
-  it("uses modifier symbols on macOS", () => {
-    expect(formatShortcut("Control+Shift+Space", true)).toBe("⌃⇧Space");
-    expect(formatShortcut("Alt+Super+KeyK", true)).toBe("⌥⌘K");
+describe("shortcutKeyNames", () => {
+  it("spells modifiers out with macOS names on macOS", () => {
+    expect(shortcutKeyNames("Control+Shift+Space", true)).toEqual(["Control", "Shift", "Space"]);
+    expect(shortcutKeyNames("Alt+Super+KeyK", true)).toEqual(["Option", "Command", "K"]);
   });
 
-  it("spells modifiers out elsewhere, with a platform name for Super", () => {
-    expect(formatShortcut("Control+Shift+Space", false)).toBe("Ctrl+Shift+Space");
-    expect(formatShortcut("Super+Digit1", false, "Win")).toBe("Win+1");
+  it("uses PC names elsewhere, with a platform name for Super", () => {
+    expect(shortcutKeyNames("Control+Shift+Space", false)).toEqual(["Ctrl", "Shift", "Space"]);
+    expect(shortcutKeyNames("Super+Digit1", false, "Win")).toEqual(["Win", "1"]);
   });
 
-  it("accepts any case and spacing, like the Rust parser", () => {
-    expect(formatShortcut("control + shift + space", true)).toBe("⌃⇧Space");
-    expect(formatShortcut("Ctrl+Shift+keyk", false)).toBe("Ctrl+Shift+K");
-    expect(formatShortcut("cmd+Option+Digit2", true)).toBe("⌘⌥2");
+  it("accepts any case, spacing and aliases, like the Rust parser", () => {
+    expect(shortcutKeyNames("control + shift + space", true)).toEqual(["Control", "Shift", "Space"]);
+    expect(shortcutKeyNames("Ctrl+Shift+keyk", false)).toEqual(["Ctrl", "Shift", "K"]);
+    expect(shortcutKeyNames("cmd+Option+Digit2", true)).toEqual(["Command", "Option", "2"]);
   });
 
   it("shows punctuation and arrows as symbols", () => {
-    expect(formatShortcut("Control+Slash", false)).toBe("Ctrl+/");
-    expect(formatShortcut("Alt+ArrowUp", true)).toBe("⌥↑");
+    expect(shortcutKeyNames("Control+Slash", false)).toEqual(["Ctrl", "/"]);
+    expect(shortcutKeyNames("Alt+ArrowUp", true)).toEqual(["Option", "↑"]);
   });
 });

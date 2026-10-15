@@ -61,7 +61,9 @@ const MODIFIER_KINDS: Record<string, "ctrl" | "alt" | "shift" | "super"> = {
   cmd: "super",
 };
 
-const MAC_SYMBOLS = { ctrl: "⌃", alt: "⌥", shift: "⇧", super: "⌘" };
+// Spelled out rather than as symbols (⌃⇧⌥⌘), which are small and easy to
+// misread, especially in a monospace font.
+const MAC_NAMES = { ctrl: "Control", alt: "Option", shift: "Shift", super: "Command" };
 const OTHER_NAMES = { ctrl: "Ctrl", alt: "Alt", shift: "Shift", super: "Super" };
 
 const KEY_NAMES: Record<string, string> = {
@@ -89,17 +91,18 @@ function keyLabel(code: string): string {
 }
 
 /**
- * Human-readable form: "⌃⇧Space" on macOS, "Ctrl+Shift+Space" elsewhere.
- * `superName` is what the Super key is called off macOS ("Win" on Windows).
+ * The keys of a shortcut as display names, modifiers first:
+ * ["Control", "Shift", "Space"] on macOS, ["Ctrl", "Shift", "Space"]
+ * elsewhere. `superName` is what the Super key is called off macOS ("Win" on
+ * Windows).
  */
-export function formatShortcut(accelerator: string, isMac: boolean, superName = "Super"): string {
+export function shortcutKeyNames(accelerator: string, isMac: boolean, superName = "Super"): string[] {
   const parts = accelerator.split("+").map((part) => part.trim());
   const key = keyLabel(parts.pop() ?? "");
-  const kinds = parts.map((m) => MODIFIER_KINDS[m.toLowerCase()]);
-  if (isMac) return kinds.map((kind, i) => (kind ? MAC_SYMBOLS[kind] : parts[i])).join("") + key;
-  const modifiers = kinds.map((kind, i) => {
-    if (!kind) return parts[i];
-    return kind === "super" ? superName : OTHER_NAMES[kind];
+  const names = isMac ? MAC_NAMES : { ...OTHER_NAMES, super: superName };
+  const modifiers = parts.map((m) => {
+    const kind = MODIFIER_KINDS[m.toLowerCase()];
+    return kind ? names[kind] : m;
   });
-  return [...modifiers, key].join("+");
+  return [...modifiers, key];
 }

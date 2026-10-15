@@ -357,9 +357,16 @@ button {
 .shortcut-btn {
     margin-left: auto;
     min-width: 120px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* Wrap rather than overflow: four modifiers plus a long key name
+       ("Control + Option + Shift + Command + PageDown") is wider than the row. */
+    flex-wrap: wrap;
+    gap: 4px;
     font-family: var(--font-mono);
-    font-size: 13px;
-    padding: 5px 12px;
+    font-size: 12px;
+    padding: 4px 8px;
     background: var(--surface);
     border: 0.5px solid var(--border-hi);
     border-radius: 4px;
@@ -380,6 +387,21 @@ button {
 
 .shortcut-btn.recording {
     box-shadow: 0 0 6px var(--accent-glow);
+}
+
+.keycap {
+    padding: 1px 6px;
+    border: 0.5px solid var(--border-hi);
+    border-bottom-width: 1.5px;
+    border-radius: 4px;
+    background: var(--bg);
+    font-family: var(--font-ui);
+    font-size: 12px;
+    color: var(--text);
+}
+
+.shortcut-btn:not(:disabled):hover .keycap {
+    border-color: var(--accent);
 }
 
 #shortcut-hint {
