@@ -35,6 +35,11 @@ futures-util = "0.3"
 lopdf = "0.37"
 clap = { version = "4", features = ["derive"] }
 tempfile = "3"
+comrak = { version = "0.56", default-features = false }
+scraper = "0.27"
+pulldown-latex = { version = "0.8", default-features = false }
+unicode-width = "0.2"
+url = "2"
 
 [dev-dependencies]
 

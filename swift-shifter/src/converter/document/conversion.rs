@@ -387,7 +387,30 @@ pub async fn convert_document(
     )
     .ok();
 
-    let from_fmt = ext_to_pandoc_input_format(&input_ext);
+    // Plain text is read literally by the native reader and handed to pandoc
+    // as Markdown, so .txt keeps the same meaning whatever the target. The
+    // temp dir lives until pandoc is done.
+    let staged_txt = if normalize_ext(&input_ext) == "txt" {
+        let text = tokio::fs::read(path)
+            .await
+            .map_err(|e| format!("Failed to read {path}: {e}"))?;
+        let dir = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {e}"))?;
+        let staged = dir.path().join("input.md");
+        let markdown = super::native::plain_text_to_markdown(&String::from_utf8_lossy(&text));
+        tokio::fs::write(&staged, markdown)
+            .await
+            .map_err(|e| format!("Failed to stage {path}: {e}"))?;
+        Some((dir, staged))
+    } else {
+        None
+    };
+    let (source, from_fmt) = match &staged_txt {
+        // GFM is the dialect the native writer targets; pandoc's own
+        // Markdown would still read citations, smart quotes, definition
+        // lists and line blocks into the text.
+        Some((_, staged)) => (staged.as_path(), "gfm"),
+        None => (Path::new(path), ext_to_pandoc_input_format(&input_ext)),
+    };
     let to_fmt = ext_to_pandoc_format(target_format);
 
     let mut cmd = crate::process::async_command(&pandoc);
@@ -401,10 +424,10 @@ pub async fn convert_document(
     ]);
 
     if target_format == "pdf" {
-        pdf::configure_pandoc_pdf(&mut cmd, &pandoc, Some(Path::new(path))).await?;
+        pdf::configure_pandoc_pdf(&mut cmd, &pandoc, Some(source)).await?;
     }
 
-    cmd.arg(path);
+    cmd.arg(source);
     cmd.stdout(std::process::Stdio::null());
     cmd.stderr(std::process::Stdio::piped());
 
@@ -903,7 +926,6 @@ pub async fn convert_pdf_to_html(
     output_dir: Option<&str>,
 ) -> Result<String, String> {
     let python = get_pymupdf4llm_python()?;
-    let pandoc = get_pandoc()?;
     let out = output_path(path, "html", output_dir)?;
 
     app.emit(
@@ -955,10 +977,12 @@ pub async fn convert_pdf_to_html(
         return Err("pymupdf4llm succeeded but produced no output file".to_string());
     }
 
-    // Sanitize <br> tags before pandoc — HTML output uses --standalone but EPUB is strict XHTML
-    if let Ok(content) = tokio::fs::read_to_string(&tmp_md).await {
-        let _ = tokio::fs::write(&tmp_md, sanitize_br_tags(&content)).await;
-    }
+    // Clean up the temp dir before propagating a read error.
+    let markdown = tokio::fs::read_to_string(&tmp_md)
+        .await
+        .map_err(|e| format!("Failed to read extracted markdown: {e}"));
+    let _ = std::fs::remove_dir_all(&tmp_dir);
+    let markdown = markdown?;
 
     app.emit(
         "convert:progress",
@@ -969,41 +993,15 @@ pub async fn convert_pdf_to_html(
     )
     .ok();
 
-    // Step 2: Markdown → HTML via pandoc
-    // --standalone adds <!DOCTYPE html> so browsers use HTML5 parsing (fixes <br> in tables)
-    let pandoc_result = crate::process::async_command(&pandoc)
-        .args([
-            "-f",
-            "markdown",
-            "-t",
-            "html",
-            "--standalone",
-            "-o",
-            out.to_str().unwrap_or(""),
-            tmp_md_str,
-        ])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .output()
+    // Step 2: Markdown → standalone HTML with the native writer. It reads the
+    // <br> tags pymupdf4llm puts in table cells as line breaks.
+    let title = Path::new(path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    tokio::fs::write(&out, super::native::markdown_to_html(&markdown, &title))
         .await
-        .map_err(|e| {
-            let _ = std::fs::remove_dir_all(&tmp_dir);
-            format!("Failed to spawn pandoc: {e}")
-        })?;
-
-    let _ = std::fs::remove_dir_all(&tmp_dir);
-
-    if !pandoc_result.status.success() {
-        let stderr = String::from_utf8_lossy(&pandoc_result.stderr);
-        return Err(if stderr.trim().is_empty() {
-            format!(
-                "pandoc exited with code {}",
-                pandoc_result.status.code().unwrap_or(-1)
-            )
-        } else {
-            stderr.trim().to_string()
-        });
-    }
+        .map_err(|e| format!("Failed to write {}: {e}", out.display()))?;
 
     app.emit(
         "convert:progress",
