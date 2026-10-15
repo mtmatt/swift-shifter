@@ -7,13 +7,13 @@
         "width": 340,
         "height": 460,
         "resizable": false,
-        "alwaysOnTop": true,
+        "alwaysOnTop": false,
         "decorations": true,
         "transparent": false,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
         "visible": true,
-        "center": false
+        "center": true
       }
     ],
     "trayIcon": {

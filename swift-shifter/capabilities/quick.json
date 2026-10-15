@@ -1,0 +1,10 @@
+{
+  "$schema": "../node_modules/@tauri-apps/cli/schema/capability.json",
+  "identifier": "quick",
+  "description": "Permissions for the quick bar window",
+  "windows": ["quick"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-set-size"
+  ]
+}
