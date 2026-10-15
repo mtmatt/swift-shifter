@@ -230,17 +230,23 @@ fn main() {
         ])
         .build(context)
         .expect("error while building tauri application")
-        .run(|app_handle, event| {
-            if let tauri::RunEvent::ExitRequested { .. } = event
-                && let Some(mut child) = app_handle
+        .run(|app_handle, event| match event {
+            tauri::RunEvent::ExitRequested { .. } => {
+                let ollama = app_handle
                     .state::<AppState>()
                     .ollama_process
                     .lock()
                     .unwrap()
-                    .take()
-            {
-                let _ = child.start_kill();
+                    .take();
+                if let Some(mut child) = ollama {
+                    let _ = child.start_kill();
+                }
             }
+            // Clicking the Dock icon. Without this, a hidden main window stays
+            // hidden and the click appears to do nothing.
+            #[cfg(target_os = "macos")]
+            tauri::RunEvent::Reopen { .. } => tray::show_main_window(app_handle),
+            _ => {}
         });
 }
 
@@ -594,5 +600,32 @@ mod window_config_tests {
             mac.as_object_mut().unwrap().remove(key);
         }
         assert_eq!(base, mac);
+    }
+
+    #[test]
+    fn macos_tray_uses_a_template_glyph_on_transparency() {
+        // macOS draws template images from alpha alone, so the opaque app
+        // icon shows as a blank square there; it gets a glyph instead.
+        let mac: Value = serde_json::from_str(include_str!("../tauri.macos.conf.json")).unwrap();
+        assert_eq!(
+            mac["app"]["trayIcon"]["iconPath"],
+            "icons/tray-template.png"
+        );
+        assert_eq!(mac["app"]["trayIcon"]["iconAsTemplate"], true);
+
+        let icon = image::load_from_memory(include_bytes!("../icons/tray-template.png"))
+            .expect("tray-template.png decodes")
+            .to_rgba8();
+        assert_eq!(icon.width(), icon.height());
+        let alphas: Vec<u8> = icon.pixels().map(|px| px[3]).collect();
+        assert!(alphas.contains(&0), "background must be transparent");
+        assert!(alphas.contains(&255), "glyph must be opaque");
+    }
+
+    #[test]
+    fn other_platforms_keep_the_colour_tray_icon() {
+        let base: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(base["app"]["trayIcon"]["iconPath"], "icons/icon.png");
+        assert_eq!(base["app"]["trayIcon"]["iconAsTemplate"], false);
     }
 }
