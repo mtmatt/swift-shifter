@@ -1,7 +1,14 @@
 /* ─── Design tokens — single source of truth ──────────────────────────── */
 :root {
-    --radius: 12px;
+    color-scheme: dark light;
+
     --bar-h: 36px;
+
+    /* SF Mono/Menlo exist only on macOS; the rest cover Windows and Linux,
+       where WebView2/WebKitGTK don't resolve ui-monospace. */
+    --font-mono:
+        "SF Mono", "Menlo", "Cascadia Code", "Consolas", "DejaVu Sans Mono",
+        "Liberation Mono", ui-monospace, monospace;
 
     /* Background */
     --bg: #0d0d10;
@@ -22,9 +29,36 @@
     --accent-dim: rgba(167, 139, 250, 0.11);
     --accent-mid: rgba(167, 139, 250, 0.24);
     --accent-glow: rgba(167, 139, 250, 0.35);
+    --on-accent: #0d0d10;
 
     /* Semantic */
     --danger: #f87171;
     --success: #4ade80;
     --warn: #fbbf24;
+}
+
+/* Light theme follows the OS appearance. */
+@media (prefers-color-scheme: light) {
+    :root {
+        --bg: #f7f7f9;
+        --surface: rgba(0, 0, 0, 0.04);
+        --surface-hi: rgba(0, 0, 0, 0.07);
+
+        --border: rgba(0, 0, 0, 0.08);
+        --border-hi: rgba(0, 0, 0, 0.16);
+
+        --text: rgba(0, 0, 0, 0.87);
+        --text-2: rgba(0, 0, 0, 0.6);
+        --text-3: rgba(0, 0, 0, 0.4);
+
+        --accent: #7c3aed;
+        --accent-dim: rgba(124, 58, 237, 0.09);
+        --accent-mid: rgba(124, 58, 237, 0.2);
+        --accent-glow: rgba(124, 58, 237, 0.28);
+        --on-accent: #ffffff;
+
+        --danger: #dc2626;
+        --success: #16a34a;
+        --warn: #b45309;
+    }
 }

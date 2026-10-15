@@ -549,3 +549,50 @@ async fn merge_pdfs(
         .await
         .map_err(|e| format!("task panicked: {e}"))?
 }
+
+#[cfg(test)]
+mod window_config_tests {
+    use serde_json::Value;
+
+    fn main_window(config: &str) -> Value {
+        let config: Value = serde_json::from_str(config).expect("valid JSON");
+        config["app"]["windows"]
+            .as_array()
+            .expect("app.windows is an array")
+            .iter()
+            .find(|w| w["label"] == "main")
+            .expect("a window labelled main")
+            .clone()
+    }
+
+    #[test]
+    fn main_window_uses_native_decorations_without_transparency() {
+        // Frameless + transparent rendered blank on Wayland (#26) and looked
+        // broken on Windows; every platform now gets a native title bar.
+        let main = main_window(include_str!("../tauri.conf.json"));
+        assert_eq!(main["decorations"], true);
+        assert_eq!(main["transparent"], false);
+    }
+
+    #[test]
+    fn macos_override_keeps_traffic_lights_over_content() {
+        let main = main_window(include_str!("../tauri.macos.conf.json"));
+        assert_eq!(main["decorations"], true);
+        assert_eq!(main["transparent"], false);
+        assert_eq!(main["titleBarStyle"], "Overlay");
+        assert_eq!(main["hiddenTitle"], true);
+    }
+
+    #[test]
+    fn macos_override_matches_base_window_apart_from_title_bar() {
+        // Tauri replaces the whole `windows` array when merging a platform
+        // file, so every other field has to be repeated there verbatim.
+        let mut base = main_window(include_str!("../tauri.conf.json"));
+        let mut mac = main_window(include_str!("../tauri.macos.conf.json"));
+        for key in ["titleBarStyle", "hiddenTitle"] {
+            base.as_object_mut().unwrap().remove(key);
+            mac.as_object_mut().unwrap().remove(key);
+        }
+        assert_eq!(base, mac);
+    }
+}

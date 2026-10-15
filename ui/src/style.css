@@ -10,17 +10,16 @@
 }
 
 html {
-    border-radius: var(--radius);
     overflow: hidden;
-    background: transparent;
+    background: var(--bg);
 }
 
 body {
-    width: 340px;
-    height: 460px;
+    width: 100vw;
+    height: 100vh;
     overflow: hidden;
-    background: transparent;
-    font-family: "SF Mono", "Menlo", "Cascadia Code", ui-monospace, monospace;
+    background: var(--bg);
+    font-family: var(--font-mono);
     font-size: 13px;
     color: var(--text);
     -webkit-font-smoothing: antialiased;
@@ -28,13 +27,11 @@ body {
 
 /* ─── App shell ───────────────────────────────────────────────────────── */
 #app {
-    width: 340px;
-    height: 460px;
+    width: 100%;
+    height: 100%;
     display: flex;
     flex-direction: column;
     background: var(--bg);
-    border-radius: var(--radius);
-    border: 0.5px solid var(--border-hi);
     overflow: hidden;
     position: relative;
 }
@@ -48,7 +45,6 @@ body {
     opacity: 0.038;
     pointer-events: none;
     z-index: 1000;
-    border-radius: var(--radius);
 }
 
 /* Subtle top accent line */
@@ -73,7 +69,15 @@ body {
 }
 
 /* ─── Drag strip ──────────────────────────────────────────────────────── */
+/* Only macOS needs it: its title bar is an overlay, so this strip is the
+   draggable area around the traffic lights. Other platforms draw a native
+   title bar above the page. */
 #drag-strip {
+    display: none;
+}
+
+:root[data-platform="macos"] #drag-strip {
+    display: block;
     flex-shrink: 0;
     height: 28px;
     width: 100%;
@@ -356,7 +360,7 @@ body {
 .fmt-btn:active {
     background: var(--accent);
     border-color: var(--accent);
-    color: #0d0d10;
+    color: var(--on-accent);
 }
 
 .fmt-btn:disabled {
@@ -368,8 +372,8 @@ body {
     font-weight: 600;
 }
 .fmt-more.active {
-    background: var(--accent, #3b82f6);
-    color: #fff;
+    background: var(--accent);
+    color: var(--on-accent);
 }
 .format-chained {
     margin-top: 6px;
