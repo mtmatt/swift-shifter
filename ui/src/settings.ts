@@ -401,8 +401,18 @@ function stopRecording(): void {
 
 shortcutBtn.addEventListener("click", () => {
   recording = !recording;
+  // WebKit (macOS) doesn't focus a button when it is clicked. Focus it
+  // explicitly so clicking elsewhere blurs it and cancels recording.
+  if (recording) shortcutBtn.focus();
   renderShortcut();
   setShortcutHint(recording ? "press the new keys · esc to cancel" : "click to change");
+});
+
+// WebKit clears focus on mousedown over an element it won't focus by mouse,
+// buttons included. Clicking the button to cancel recording would then blur
+// it (stopping recording) and the click would start recording again.
+shortcutBtn.addEventListener("mousedown", (event) => {
+  if (recording) event.preventDefault();
 });
 
 shortcutBtn.addEventListener("blur", () => {
@@ -411,7 +421,10 @@ shortcutBtn.addEventListener("blur", () => {
   setShortcutHint("click to change");
 });
 
-shortcutBtn.addEventListener("keydown", async (event) => {
+// Listen on the window, in the capture phase, rather than on the button: key
+// presses must be caught while recording even if the button doesn't have
+// focus, and before any other handler acts on them.
+window.addEventListener("keydown", async (event) => {
   if (!recording) return;
   const result = recordKeyPress(event);
   // Plain Esc cancels; plain (Shift+)Tab cancels and moves focus as usual,
@@ -448,7 +461,7 @@ shortcutBtn.addEventListener("keydown", async (event) => {
   quickBarShortcut = result.accelerator;
   stopRecording();
   setShortcutHint("applies when you save");
-});
+}, true);
 
 // ─── Quick bar: folders ───────────────────────────────────────────────────
 
