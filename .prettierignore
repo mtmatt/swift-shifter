@@ -1,0 +1,3 @@
+# Test inputs whose exact Markdown is the point of the test (e.g. H~2~O
+# subscripts, deliberate table spacing); reformatting changes their meaning.
+swift-shifter/tests/fixtures/
