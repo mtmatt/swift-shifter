@@ -102,6 +102,11 @@ body {
     transition: background 0.1s;
 }
 
+/* Override UA [hidden]{display:none}: .row's display:flex would otherwise win */
+.row[hidden] {
+    display: none;
+}
+
 .row:hover {
     background: var(--surface);
 }
@@ -143,7 +148,8 @@ input[type="range"]::-webkit-slider-thumb {
 }
 
 input[type="range"]:hover::-webkit-slider-thumb,
-input[type="range"]:active::-webkit-slider-thumb {
+input[type="range"]:active::-webkit-slider-thumb,
+input[type="range"]:focus-visible::-webkit-slider-thumb {
     transform: scale(1.2);
     box-shadow: 0 0 8px var(--accent-glow);
 }
@@ -182,7 +188,8 @@ input[type="checkbox"]::after {
     left: 2px;
     width: 12px;
     height: 12px;
-    background: rgba(255, 255, 255, 0.95);
+    background: var(--knob);
+    box-shadow: var(--knob-shadow);
     border-radius: 50%;
     transition: left 0.15s ease;
 }
@@ -275,7 +282,7 @@ select.text-input {
     margin-left: auto;
 }
 
-.btn-inline:hover {
+.btn-inline:not(:disabled):hover {
     border-color: var(--accent);
     color: var(--accent);
 }
@@ -332,11 +339,113 @@ button {
     font-weight: 600;
 }
 
-#btn-save:hover {
+#btn-save:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+#btn-save:not(:disabled):hover {
     opacity: 0.88;
     box-shadow: 0 0 10px var(--accent-glow);
 }
 
-#btn-save:active {
+#btn-save:not(:disabled):active {
     opacity: 0.7;
+}
+
+/* ─── Quick bar panel ─────────────────────────────────────────────────── */
+.shortcut-btn {
+    margin-left: auto;
+    min-width: 120px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    /* Wrap rather than overflow: four modifiers plus a long key name
+       ("Control + Option + Shift + Command + PageDown") is wider than the row. */
+    flex-wrap: wrap;
+    gap: 4px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    padding: 4px 8px;
+    background: var(--surface);
+    border: 0.5px solid var(--border-hi);
+    border-radius: 4px;
+    color: var(--text);
+    cursor: pointer;
+}
+
+.shortcut-btn:not(:disabled):hover,
+.shortcut-btn.recording {
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.shortcut-btn:disabled {
+    color: var(--text-3);
+    cursor: default;
+}
+
+.shortcut-btn.recording {
+    box-shadow: 0 0 6px var(--accent-glow);
+}
+
+.keycap {
+    padding: 1px 6px;
+    border: 0.5px solid var(--border-hi);
+    border-bottom-width: 1.5px;
+    border-radius: 4px;
+    background: var(--bg);
+    font-family: var(--font-ui);
+    font-size: 12px;
+    color: var(--text);
+}
+
+.shortcut-btn:not(:disabled):hover .keycap {
+    border-color: var(--accent);
+}
+
+#shortcut-hint {
+    margin-top: -8px;
+    padding: 0 8px;
+    text-align: right;
+}
+
+.folder-list {
+    list-style: none;
+    max-height: 140px;
+    overflow-y: auto;
+}
+
+.folder-path {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.folder-name {
+    flex-shrink: 0;
+    max-width: 70%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 13px;
+    color: var(--text);
+}
+
+.folder-parent {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-size: 11px;
+    color: var(--text-3);
+}
+
+.folder-actions {
+    justify-content: flex-end;
+}
+
+.folder-actions .btn-inline {
+    margin-left: 0;
 }

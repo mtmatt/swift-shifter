@@ -1,7 +1,7 @@
 //! Recently modified files, for the quick bar to suggest before the user types
 //! and to search as they do.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
@@ -58,14 +58,18 @@ pub fn default_roots() -> Vec<PathBuf> {
 
 /// Files under `roots` that Swift Shifter can convert, newest first, at most
 /// `limit` of them. Hidden files and folders, app bundles and the like are
-/// skipped, and symlinks are not followed.
+/// skipped, and symlinks are not followed. A file under several roots (e.g. a
+/// folder and a subfolder of it) is listed once.
 pub fn scan(roots: &[PathBuf], limit: usize) -> Vec<RecentFile> {
     let home = dirs::home_dir();
     let mut walk = Walk {
         convertible_by_ext: HashMap::new(),
         entries_left: 0,
+        seen: HashSet::new(),
         found: Vec::new(),
     };
+    // Every root gets its own walk and budget, even one nested in another:
+    // the outer walk may stop at MAX_DEPTH or run out of budget before it.
     for root in roots {
         walk.entries_left = MAX_ENTRIES_PER_ROOT;
         walk.visit_dir(root, 0);
@@ -84,6 +88,8 @@ struct Walk {
     /// Memoised `graph::direct_targets(ext)` emptiness, keyed by lowercase extension.
     convertible_by_ext: HashMap<String, bool>,
     entries_left: usize,
+    /// Files already in `found`, so overlapping roots don't list them twice.
+    seen: HashSet<PathBuf>,
     /// Convertible files and their modification times in ms.
     found: Vec<(PathBuf, u64)>,
 }
@@ -116,6 +122,7 @@ impl Walk {
             } else if file_type.is_file()
                 && self.is_convertible(&path)
                 && let Some(modified_ms) = modified_ms(&entry)
+                && self.seen.insert(path.clone())
             {
                 self.found.push((path, modified_ms));
             }
@@ -254,6 +261,32 @@ mod tests {
         let files = scan(&roots, MAX_RESULTS);
 
         assert_eq!(names(&files), ["screenshot.png", "download.pdf"]);
+    }
+
+    #[test]
+    fn nested_roots_list_each_file_once() {
+        let documents = tempfile::tempdir().unwrap();
+        touch(documents.path(), "work/report.pdf", 5);
+        let work = documents.path().join("work");
+
+        // Either order: the inner folder adds nothing the outer one doesn't cover.
+        for roots in [
+            vec![documents.path().to_path_buf(), work.clone()],
+            vec![work.clone(), documents.path().to_path_buf()],
+        ] {
+            assert_eq!(names(&scan(&roots, MAX_RESULTS)), ["report.pdf"]);
+        }
+    }
+
+    #[test]
+    fn a_root_nested_past_max_depth_is_still_scanned() {
+        let home = tempfile::tempdir().unwrap();
+        touch(home.path(), "a/b/c/d/clients/acme/brief.pdf", 5);
+        let acme = home.path().join("a/b/c/d/clients/acme");
+
+        let files = scan(&[home.path().to_path_buf(), acme], MAX_RESULTS);
+
+        assert_eq!(names(&files), ["brief.pdf"]);
     }
 
     #[test]

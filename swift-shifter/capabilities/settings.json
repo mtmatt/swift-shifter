@@ -6,6 +6,7 @@
   "permissions": [
     "core:default",
     "core:event:allow-listen",
-    "core:window:allow-close"
+    "core:window:allow-close",
+    "dialog:allow-open"
   ]
 }

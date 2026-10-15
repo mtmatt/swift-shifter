@@ -8,7 +8,7 @@ A featherweight, always-on file converter that lives in your menu bar. Press a h
 
 ## Features
 
-- **Quick bar** -- Ctrl + Shift + Space (or a click on the tray icon) opens a Spotlight-style search bar that suggests recently changed files from Desktop, Documents and Downloads; type to filter, Tab to pick a format (or type "photo to jpg"), Enter to convert
+- **Quick bar** -- Ctrl + Shift + Space (or a click on the tray icon) opens a Spotlight-style search bar that suggests recently changed files from Desktop, Documents and Downloads; type to filter, Tab to pick a format (or type "photo to jpg"), Enter to convert. The shortcut and the scanned folders can be changed in Settings → quick
 - **Drop zone** -- the main window, opened from the Dock / Start menu or the tray menu, accepts drag-and-drop from Finder or any file manager
 - **Zero-friction UX** -- one click to pick the output format, conversion starts instantly
 - **Broad format support**
@@ -27,25 +27,23 @@ A featherweight, always-on file converter that lives in your menu bar. Press a h
 - **Auto-update** -- checks for new releases on startup; installs in the background
 - **Settings panel** -- configure output folder, JPEG/AVIF quality, concurrency, PDF conversion engine, and local LLM
 
-
 ## Tech Stack
 
-| Layer               | Technology                                                                   |
-| ------------------- | ---------------------------------------------------------------------------- |
-| App shell           | [Tauri v2](https://tauri.app)                                                |
-| Backend logic       | Rust                                                                         |
-| Image processing    | [`image`](https://crates.io/crates/image) crate + [`ravif`](https://crates.io/crates/ravif) for AVIF + macOS `sips` for HEIC |
-| Video / audio       | System `ffmpeg` (auto-installed via Homebrew if missing)                     |
-| Document conversion | System `pandoc` (auto-installed via Homebrew / winget / apt if missing)      |
-| PDF ↔ EPUB / HTML / MD | `pymupdf4llm` (auto-installed via pipx); optional ML engine via `marker-pdf`     |
-| MOBI conversion     | System `ebook-convert` / Calibre (auto-installed via Homebrew cask / winget / apt) |
-| Local LLM           | [Ollama](https://ollama.com) (optional); cleans up PDF extraction output            |
-| Data serialization  | `serde_json`, `serde_yaml`, `toml`, `csv` crates                             |
-| Frontend UI         | TypeScript + [Vite](https://vitejs.dev) (plain DOM, no framework)            |
-| Global hotkeys      | `tauri-plugin-global-shortcut`                                               |
-| System tray         | Tauri built-in tray API                                                      |
-| Auto-update         | `tauri-plugin-updater`                                                       |
-
+| Layer                  | Technology                                                                                                                   |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| App shell              | [Tauri v2](https://tauri.app)                                                                                                |
+| Backend logic          | Rust                                                                                                                         |
+| Image processing       | [`image`](https://crates.io/crates/image) crate + [`ravif`](https://crates.io/crates/ravif) for AVIF + macOS `sips` for HEIC |
+| Video / audio          | System `ffmpeg` (auto-installed via Homebrew if missing)                                                                     |
+| Document conversion    | System `pandoc` (auto-installed via Homebrew / winget / apt if missing)                                                      |
+| PDF ↔ EPUB / HTML / MD | `pymupdf4llm` (auto-installed via pipx); optional ML engine via `marker-pdf`                                                 |
+| MOBI conversion        | System `ebook-convert` / Calibre (auto-installed via Homebrew cask / winget / apt)                                           |
+| Local LLM              | [Ollama](https://ollama.com) (optional); cleans up PDF extraction output                                                     |
+| Data serialization     | `serde_json`, `serde_yaml`, `toml`, `csv` crates                                                                             |
+| Frontend UI            | TypeScript + [Vite](https://vitejs.dev) (plain DOM, no framework)                                                            |
+| Global hotkeys         | `tauri-plugin-global-shortcut`                                                                                               |
+| System tray            | Tauri built-in tray API                                                                                                      |
+| Auto-update            | `tauri-plugin-updater`                                                                                                       |
 
 ## Architecture Overview
 
@@ -97,19 +95,17 @@ swift-shifter/
 └── package.json
 ```
 
-
 ## Prerequisites
 
-| Tool    | Version         | Notes                                                             |
-| ------- | --------------- | ----------------------------------------------------------------- |
-| Rust    | stable (≥ 1.78) | via `rustup`                                                      |
-| Node.js | ≥ 24            | for Tauri CLI and Vite                                            |
-| ffmpeg  | ≥ 6             | for video/audio; auto-installed via `brew` if missing             |
-| pandoc  | any             | for document conversion; auto-installed via `brew` / winget / apt    |
-| pymupdf4llm | any         | for PDF extraction; auto-installed via `pipx` if missing             |
-| Calibre | any             | for MOBI conversion; auto-installed via `brew` / winget / apt        |
-| Ollama  | any             | optional; for LLM post-processing of PDF text (user-installed)       |
-
+| Tool        | Version         | Notes                                                             |
+| ----------- | --------------- | ----------------------------------------------------------------- |
+| Rust        | stable (≥ 1.78) | via `rustup`                                                      |
+| Node.js     | ≥ 24            | for Tauri CLI and Vite                                            |
+| ffmpeg      | ≥ 6             | for video/audio; auto-installed via `brew` if missing             |
+| pandoc      | any             | for document conversion; auto-installed via `brew` / winget / apt |
+| pymupdf4llm | any             | for PDF extraction; auto-installed via `pipx` if missing          |
+| Calibre     | any             | for MOBI conversion; auto-installed via `brew` / winget / apt     |
+| Ollama      | any             | optional; for LLM post-processing of PDF text (user-installed)    |
 
 ## Contribute to the Project
 
@@ -139,15 +135,13 @@ git push origin main
 
 This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Pushing to `main` triggers the CI pipeline, which automatically creates the `v0.2.0` tag and kicks off the release build.
 
-
 ## CI / Release Pipeline
 
-| Workflow | Trigger | What it does |
-| --- | --- | --- |
-| `build.yml` | Push to `main`, PRs | Compile check on macOS, Windows, Ubuntu, Fedora, Arch |
-| `tag.yml` | `build.yml` passes on `main` | Verifies version files agree, creates `v{version}` tag |
-| `release.yml` | `v*` tag pushed | Builds signed installers on all platforms, publishes GitHub draft release |
-
+| Workflow      | Trigger                      | What it does                                                              |
+| ------------- | ---------------------------- | ------------------------------------------------------------------------- |
+| `build.yml`   | Push to `main`, PRs          | Compile check on macOS, Windows, Ubuntu, Fedora, Arch                     |
+| `tag.yml`     | `build.yml` passes on `main` | Verifies version files agree, creates `v{version}` tag                    |
+| `release.yml` | `v*` tag pushed              | Builds signed installers on all platforms, publishes GitHub draft release |
 
 ## Roadmap
 
@@ -175,14 +169,12 @@ This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Push
 - [x] M4A audio format support
 - [x] Clipboard integration (paste to convert; copy result back to clipboard)
 
-
 ### Workflow & Automation
 
 - [x] Clipboard Integration: Convert image/text directly from clipboard to file and vice versa
 - [ ] Watched Folders: Designate folders for automatic background conversion upon file drop
 - [ ] Smart Presets: Create custom "Action Chains" (e.g., Convert to WebP + Resize to 1200px + Strip Metadata)
 - [ ] Post-processing hooks: Run custom shell commands or scripts after a successful conversion
-
 
 ### Local AI & Privacy
 
@@ -196,7 +188,6 @@ This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Push
 - [ ] Swift Shifter indexes the metadata and AI-generated tags of your recently converted files, allowing you to hit the hotkey and type "that picture of a dog I converted yesterday" to locate it.
 - [ ] Drop an image with an aspect ratio constraint (e.g., "convert to 16:9") and use local Stable Diffusion/Burn to intelligently fill the missing background rather than cropping or stretching.
 
-
 ### Advanced Media & Spatial Processing
 
 - [ ] Local AI splitting of audio tracks into isolated vocals, drums, bass, and instruments (via Demucs/ONNX integration).
@@ -205,7 +196,6 @@ This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Push
 - [ ] Drop a `.rs`, `.ts`, or `.py` file and generate a beautifully syntax-highlighted, customized image for social sharing (similar to Carbon).
 - [ ] Auto-detect subjects in landscape videos and convert them to portrait (9:16) for social media, keeping the primary subject in the frame.
 - [ ] Run SVGs through a Rust-based optimization pipeline (like `usvg`) to strip bloat and standardise paths before dropping them into a project.
-
 
 ### Deep OS & Hardware Symbiosis
 
@@ -217,8 +207,7 @@ This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Push
 ### Niche & Retro Conversions
 
 - [ ] Specifically dither and contrast-boost PDFs and images for optimal reading on Remarkable, Kindle, or Boox devices.
-- [ ] Invisibly embed a text file or JSON payload directly into the pixel data of an image output. 
-
+- [ ] Invisibly embed a text file or JSON payload directly into the pixel data of an image output.
 
 ## License
 

@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+use crate::{hotkey, recent};
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     /// Where to save converted files. None = same directory as input.
@@ -31,6 +33,13 @@ pub struct Config {
     /// Where clipboard-converted results are sent: "clipboard" (default) or "download" (save to file).
     #[serde(default = "default_clipboard_output_mode")]
     pub clipboard_output_mode: String,
+    /// Global shortcut that toggles the quick bar, as an accelerator such as
+    /// "Control+Shift+Space" (see `hotkey::parse_shortcut`).
+    #[serde(default = "default_quick_bar_shortcut")]
+    pub quick_bar_shortcut: String,
+    /// Folders the quick bar scans for recently changed files.
+    #[serde(default = "default_recent_folders")]
+    pub recent_folders: Vec<String>,
 }
 
 fn default_jpeg_quality() -> u8 {
@@ -51,6 +60,26 @@ fn default_local_llm_url() -> String {
 fn default_clipboard_output_mode() -> String {
     "clipboard".to_string()
 }
+fn default_quick_bar_shortcut() -> String {
+    hotkey::DEFAULT_SHORTCUT.to_string()
+}
+/// Desktop, Documents and Downloads, where they exist.
+pub fn default_recent_folders() -> Vec<String> {
+    recent::default_roots()
+        .into_iter()
+        .map(|p| p.to_string_lossy().into_owned())
+        .collect()
+}
+
+/// Trim folder paths and drop blanks and duplicates, keeping the user's order.
+pub fn normalize_folders(folders: Vec<String>) -> Vec<String> {
+    let mut seen = std::collections::HashSet::new();
+    folders
+        .into_iter()
+        .map(|f| f.trim().to_string())
+        .filter(|f| !f.is_empty() && seen.insert(f.clone()))
+        .collect()
+}
 
 impl Default for Config {
     fn default() -> Self {
@@ -64,6 +93,8 @@ impl Default for Config {
             local_llm_model: default_local_llm_model(),
             local_llm_url: default_local_llm_url(),
             clipboard_output_mode: default_clipboard_output_mode(),
+            quick_bar_shortcut: default_quick_bar_shortcut(),
+            recent_folders: default_recent_folders(),
         }
     }
 }
@@ -84,14 +115,21 @@ pub fn load() -> Config {
     let Ok(text) = std::fs::read_to_string(&path) else {
         return Config::default();
     };
-    let mut cfg: Config = toml::from_str(&text).unwrap_or_default();
-    // Clamp in case config was manually edited out of range
+    sanitize(toml::from_str(&text).unwrap_or_default())
+}
+
+/// Bring a hand-edited or outdated config back into range.
+fn sanitize(mut cfg: Config) -> Config {
     cfg.jpeg_quality = cfg.jpeg_quality.clamp(1, 100);
     cfg.avif_quality = cfg.avif_quality.clamp(1, 100);
     cfg.max_concurrent = cfg.max_concurrent.clamp(1, 8);
     if !["clipboard", "download"].contains(&cfg.clipboard_output_mode.as_str()) {
         cfg.clipboard_output_mode = "clipboard".to_string();
     }
+    if hotkey::parse_shortcut(&cfg.quick_bar_shortcut).is_err() {
+        cfg.quick_bar_shortcut = default_quick_bar_shortcut();
+    }
+    cfg.recent_folders = normalize_folders(cfg.recent_folders);
     cfg
 }
 
@@ -120,5 +158,53 @@ mod tests {
         let s = toml::to_string_pretty(&cfg).unwrap();
         let back: Config = toml::from_str(&s).unwrap();
         assert_eq!(back.clipboard_output_mode, "clipboard");
+    }
+
+    #[test]
+    fn config_without_quick_bar_fields_gets_defaults() {
+        // A config.toml saved before these settings existed.
+        let cfg: Config = toml::from_str("jpeg_quality = 80").unwrap();
+        assert_eq!(cfg.quick_bar_shortcut, "Control+Shift+Space");
+        assert_eq!(cfg.recent_folders, default_recent_folders());
+    }
+
+    #[test]
+    fn an_emptied_folder_list_stays_empty() {
+        // Removing every folder is a valid choice, not a request for defaults.
+        let cfg: Config = toml::from_str("recent_folders = []").unwrap();
+        assert!(cfg.recent_folders.is_empty());
+    }
+
+    #[test]
+    fn normalize_folders_trims_and_dedupes_in_order() {
+        let folders = vec![
+            " /b ".to_string(),
+            "/a".to_string(),
+            "".to_string(),
+            "/b".to_string(),
+            "   ".to_string(),
+        ];
+        assert_eq!(normalize_folders(folders), ["/b", "/a"]);
+    }
+
+    #[test]
+    fn sanitize_resets_an_unusable_shortcut_and_tidies_folders() {
+        let cfg = Config {
+            quick_bar_shortcut: "Shift+KeyA".to_string(),
+            recent_folders: vec![" /a ".to_string(), "/a".to_string()],
+            ..Config::default()
+        };
+        let cfg = sanitize(cfg);
+        assert_eq!(cfg.quick_bar_shortcut, hotkey::DEFAULT_SHORTCUT);
+        assert_eq!(cfg.recent_folders, ["/a"]);
+    }
+
+    #[test]
+    fn sanitize_keeps_a_valid_custom_shortcut() {
+        let cfg = Config {
+            quick_bar_shortcut: "Alt+KeyK".to_string(),
+            ..Config::default()
+        };
+        assert_eq!(sanitize(cfg).quick_bar_shortcut, "Alt+KeyK");
     }
 }
