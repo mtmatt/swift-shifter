@@ -4,27 +4,29 @@
 
 pub mod ast;
 pub mod read;
+pub mod typst;
 pub mod write;
 
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use tauri::Emitter;
 
 use crate::converter::document::ProgressPayload;
-use crate::converter::document::utils::output_path;
+use crate::converter::document::utils::{output_path, target_to_ext};
 use ast::{Block, Document, Inline, List};
 
 /// Input formats the native readers handle (normalized extensions).
 pub const INPUTS: &[&str] = &["md", "txt", "html"];
 /// Output formats the native writers handle.
-pub const OUTPUTS: &[&str] = &["md", "txt", "html"];
+pub const OUTPUTS: &[&str] = &["md", "txt", "html", "pdf", "typst"];
 
 /// Whether the native engine converts `from` → `to` (normalized extensions).
 pub fn handles(from: &str, to: &str) -> bool {
     INPUTS.contains(&from) && OUTPUTS.contains(&to) && from != to
 }
 
-/// Convert `path` to `target` (md, txt or html), writing next to the input or
+/// Convert `path` to `target` (one of [`OUTPUTS`]), writing next to the input or
 /// into `output_dir`. Emits the same progress events as the other converters.
 pub async fn convert_document(
     app: &tauri::AppHandle,
@@ -43,7 +45,8 @@ pub async fn convert_document(
         .ok();
     };
     progress(0.0);
-    let out = output_path(path, target, output_dir)?;
+    // Typst output is written as `.typ`, like the pandoc path.
+    let out = output_path(path, target_to_ext(target), output_dir)?;
     let input = PathBuf::from(path);
     let out_for_task = out.clone();
     let target = target.to_string();
@@ -79,18 +82,253 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<(), String> {
     if let (Some(src_dir), Some(out_dir)) = (input.parent(), out.parent())
         && !same_dir(src_dir, out_dir)
     {
-        rebase_relative_urls(&mut doc.blocks, src_dir);
+        if target == "typst" {
+            copy_images_beside(&mut doc.blocks, src_dir, out)?;
+        } else {
+            rebase_relative_urls(&mut doc.blocks, src_dir);
+        }
     }
 
+    let base_dir = input.parent().unwrap_or(Path::new("."));
     let rendered = match target {
-        "md" => write::markdown::write(&doc),
-        "txt" => write::plain::write(&doc),
-        "html" => write::html::write(&doc),
+        "md" => write::markdown::write(&doc).into_bytes(),
+        "txt" => write::plain::write(&doc).into_bytes(),
+        "html" => write::html::write(&doc).into_bytes(),
+        "typst" => typst_file_source(&doc, base_dir).into_bytes(),
+        "pdf" => typeset(&doc, base_dir)?,
         other => return Err(format!("The native converter can't write {other}")),
     };
     std::fs::write(out, rendered).map_err(|e| format!("Failed to write {}: {e}", out.display()))
 }
 
+/// A standalone `.typ` file for the user's own typst.
+fn typst_file_source(doc: &Document, base_dir: &Path) -> String {
+    let lang = doc.effective_lang();
+    let fonts = typst::text_fonts(lang.as_deref());
+    let options = write::typst::Options {
+        target: write::typst::Target::TypstFile,
+        fonts,
+        paper: typst::default_paper(),
+        base_dir: base_dir.to_path_buf(),
+        tex_fallback: &HashSet::new(),
+    };
+    write::typst::write(doc, &options).source
+}
+
+/// Typeset `doc` to PDF. Formulas the compiler rejects are shown as TeX
+/// instead and the document is typeset again, so one odd formula doesn't
+/// fail the whole conversion.
+pub fn typeset(doc: &Document, base_dir: &Path) -> Result<Vec<u8>, String> {
+    typeset_with_fallback(doc, base_dir).map(|(pdf, _)| pdf)
+}
+
+/// [`typeset`], also returning the indices of the formulas shown as TeX.
+fn typeset_with_fallback(
+    doc: &Document,
+    base_dir: &Path,
+) -> Result<(Vec<u8>, HashSet<usize>), String> {
+    let lang = doc.effective_lang();
+    let fonts = typst::text_fonts(lang.as_deref());
+    if ast::contains_cjk(&doc.plain_text()) && !typst::has_cjk_font(&fonts) {
+        return Err(no_cjk_font_error());
+    }
+    let mut fallback: HashSet<usize> = HashSet::new();
+    loop {
+        let options = write::typst::Options {
+            target: write::typst::Target::Pdf,
+            fonts: fonts.clone(),
+            paper: typst::default_paper(),
+            base_dir: base_dir.to_path_buf(),
+            tex_fallback: &fallback,
+        };
+        let output = write::typst::write(doc, &options);
+        let project = typst::Project {
+            main: output.source,
+            main_name: None,
+            root: base_dir.to_path_buf(),
+            files: output.images,
+            allow_packages: false,
+        };
+        let error = match typst::compile_pdf(project) {
+            Ok(pdf) => return Ok((pdf, fallback)),
+            Err(error) => error,
+        };
+        let failed: Vec<usize> = output
+            .formulas
+            .iter()
+            .enumerate()
+            .filter(|(i, range)| {
+                !fallback.contains(i)
+                    && error
+                        .main_ranges
+                        .iter()
+                        .any(|r| r.start < range.end && range.start < r.end)
+            })
+            .map(|(i, _)| i)
+            .collect();
+        if failed.is_empty() {
+            return Err(format!("Couldn't typeset the PDF: {}", error.message));
+        }
+        fallback.extend(failed);
+    }
+}
+
+fn no_cjk_font_error() -> String {
+    "This document contains Chinese, Japanese or Korean text, but no font for it is installed. \
+     Install one (e.g. Noto CJK: the fonts-noto-cjk package on Debian/Ubuntu) and try again."
+        .to_string()
+}
+
+/// Compile a user-written `.typ` file to PDF. Relative paths resolve from
+/// its folder, and `@preview/…` packages are downloaded on first use.
+pub fn typst_file_to_pdf(input: &Path) -> Result<Vec<u8>, String> {
+    let main = std::fs::read_to_string(input)
+        .map_err(|e| format!("Failed to read {}: {e}", input.display()))?;
+    let project = typst::Project {
+        main: main.trim_start_matches('\u{feff}').to_string(),
+        main_name: input.file_name().map(|n| n.to_string_lossy().into_owned()),
+        root: input.parent().unwrap_or(Path::new(".")).to_path_buf(),
+        files: HashMap::new(),
+        allow_packages: true,
+    };
+    typst::compile_pdf(project).map_err(|e| e.message)
+}
+
+/// The largest page side PDF viewers accept (Acrobat's limit), in points.
+const MAX_PAGE_SIDE_PT: f64 = 14_400.0;
+
+/// A one-page PDF the size of `image` (PNG, JPEG, GIF, WebP or SVG), one
+/// point per pixel, scaled down to fit when that would exceed the largest
+/// page PDF viewers accept.
+pub fn image_to_pdf(image: &Path) -> Result<Vec<u8>, String> {
+    let ext = image
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    let vpath = format!("{}/img/0.{ext}", typst::VIRTUAL_DIR);
+    // SVGs have no pixel size here; typst sizes them from their viewBox.
+    let fit = match ::image::image_dimensions(image) {
+        Ok((w, h)) if f64::from(w.max(h)) > MAX_PAGE_SIDE_PT => {
+            if w >= h {
+                format!(", width: {MAX_PAGE_SIDE_PT}pt")
+            } else {
+                format!(", height: {MAX_PAGE_SIDE_PT}pt")
+            }
+        }
+        _ => String::new(),
+    };
+    let project = typst::Project {
+        main: format!(
+            "#set page(width: auto, height: auto, margin: 0pt)\n#image({}{fit})\n",
+            write::typst::typst_str(&vpath)
+        ),
+        main_name: None,
+        root: image.parent().unwrap_or(Path::new(".")).to_path_buf(),
+        files: HashMap::from([(vpath, image.to_path_buf())]),
+        allow_packages: false,
+    };
+    typst::compile_pdf(project).map_err(|e| e.message)
+}
+
+/// Typeset typst markup written by pandoc (epub/tex → pdf) under Swift
+/// Shifter's page template, with `meta` for the title block. `root` is where
+/// its image paths resolve.
+pub fn typeset_pandoc_typst(body: &str, root: &Path, meta: &ast::Meta) -> Result<Vec<u8>, String> {
+    let body = unlink_dangling_labels(body);
+    let lang = ast::detect_cjk_lang(&body);
+    let fonts = typst::text_fonts(lang);
+    if ast::contains_cjk(&body) && !typst::has_cjk_font(&fonts) {
+        return Err(no_cjk_font_error());
+    }
+    let options = write::typst::Options {
+        target: write::typst::Target::Pdf,
+        fonts,
+        paper: typst::default_paper(),
+        base_dir: root.to_path_buf(),
+        tex_fallback: &HashSet::new(),
+    };
+    let preamble = write::typst::preamble(
+        meta,
+        lang,
+        &options,
+        write::typst::PreambleExtras::default(),
+    );
+    let project = typst::Project {
+        main: format!("{preamble}\n{body}\n"),
+        main_name: None,
+        root: root.to_path_buf(),
+        files: HashMap::new(),
+        allow_packages: false,
+    };
+    typst::compile_pdf(project).map_err(|e| format!("Couldn't typeset the PDF: {}", e.message))
+}
+
+/// Point links to labels the document never defines (broken anchors, common
+/// in real ebooks) at a plain URL instead: typst rejects links to unknown
+/// labels, which would fail the whole conversion. Pandoc writes labels as
+/// `<name>`, or as `label("name")` when the name has other characters.
+fn unlink_dangling_labels(body: &str) -> String {
+    const LINK: &str = "link(";
+    // Labels are defined anywhere except as a link target.
+    let mut defined = HashSet::new();
+    for (at, _) in body.match_indices(['<', 'l']) {
+        if let Some((name, _)) = label_at(body, at)
+            && !body[..at].ends_with(LINK)
+        {
+            defined.insert(name);
+        }
+    }
+    let mut out = String::with_capacity(body.len());
+    let mut rest = body;
+    while let Some(i) = rest.find(LINK) {
+        let target = i + LINK.len();
+        out.push_str(&rest[..target]);
+        match label_at(rest, target) {
+            Some((name, len)) if !defined.contains(name) => {
+                // A `label("…")` name is already escaped for a string.
+                out.push_str(&format!("\"#{name}\""));
+                rest = &rest[target + len..];
+            }
+            _ => rest = &rest[target..],
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The label written at `body[at..]`, `<name>` or `label("name")`, and its
+/// length in bytes. A `\<` is escaped text, not a label.
+fn label_at(body: &str, at: usize) -> Option<(&str, usize)> {
+    let text = &body[at..];
+    if let Some(after) = text.strip_prefix('<') {
+        let is_label_char = |c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ':');
+        let len = after
+            .find(|c: char| !is_label_char(c))
+            .unwrap_or(after.len());
+        let closed = len > 0 && after[len..].starts_with('>');
+        return (closed && !body[..at].ends_with('\\')).then(|| (&after[..len], len + 2));
+    }
+    let after = text.strip_prefix("label(\"")?;
+    if body[..at].ends_with(|c: char| c.is_alphanumeric() || c == '-' || c == '_') {
+        return None;
+    }
+    let mut escaped = false;
+    let end = after.char_indices().find_map(|(i, c)| match c {
+        '\\' if !escaped => {
+            escaped = true;
+            None
+        }
+        '"' if !escaped => Some(i),
+        _ => {
+            escaped = false;
+            None
+        }
+    })?;
+    after[end + 1..]
+        .starts_with(')')
+        .then(|| (&after[..end], "label(\"".len() + end + 2))
+}
 /// Markdown → standalone HTML, for converters that produce Markdown first
 /// (PDF → HTML via pymupdf4llm).
 pub fn markdown_to_html(markdown: &str, title: &str) -> String {
@@ -129,48 +367,112 @@ fn same_dir(a: &Path, b: &Path) -> bool {
     }
 }
 
-/// Make relative image and link targets absolute against `base`, so they
-/// still resolve when the output is written to a different folder (an
-/// output directory, or a temp dir between conversion hops).
-fn rebase_relative_urls(blocks: &mut [Block], base: &Path) {
+/// Which kind of reference a URL is.
+#[derive(Clone, Copy, PartialEq)]
+enum UrlKind {
+    Image,
+    Link,
+}
+
+/// Calls `f` with every image and link URL in `blocks`.
+fn for_each_url(blocks: &mut [Block], f: &mut dyn FnMut(UrlKind, &mut String)) {
     for block in blocks {
         match block {
             Block::Heading { content, .. } | Block::Paragraph(content) => {
-                rebase_inlines(content, base)
+                for_each_inline_url(content, f)
             }
             Block::Quote(children)
             | Block::FootnoteDefinition {
                 content: children, ..
-            } => rebase_relative_urls(children, base),
+            } => for_each_url(children, f),
             Block::List(List { items, .. }) => items
                 .iter_mut()
-                .for_each(|item| rebase_relative_urls(&mut item.content, base)),
+                .for_each(|item| for_each_url(&mut item.content, f)),
             Block::Table(table) => table
                 .header
                 .iter_mut()
                 .chain(table.rows.iter_mut().flatten())
-                .for_each(|cell| rebase_inlines(cell, base)),
+                .for_each(|cell| for_each_inline_url(cell, f)),
             _ => {}
         }
     }
 }
 
-fn rebase_inlines(inlines: &mut [Inline], base: &Path) {
+fn for_each_inline_url(inlines: &mut [Inline], f: &mut dyn FnMut(UrlKind, &mut String)) {
     for inline in inlines {
         match inline {
-            Inline::Image { url, .. } => rebase_url(url, base),
+            Inline::Image { url, .. } => f(UrlKind::Image, url),
             Inline::Link { url, content, .. } => {
-                rebase_url(url, base);
-                rebase_inlines(content, base);
+                f(UrlKind::Link, url);
+                for_each_inline_url(content, f);
             }
             Inline::Emph(c)
             | Inline::Strong(c)
             | Inline::Strikethrough(c)
             | Inline::Superscript(c)
-            | Inline::Subscript(c) => rebase_inlines(c, base),
+            | Inline::Subscript(c) => for_each_inline_url(c, f),
             _ => {}
         }
     }
+}
+
+/// Make relative image and link targets absolute against `base`, so they
+/// still resolve when the output is written to a different folder (an
+/// output directory, or a temp dir between conversion hops).
+fn rebase_relative_urls(blocks: &mut [Block], base: &Path) {
+    for_each_url(blocks, &mut |_, url| rebase_url(url, base));
+}
+
+/// For `.typ` output in another folder: copy local images into a
+/// `<name>-images` folder beside it and point at the copies (typst can't
+/// read files above the folder it compiles from). Links are rebased as for
+/// the other formats.
+fn copy_images_beside(blocks: &mut [Block], src_dir: &Path, out: &Path) -> Result<(), String> {
+    let stem = out.file_stem().unwrap_or_default().to_string_lossy();
+    let dir_name = format!("{stem}-images");
+    let dir = out.with_file_name(&dir_name);
+    let mut copied = 0usize;
+    let mut error = None;
+    for_each_url(blocks, &mut |kind, url| match kind {
+        UrlKind::Link => rebase_url(url, src_dir),
+        UrlKind::Image => {
+            let Some(path) = local_path(url, src_dir) else {
+                return;
+            };
+            let name = path.file_name().unwrap_or_default().to_string_lossy();
+            let file_name = format!("{copied}-{name}");
+            let copy = std::fs::create_dir_all(&dir)
+                .and_then(|()| std::fs::copy(&path, dir.join(&file_name)));
+            match copy {
+                Ok(_) => {
+                    *url = format!("{dir_name}/{file_name}");
+                    copied += 1;
+                }
+                Err(e) => error = Some(format!("Failed to copy {}: {e}", path.display())),
+            }
+        }
+    });
+    error.map_or(Ok(()), Err)
+}
+
+/// The local file a URL points at, if it exists: a `file://` URL, an
+/// absolute path, or a path relative to `base` (percent-decoded, without
+/// any `?query` or `#fragment`). `None` for remote URLs, data URLs, in-page
+/// anchors and missing files.
+pub(crate) fn local_path(url: &str, base: &Path) -> Option<PathBuf> {
+    let path = if url.starts_with("file://") {
+        url::Url::parse(url).ok()?.to_file_path().ok()?
+    } else if url.is_empty()
+        || url.starts_with('#')
+        || url.contains("://")
+        || url.starts_with("data:")
+    {
+        return None;
+    } else {
+        let path = url.split(['?', '#']).next().unwrap_or(url);
+        base.join(percent_decode(path))
+    };
+    path.is_file().then_some(path)
 }
 
 /// Point a relative target that exists next to the input at it by absolute
@@ -199,7 +501,7 @@ fn rebase_url(url: &mut String, base: &Path) {
 
 /// Decode `%XX` escapes (relative URLs in HTML are usually encoded); invalid
 /// sequences are kept as written.
-fn percent_decode(text: &str) -> String {
+pub(crate) fn percent_decode(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut out = Vec::with_capacity(bytes.len());
     let mut i = 0;
@@ -231,7 +533,9 @@ mod tests {
         assert!(handles("html", "md"));
         assert!(handles("txt", "md"));
         assert!(!handles("md", "md"));
-        assert!(!handles("md", "pdf"));
+        assert!(handles("md", "pdf"));
+        assert!(handles("html", "typst"));
+        assert!(!handles("md", "tex"));
         assert!(!handles("tex", "html"));
     }
 
@@ -359,8 +663,8 @@ mod tests {
     fn cjk_documents_declare_their_language() {
         let html = write::html::write(&read::markdown::read(&fixture("cjk.md")));
         assert!(
-            html.contains("<html lang=\"ja\">"),
-            "kana means Japanese: {html}"
+            html.contains("<html lang=\"zh-Hant\">"),
+            "mostly Traditional Chinese: {html}"
         );
         assert!(html.contains("<h1 id=\"中文標題\">中文標題</h1>"), "{html}");
     }
@@ -414,6 +718,207 @@ mod tests {
         assert_eq!(
             read::markdown::read(&md).blocks,
             read::plain::read("# not a heading\n*literal*").blocks
+        );
+    }
+
+    fn page_count(pdf: &[u8]) -> usize {
+        lopdf::Document::load_mem(pdf)
+            .expect("valid PDF")
+            .get_pages()
+            .len()
+    }
+
+    #[test]
+    fn every_fixture_typesets_to_pdf() {
+        let docs = [
+            (
+                "kitchen-sink.md",
+                read::markdown::read(&fixture("kitchen-sink.md")),
+                "Kitchen Sink",
+            ),
+            ("cjk.md", read::markdown::read(&fixture("cjk.md")), "Lists"),
+            (
+                "messy-page.html",
+                read::html::read(&fixture("messy-page.html")),
+                "Paragraph one",
+            ),
+            (
+                "notes.txt",
+                read::plain::read(&fixture("notes.txt")),
+                "Shopping list",
+            ),
+            (
+                "pymupdf-output.md",
+                read::markdown::read(&fixture("pymupdf-output.md")),
+                "Revenue",
+            ),
+        ];
+        let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docs");
+        for (name, doc, _) in docs {
+            let pdf = match typeset(&doc, &base) {
+                Ok(pdf) => pdf,
+                // A machine without CJK fonts can't typeset the CJK fixture,
+                // and says so.
+                Err(e) if name == "cjk.md" && e.contains("no font for it is installed") => continue,
+                Err(e) => panic!("{name}: {e}"),
+            };
+            assert!(pdf.starts_with(b"%PDF") && page_count(&pdf) >= 1, "{name}");
+        }
+    }
+
+    #[test]
+    fn formulas_the_compiler_rejects_fall_back_to_tex() {
+        let doc = read::markdown::read("Good $x^2$, odd $\\frac{a}$, good $y_1$ and fine text.\n");
+        let (pdf, fallback) = typeset_with_fallback(&doc, &std::env::temp_dir()).unwrap();
+        assert_eq!(page_count(&pdf), 1);
+        // mitex turns `\frac{a}` into `frac(a)`, which typst rejects.
+        assert_eq!(fallback, HashSet::from([1]), "only the odd formula");
+        let doc = read::markdown::read("All good: $x^2$ and $$\\frac{a}{b}$$\n");
+        let (_, fallback) = typeset_with_fallback(&doc, &std::env::temp_dir()).unwrap();
+        assert!(fallback.is_empty());
+    }
+
+    fn media_box_size(pdf: &[u8]) -> (f32, f32) {
+        let doc = lopdf::Document::load_mem(pdf).unwrap();
+        let (_, page_id) = doc.get_pages().into_iter().next().unwrap();
+        let page = doc.get_dictionary(page_id).unwrap();
+        let media_box = page.get(b"MediaBox").unwrap().as_array().unwrap();
+        let num = |o: &lopdf::Object| {
+            o.as_float()
+                .or_else(|_| o.as_i64().map(|i| i as f32))
+                .unwrap()
+        };
+        (
+            num(&media_box[2]) - num(&media_box[0]),
+            num(&media_box[3]) - num(&media_box[1]),
+        )
+    }
+
+    #[test]
+    fn images_become_pages_of_their_size() {
+        let dir = tempfile::tempdir().unwrap();
+        let png = dir.path().join("wide.png");
+        image::RgbImage::new(200, 100).save(&png).unwrap();
+        let (w, h) = media_box_size(&image_to_pdf(&png).unwrap());
+        assert!((w / h - 2.0).abs() < 0.01, "aspect ratio kept: {w}x{h}");
+    }
+
+    #[test]
+    fn huge_images_are_scaled_to_the_largest_page() {
+        let dir = tempfile::tempdir().unwrap();
+        let png = dir.path().join("banner.png");
+        image::GrayImage::new(16_000, 50).save(&png).unwrap();
+        let (w, h) = media_box_size(&image_to_pdf(&png).unwrap());
+        assert!(w <= MAX_PAGE_SIDE_PT as f32 + 0.5, "{w}x{h}");
+        assert!((w / h - 320.0).abs() < 1.0, "aspect ratio kept: {w}x{h}");
+    }
+
+    #[test]
+    fn typst_files_compile_with_their_own_relative_files() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("chapter.typ"), "Included chapter text.").unwrap();
+        let main = dir.path().join("main.typ");
+        std::fs::write(&main, "= Book\n#include \"chapter.typ\"\n").unwrap();
+        let pdf = typst_file_to_pdf(&main).unwrap();
+        assert_eq!(page_count(&pdf), 1);
+        // A missing include fails, so the include above was really read.
+        std::fs::remove_file(dir.path().join("chapter.typ")).unwrap();
+        assert!(
+            typst_file_to_pdf(&main)
+                .unwrap_err()
+                .contains("chapter.typ")
+        );
+    }
+
+    #[test]
+    fn typst_errors_name_the_users_file() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("main.typ"), "#let greeting = [Hello]").unwrap();
+        let report = dir.path().join("report.typ");
+        std::fs::write(&report, "#import \"main.typ\": greeting\n#greeting\n").unwrap();
+        // A sibling `main.typ` is the user's, not the compiled file.
+        assert_eq!(page_count(&typst_file_to_pdf(&report).unwrap()), 1);
+        std::fs::write(&report, "Fine.\n\n#undefined-function()\n").unwrap();
+        let error = typst_file_to_pdf(&report).unwrap_err();
+        assert!(error.contains("report.typ:3:"), "{error}");
+    }
+
+    #[test]
+    fn dangling_label_links_become_plain_urls() {
+        let body = "#link(<intro>)[Intro] #link(<gone>)[Gone] #link(<a.b-c>)[X]\n\
+                    = Intro <intro>\n\\<not-a-label> #link(<not-a-label>)[Y]\n";
+        assert_eq!(
+            unlink_dangling_labels(body),
+            "#link(<intro>)[Intro] #link(\"#gone\")[Gone] #link(\"#a.b-c\")[X]\n\
+             = Intro <intro>\n\\<not-a-label> #link(\"#not-a-label\")[Y]\n"
+        );
+        // Not a label link: left alone.
+        assert_eq!(unlink_dangling_labels("#link(<x y>)"), "#link(<x y>)");
+        // Pandoc's form for names with other characters.
+        assert_eq!(
+            unlink_dangling_labels(
+                "#link(label(\"weird id!\"))[x] #link(label(\"a \\\" b\"))[y]\n#label(\"a \\\" b\")"
+            ),
+            "#link(\"#weird id!\")[x] #link(label(\"a \\\" b\"))[y]\n#label(\"a \\\" b\")"
+        );
+        assert_eq!(
+            unlink_dangling_labels("#mylabel(\"x\") #link(label(\"x\"))"),
+            "#mylabel(\"x\") #link(\"#x\")"
+        );
+    }
+
+    #[test]
+    fn pandoc_typst_with_broken_links_still_typesets() {
+        let meta = ast::Meta {
+            title: Some("Book".into()),
+            authors: vec!["A. Author".into()],
+            ..Default::default()
+        };
+        let body = "= Chapter <ch1>\nSee #link(<ch1>)[above] and #link(<missing>)[nowhere].\n";
+        let pdf = typeset_pandoc_typst(body, &std::env::temp_dir(), &meta).unwrap();
+        assert_eq!(page_count(&pdf), 1);
+    }
+
+    #[test]
+    fn local_paths_decode_and_drop_queries() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("my pic.png"), b"x").unwrap();
+        let expected = Some(dir.path().join("my pic.png"));
+        assert_eq!(local_path("my%20pic.png?v=2#top", dir.path()), expected);
+        let file_url = url::Url::from_file_path(dir.path().join("my pic.png")).unwrap();
+        assert_eq!(local_path(file_url.as_str(), Path::new("/")), expected);
+        for url in [
+            "missing.png",
+            "#top",
+            "https://x.test/a.png",
+            "data:image/png;base64,AA",
+            "",
+        ] {
+            assert_eq!(local_path(url, dir.path()), None, "{url}");
+        }
+    }
+
+    #[test]
+    fn typst_output_elsewhere_copies_images_beside_it() {
+        let src = tempfile::tempdir().unwrap();
+        let out_dir = tempfile::tempdir().unwrap();
+        image::RgbImage::new(4, 4)
+            .save(src.path().join("a b.png"))
+            .unwrap();
+        std::fs::write(src.path().join("other.md"), "x").unwrap();
+        let mut doc =
+            read::markdown::read("![one](a%20b.png) ![gone](missing.png) [link](other.md)\n");
+        let out = out_dir.path().join("notes.typ");
+        copy_images_beside(&mut doc.blocks, src.path(), &out).unwrap();
+        let mut urls = Vec::new();
+        for_each_url(&mut doc.blocks, &mut |_, url| urls.push(url.clone()));
+        assert_eq!(urls[0], "notes-images/0-a b.png");
+        assert!(out_dir.path().join("notes-images/0-a b.png").is_file());
+        assert_eq!(urls[1], "missing.png", "missing images are left as written");
+        assert!(
+            urls[2].starts_with("file://"),
+            "links are rebased: {}",
+            urls[2]
         );
     }
 

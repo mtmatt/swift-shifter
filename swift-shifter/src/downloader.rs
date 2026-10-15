@@ -12,7 +12,6 @@ const MANIFEST: &str = include_str!("../../tools.toml");
 struct Manifest {
     ffmpeg: ToolSpec,
     pandoc: ToolSpec,
-    typst: ToolSpec,
     calibre: ToolSpec,
 }
 
@@ -24,7 +23,6 @@ impl Manifest {
         match name {
             "ffmpeg" => Some(&self.ffmpeg),
             "pandoc" => Some(&self.pandoc),
-            "typst" => Some(&self.typst),
             "calibre" => Some(&self.calibre),
             _ => None,
         }
@@ -382,7 +380,7 @@ mod tests {
     #[test]
     fn every_manifest_tool_is_resolvable() {
         // Guards against adding a tool to tools.toml without wiring it into
-        // `Manifest`, which left typst uninstallable on Linux/Windows.
+        // `Manifest`, which once left a tool uninstallable on Linux/Windows.
         let manifest = parse_manifest().unwrap();
         let tables: toml::Table = toml::from_str(MANIFEST).unwrap();
         for name in tables.keys() {
@@ -390,20 +388,6 @@ mod tests {
                 manifest.spec(name).is_some(),
                 "tools.toml has [{name}] but Manifest::spec doesn't resolve it"
             );
-        }
-    }
-
-    #[test]
-    fn typst_has_pinned_downloads_for_every_platform() {
-        let manifest = parse_manifest().unwrap();
-        let typst = manifest.spec("typst").unwrap();
-        for entry in [
-            &typst.linux_x86_64,
-            &typst.linux_aarch64,
-            &typst.windows_x86_64,
-        ] {
-            let entry = entry.as_ref().expect("missing typst platform entry");
-            assert_eq!(entry.sha256.len(), 64, "typst {} lacks a sha256", entry.url);
         }
     }
 

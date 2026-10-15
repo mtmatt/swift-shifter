@@ -138,14 +138,9 @@ fn main() {
                 }
             });
 
-            // Check for typst at startup — used for Typst → PDF and as a PDF engine
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = converter::document::ensure_typst(&handle).await {
-                    eprintln!("typst setup warning: {e}");
-                    handle.emit("typst:failed", e).ok();
-                }
-            });
+            // PDFs are typeset in-process; scan fonts now so the first
+            // conversion doesn't wait for it.
+            converter::document::native::typst::warm_up();
 
             // Check for pymupdf4llm at startup — needed for PDF → EPUB/HTML/MD
             let handle = app.handle().clone();

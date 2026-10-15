@@ -4,7 +4,7 @@ use crate::converter::document::pdf;
 use crate::converter::document::types::*;
 use crate::converter::document::utils::*;
 use crate::converter::graph::normalize_ext;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tauri::Emitter;
 
 const EPUB_CSS: &str = concat!(
@@ -368,8 +368,8 @@ pub async fn convert_document(
         .unwrap_or("")
         .to_lowercase();
 
-    // typst → pdf is best served by `typst compile` directly: it's the native
-    // toolchain, needs no LaTeX/PDF engine, and renders faster than pandoc.
+    // typst → pdf compiles the file with the embedded typst; pandoc's typst
+    // reader would lose most of the document.
     if normalize_ext(&input_ext) == "typst" && target_format == "pdf" {
         return convert_typst_to_pdf(app, path, output_dir).await;
     }
@@ -413,6 +413,20 @@ pub async fn convert_document(
     };
     let to_fmt = ext_to_pandoc_format(target_format);
 
+    // PDF: `.tex` keeps LaTeX when an engine is installed; everything else
+    // (epub, or tex without an engine) goes pandoc → typst → embedded typst.
+    let latex = if target_format == "pdf" {
+        let setup = (normalize_ext(&input_ext) == "tex")
+            .then(|| pdf::latex_setup(source))
+            .flatten();
+        if setup.is_none() {
+            return convert_via_pandoc_typst(app, path, &pandoc, source, from_fmt, &out).await;
+        }
+        setup
+    } else {
+        None
+    };
+
     let mut cmd = crate::process::async_command(&pandoc);
     cmd.args([
         "-f",
@@ -423,8 +437,11 @@ pub async fn convert_document(
         out.to_str().unwrap_or(""),
     ]);
 
-    if target_format == "pdf" {
-        pdf::configure_pandoc_pdf(&mut cmd, &pandoc, Some(source)).await?;
+    if let Some(latex) = latex {
+        cmd.args(&latex.args);
+        if let Some(path) = latex.path {
+            cmd.env("PATH", path);
+        }
     }
 
     cmd.arg(source);
@@ -470,19 +487,160 @@ pub async fn convert_document(
     Ok(out.to_string_lossy().to_string())
 }
 
-/// Compile a Typst document straight to PDF with the native `typst` binary.
-/// Falls back to nothing — if typst isn't installed this returns a clear error
-/// rather than silently routing through pandoc (which needs a PDF engine).
+/// PDF via pandoc's typst writer and the embedded typst compiler, for
+/// epub (and tex without a LaTeX engine).
+async fn convert_via_pandoc_typst(
+    app: &tauri::AppHandle,
+    path: &str,
+    pandoc: &Path,
+    source: &Path,
+    from_fmt: &str,
+    out: &Path,
+) -> Result<String, String> {
+    let progress = |percent: f32| {
+        app.emit(
+            "convert:progress",
+            ProgressPayload {
+                path: path.to_string(),
+                percent,
+            },
+        )
+        .ok();
+    };
+    progress(0.0);
+    let stem = Path::new(path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let pdf = pandoc_typst_pdf(pandoc, source, from_fmt, &stem).await?;
+    tokio::fs::write(out, pdf)
+        .await
+        .map_err(|e| format!("Failed to write {}: {e}", out.display()))?;
+    progress(100.0);
+    Ok(out.to_string_lossy().to_string())
+}
+
+/// Pandoc turns `source` into typst markup (extracting images next to it),
+/// and Swift Shifter typesets it under its own page template with the
+/// document's own title and authors (`fallback_title` when it has none).
+pub(crate) async fn pandoc_typst_pdf(
+    pandoc: &Path,
+    source: &Path,
+    from_fmt: &str,
+    fallback_title: &str,
+) -> Result<Vec<u8>, String> {
+    let stage = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    let source = std::path::absolute(source)
+        .map_err(|e| format!("Failed to resolve {}: {e}", source.display()))?;
+    let source_dir = source.parent().unwrap_or(Path::new(".")).to_path_buf();
+    // Pandoc runs from the stage so extracted media get relative paths that
+    // the typst project rooted there can read on every platform; images,
+    // `\input` and `\include` still resolve from the source's folder (the
+    // trailing empty entry keeps TeX's default search path).
+    let texinputs = std::env::join_paths([source_dir.clone(), PathBuf::new()])
+        .map_err(|e| format!("Invalid source folder: {e}"))?;
+    let output = crate::process::async_command(pandoc)
+        .current_dir(stage.path())
+        .env("TEXINPUTS", texinputs)
+        .args([
+            "-f",
+            from_fmt,
+            "-t",
+            "typst",
+            "--extract-media=media",
+            "-o",
+            "body.typ",
+        ])
+        .arg(format!("--resource-path={}", source_dir.display()))
+        .arg(&source)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .await
+        .map_err(|e| format!("Failed to spawn pandoc: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(if stderr.trim().is_empty() {
+            format!(
+                "pandoc exited with code {}",
+                output.status.code().unwrap_or(-1)
+            )
+        } else {
+            stderr.trim().to_string()
+        });
+    }
+    let body = tokio::fs::read_to_string(stage.path().join("body.typ"))
+        .await
+        .map_err(|e| format!("Failed to read pandoc's output: {e}"))?;
+    let mut meta = pandoc_metadata(pandoc, &source, from_fmt, stage.path()).await;
+    if meta.title.is_none() {
+        meta.title = Some(fallback_title.to_string());
+    }
+    let root = stage.path().to_path_buf();
+    let pdf = tokio::task::spawn_blocking(move || {
+        super::native::typeset_pandoc_typst(&body, &root, &meta)
+    })
+    .await
+    .map_err(|e| format!("task panicked: {e}"))??;
+    drop(stage);
+    Ok(pdf)
+}
+
+/// The document's title and authors, as pandoc reads them. Empty when pandoc
+/// can't tell (metadata is a nicety; its absence never fails a conversion).
+async fn pandoc_metadata(
+    pandoc: &Path,
+    source: &Path,
+    from_fmt: &str,
+    stage: &Path,
+) -> super::native::ast::Meta {
+    let template = stage.join("meta.txt");
+    let mut meta = super::native::ast::Meta::default();
+    if tokio::fs::write(
+        &template,
+        "$title$\n$for(author)$$author$$sep$\u{1f}$endfor$\n",
+    )
+    .await
+    .is_err()
+    {
+        return meta;
+    }
+    let Ok(output) = crate::process::async_command(pandoc)
+        .args(["-f", from_fmt, "-t", "plain", "--wrap=none"])
+        .arg(format!("--template={}", template.display()))
+        .arg(source)
+        .stderr(std::process::Stdio::null())
+        .output()
+        .await
+    else {
+        return meta;
+    };
+    let text = String::from_utf8_lossy(&output.stdout);
+    let mut lines = text.lines();
+    meta.title = lines
+        .next()
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .map(str::to_string);
+    meta.authors = lines
+        .next()
+        .unwrap_or("")
+        .split('\u{1f}')
+        .map(str::trim)
+        .filter(|a| !a.is_empty())
+        .map(str::to_string)
+        .collect();
+    meta
+}
+
+/// Compile a Typst document straight to PDF with the embedded typst
+/// compiler. `@preview/…` packages it imports are downloaded on first use.
 pub async fn convert_typst_to_pdf(
     app: &tauri::AppHandle,
     path: &str,
     output_dir: Option<&str>,
 ) -> Result<String, String> {
-    let typst = find_typst_binary().ok_or_else(|| {
-        "typst not found — install it to convert Typst documents to PDF".to_string()
-    })?;
     let out = output_path(path, "pdf", output_dir)?;
-
     app.emit(
         "convert:progress",
         ProgressPayload {
@@ -491,29 +649,13 @@ pub async fn convert_typst_to_pdf(
         },
     )
     .ok();
-
-    let output = crate::process::async_command(&typst)
-        .arg("compile")
-        .arg(path)
-        .arg(out.to_str().unwrap_or(""))
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .output()
+    let input = PathBuf::from(path);
+    let pdf = tokio::task::spawn_blocking(move || super::native::typst_file_to_pdf(&input))
         .await
-        .map_err(|e| format!("Failed to spawn typst: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(if stderr.trim().is_empty() {
-            format!(
-                "typst exited with code {}",
-                output.status.code().unwrap_or(-1)
-            )
-        } else {
-            stderr.trim().to_string()
-        });
-    }
-
+        .map_err(|e| format!("task panicked: {e}"))??;
+    tokio::fs::write(&out, pdf)
+        .await
+        .map_err(|e| format!("Failed to write {}: {e}", out.display()))?;
     app.emit(
         "convert:progress",
         ProgressPayload {
@@ -522,7 +664,6 @@ pub async fn convert_typst_to_pdf(
         },
     )
     .ok();
-
     Ok(out.to_string_lossy().to_string())
 }
 
@@ -531,14 +672,7 @@ pub async fn convert_image_to_pdf(
     path: &str,
     output_dir: Option<&str>,
 ) -> Result<String, String> {
-    let pandoc = get_pandoc()?;
-
-    let input = Path::new(path);
-    // pandoc runs from the staging dir below, so the output path must not
-    // be relative to our own working directory.
-    let out = std::path::absolute(output_path(path, "pdf", output_dir)?)
-        .map_err(|e| format!("Failed to resolve output path: {e}"))?;
-
+    let out = output_path(path, "pdf", output_dir)?;
     app.emit(
         "convert:progress",
         ProgressPayload {
@@ -548,63 +682,13 @@ pub async fn convert_image_to_pdf(
     )
     .ok();
 
-    // Stage a copy of the image next to a one-line markdown file and run
-    // pandoc from there. Older pandoc (e.g. 3.1 on Debian/Ubuntu) ignores
-    // --resource-path with typst, which resolves image paths against
-    // pandoc's working directory. The fixed name also avoids escaping
-    // spaces or parentheses from the user's file name in markdown.
-    let stage = tempfile::Builder::new()
-        .prefix("swift-shifter-image-pdf-")
-        .tempdir()
-        .map_err(|e| format!("Failed to create temp dir: {e}"))?;
-    let ext = input.extension().and_then(|e| e.to_str()).unwrap_or("png");
-    let staged_image = format!("image.{ext}");
-    std::fs::copy(input, stage.path().join(&staged_image))
-        .map_err(|e| format!("Failed to stage image: {e}"))?;
-    std::fs::write(
-        stage.path().join("image.md"),
-        format!("![]({staged_image})"),
-    )
-    .map_err(|e| format!("Failed to create temp file: {e}"))?;
-
-    let mut cmd = crate::process::async_command(&pandoc);
-    cmd.current_dir(stage.path());
-    cmd.args(["-f", "markdown", "-t", "pdf", "-o"]);
-    cmd.arg(&out);
-
-    // The staged markdown has no text of its own to inspect.
-    pdf::configure_pandoc_pdf(&mut cmd, &pandoc, None).await?;
-
-    cmd.arg("image.md");
-    cmd.stdout(std::process::Stdio::null());
-    cmd.stderr(std::process::Stdio::piped());
-
-    let mut child = cmd
-        .spawn()
-        .map_err(|e| format!("Failed to spawn pandoc: {e}"))?;
-
-    let stderr_out = if let Some(stderr) = child.stderr.take() {
-        use tokio::io::{AsyncReadExt, BufReader};
-        let mut buf = String::new();
-        BufReader::new(stderr).read_to_string(&mut buf).await.ok();
-        buf
-    } else {
-        String::new()
-    };
-
-    let status = child
-        .wait()
+    let input = path.to_string();
+    let pdf = tokio::task::spawn_blocking(move || image_pdf_bytes(&input))
         .await
-        .map_err(|e| format!("pandoc wait error: {e}"))?;
-
-    if !status.success() {
-        let msg = if stderr_out.trim().is_empty() {
-            format!("pandoc exited with code {}", status.code().unwrap_or(-1))
-        } else {
-            stderr_out.trim().to_string()
-        };
-        return Err(msg);
-    }
+        .map_err(|e| format!("task panicked: {e}"))??;
+    tokio::fs::write(&out, pdf)
+        .await
+        .map_err(|e| format!("Failed to write {}: {e}", out.display()))?;
 
     app.emit(
         "convert:progress",
@@ -614,8 +698,31 @@ pub async fn convert_image_to_pdf(
         },
     )
     .ok();
-
     Ok(out.to_string_lossy().to_string())
+}
+
+/// A PDF page the size of the image. typst reads PNG, JPEG, GIF, WebP and
+/// SVG; other formats are converted to PNG first.
+fn image_pdf_bytes(path: &str) -> Result<Vec<u8>, String> {
+    let ext = Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(str::to_ascii_lowercase)
+        .unwrap_or_default();
+    if matches!(
+        ext.as_str(),
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg"
+    ) {
+        return super::native::image_to_pdf(Path::new(path));
+    }
+    let stage = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    let stage_dir = stage.path().to_string_lossy().into_owned();
+    let png = if matches!(ext.as_str(), "heic" | "heif") {
+        crate::converter::image::convert_heic(path, "png", Some(&stage_dir))?
+    } else {
+        crate::converter::image::convert_image(path, "png", 90, Some(&stage_dir))?
+    };
+    super::native::image_to_pdf(Path::new(&png))
 }
 
 pub async fn convert_pdf_to_epub(
@@ -1215,4 +1322,75 @@ pub(crate) async fn convert_pdf_with_marker_to_md(
     )
     .ok();
     Ok(out.to_string_lossy().to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn pdf_text(pdf: &[u8]) -> Option<String> {
+        let dir = tempfile::tempdir().ok()?;
+        let path = dir.path().join("out.pdf");
+        std::fs::write(&path, pdf).ok()?;
+        let output = std::process::Command::new("pdftotext")
+            .arg(&path)
+            .arg("-")
+            .output()
+            .ok()?;
+        Some(String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+
+    #[test]
+    fn non_native_images_are_converted_before_typesetting() {
+        let dir = tempfile::tempdir().unwrap();
+        let bmp = dir.path().join("scan.bmp");
+        image::RgbImage::new(30, 20).save(&bmp).unwrap();
+        let pdf = image_pdf_bytes(&bmp.to_string_lossy()).unwrap();
+        assert!(pdf.starts_with(b"%PDF"));
+    }
+
+    #[test]
+    fn tex_typesets_via_pandoc_with_its_own_files_and_metadata() {
+        let Some(pandoc) = find_pandoc_binary() else {
+            eprintln!("skipping: pandoc not found");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        image::RgbImage::new(8, 8)
+            .save(dir.path().join("fig.png"))
+            .unwrap();
+        std::fs::write(dir.path().join("part.tex"), "Included part text.\n").unwrap();
+        let tex = dir.path().join("paper.tex");
+        std::fs::write(
+            &tex,
+            "\\documentclass{article}\n\\title{Real Title}\n\\author{Ada \\and Grace}\n\
+             \\begin{document}\n\\maketitle\n\\section{Intro}\\label{intro}\n\
+             See \\hyperref[nowhere]{a broken link}.\n\\input{part}\n\
+             \\includegraphics{fig.png}\n\\end{document}\n",
+        )
+        .unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let meta = runtime.block_on(pandoc_metadata(&pandoc, &tex, "latex", dir.path()));
+        assert_eq!(meta.title.as_deref(), Some("Real Title"));
+        assert_eq!(meta.authors, ["Ada", "Grace"]);
+        let pdf = runtime
+            .block_on(pandoc_typst_pdf(&pandoc, &tex, "latex", "paper"))
+            .unwrap();
+        // Pandoc swaps an image it can't find for its description, so check
+        // that the figure really was embedded.
+        let doc = lopdf::Document::load_mem(&pdf).unwrap();
+        let images = doc
+            .objects
+            .values()
+            .filter_map(|o| o.as_stream().ok())
+            .filter(|s| {
+                s.dict.get(b"Subtype").and_then(|t| t.as_name()).ok() == Some(b"Image".as_slice())
+            })
+            .count();
+        assert_eq!(images, 1);
+        if let Some(text) = pdf_text(&pdf) {
+            assert!(text.contains("Real Title"), "{text}");
+            assert!(text.contains("Included part text."), "{text}");
+        }
+    }
 }
