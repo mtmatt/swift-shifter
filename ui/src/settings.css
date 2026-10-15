@@ -9,7 +9,7 @@
 }
 
 body {
-    font-family: "SF Mono", "Menlo", "Cascadia Code", ui-monospace, monospace;
+    font-family: var(--font-mono);
     font-size: 16px;
     background: var(--bg);
     color: var(--text);
@@ -82,7 +82,7 @@ body {
     font-weight: 600;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.25);
+    color: var(--text-3);
     padding: 4px 8px 2px;
 }
 
@@ -328,7 +328,7 @@ button {
 #btn-save {
     background: var(--accent);
     border: 0.5px solid var(--accent);
-    color: #0d0d10;
+    color: var(--on-accent);
     font-weight: 600;
 }
 

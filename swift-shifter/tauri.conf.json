@@ -18,8 +18,8 @@
         "height": 460,
         "resizable": false,
         "alwaysOnTop": true,
-        "decorations": false,
-        "transparent": true,
+        "decorations": true,
+        "transparent": false,
         "visible": true,
         "center": false
       }

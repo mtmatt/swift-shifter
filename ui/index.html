@@ -4,6 +4,13 @@
         <meta charset="UTF-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1.0" />
         <title>Swift Shifter</title>
+        <!-- Lets CSS show macOS-only chrome (the drag strip under the overlay
+             title bar). Inline in <head> so it applies before first paint. -->
+        <script>
+            if (navigator.userAgent.includes("Macintosh")) {
+                document.documentElement.dataset.platform = "macos";
+            }
+        </script>
         <link rel="stylesheet" href="src/style.css" />
     </head>
     <body>
