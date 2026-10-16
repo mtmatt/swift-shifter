@@ -17,7 +17,7 @@ use crate::converter::document::utils::{output_path, target_to_ext};
 use ast::{Block, Document, Inline, List};
 
 /// Input formats the native readers handle (normalized extensions).
-pub const INPUTS: &[&str] = &["md", "txt", "html"];
+pub const INPUTS: &[&str] = &["md", "txt", "html", "epub"];
 /// Output formats the native writers handle.
 pub const OUTPUTS: &[&str] = &["md", "txt", "html", "pdf", "typst", "epub"];
 
@@ -59,49 +59,69 @@ pub async fn convert_document(
 
 /// Synchronous core of [`convert_document`].
 pub fn convert(input: &Path, target: &str, out: &Path) -> Result<(), String> {
-    let source =
-        std::fs::read(input).map_err(|e| format!("Failed to read {}: {e}", input.display()))?;
-    // Lossy rather than failing on a stray invalid byte; a BOM is dropped.
-    let source = String::from_utf8_lossy(&source);
-    let source = source.trim_start_matches('\u{feff}');
     let from = input
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| crate::converter::graph::normalize_ext(&e.to_lowercase()).to_string())
         .unwrap_or_default();
 
+    // An EPUB is extracted to a temp folder its images are read from; it
+    // must outlive the writing.
+    let mut book_dir = None;
     let mut doc = match from.as_str() {
-        "md" => read::markdown::read(source),
-        "txt" => read::plain::read(source),
-        "html" => read::html::read(source),
+        "epub" => {
+            let book = read::epub::read(input)?;
+            book_dir = Some(book.dir);
+            book.doc
+        }
+        "md" | "txt" | "html" => {
+            let source = std::fs::read(input)
+                .map_err(|e| format!("Failed to read {}: {e}", input.display()))?;
+            // Lossy rather than failing on a stray invalid byte; a BOM is dropped.
+            let source = String::from_utf8_lossy(&source);
+            let source = source.trim_start_matches('\u{feff}');
+            match from.as_str() {
+                "md" => read::markdown::read(source),
+                "txt" => read::plain::read(source),
+                _ => read::html::read(source),
+            }
+        }
         other => return Err(format!("The native converter can't read .{other}")),
     };
     if matches!(target, "html" | "epub") {
         fill_title(&mut doc, input);
     }
-    if let (Some(src_dir), Some(out_dir)) = (input.parent(), out.parent())
-        && !same_dir(src_dir, out_dir)
+    let base_dir = match &book_dir {
+        Some(dir) => dir.path().to_path_buf(),
+        None => input.parent().unwrap_or(Path::new(".")).to_path_buf(),
+    };
+    if book_dir.is_some() {
+        // The book's images vanish with its temp folder: keep copies.
+        if matches!(target, "md" | "html" | "typst") {
+            copy_images_beside(&mut doc.blocks, &base_dir, out)?;
+        }
+    } else if let Some(out_dir) = out.parent()
+        && !same_dir(&base_dir, out_dir)
     {
         match target {
-            "typst" => copy_images_beside(&mut doc.blocks, src_dir, out)?,
-            // Images are packaged into the book from `src_dir`, and
+            "typst" => copy_images_beside(&mut doc.blocks, &base_dir, out)?,
+            // Images are packaged into the book from `base_dir`, and
             // `file://` links would only work on this computer.
             "epub" => {}
-            _ => rebase_relative_urls(&mut doc.blocks, src_dir),
+            _ => rebase_relative_urls(&mut doc.blocks, &base_dir),
         }
     }
 
-    let base_dir = input.parent().unwrap_or(Path::new("."));
     let rendered = match target {
         "md" => write::markdown::write(&doc).into_bytes(),
         "txt" => write::plain::write(&doc).into_bytes(),
         "html" => write::html::write(&doc).into_bytes(),
-        "typst" => typst_file_source(&doc, base_dir).into_bytes(),
-        "pdf" => typeset(&doc, base_dir)?,
+        "typst" => typst_file_source(&doc, &base_dir).into_bytes(),
+        "pdf" => typeset(&doc, &base_dir)?,
         "epub" => write::epub::write(
             &doc,
             &write::epub::Options {
-                base_dir: base_dir.to_path_buf(),
+                base_dir: base_dir.clone(),
             },
         )?,
         other => return Err(format!("The native converter can't write {other}")),
@@ -239,7 +259,7 @@ pub fn image_to_pdf(image: &Path) -> Result<Vec<u8>, String> {
     typst::compile_pdf(project).map_err(|e| e.message)
 }
 
-/// Typeset typst markup written by pandoc (epub/tex → pdf) under Swift
+/// Typeset typst markup written by pandoc (tex → pdf without LaTeX) under Swift
 /// Shifter's page template, with `meta` for the title block. `root` is where
 /// its image paths resolve.
 pub fn typeset_pandoc_typst(body: &str, root: &Path, meta: &ast::Meta) -> Result<Vec<u8>, String> {
@@ -944,6 +964,27 @@ mod tests {
             "links are rebased: {}",
             urls[2]
         );
+    }
+
+    #[test]
+    fn epub_input_keeps_its_images_beside_the_output() {
+        let src = tempfile::tempdir().unwrap();
+        image::RgbImage::new(2, 2)
+            .save(src.path().join("pic.png"))
+            .unwrap();
+        let md = src.path().join("book.md");
+        std::fs::write(&md, "# Book\n\n![pic](pic.png)\n").unwrap();
+        let epub = src.path().join("book.epub");
+        convert(&md, "epub", &epub).unwrap();
+
+        let out_dir = tempfile::tempdir().unwrap();
+        let out = out_dir.path().join("book.md");
+        convert(&epub, "md", &out).unwrap();
+        let text = std::fs::read_to_string(&out).unwrap();
+        assert!(text.contains("![pic](book-images/0-1.png)"), "{text}");
+        assert!(out_dir.path().join("book-images/0-1.png").is_file());
+        // PDF reads the images from the extracted book directly.
+        convert(&epub, "pdf", &out_dir.path().join("book.pdf")).unwrap();
     }
 
     #[test]

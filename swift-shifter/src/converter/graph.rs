@@ -132,7 +132,7 @@ pub fn edges() -> Vec<Edge> {
         ("txt", &["md", "html", "pdf", "tex", "typst", "epub"]),
         ("tex", &["md", "html", "pdf", "typst"]),
         ("typst", &["md", "html", "pdf", "tex"]),
-        ("epub", &["pdf", "mobi", "md", "html"]),
+        ("epub", &["pdf", "mobi", "md", "html", "txt", "typst"]),
         ("mobi", &["epub", "pdf", "html", "md"]),
         ("pdf", &["epub", "mobi", "html", "md"]),
         // html is an input only; tex output chains through md.
@@ -190,8 +190,8 @@ pub enum Hop {
     PdfToHtml,
     PdfToMd,
     PdfToEpubOrMarker,
-    DocumentPandoc, // document::convert_document (md/txt/tex/typst, epub non-mobi)
-    DocumentNative, // document::native (md/txt/html → md/txt/html/typst/pdf/epub)
+    DocumentPandoc, // document::convert_document (tex/typst input, md/txt → tex)
+    DocumentNative, // document::native (md/txt/html/epub → md/txt/html/typst/pdf/epub)
 }
 
 /// Classify a single hop. Inputs MUST already be normalized.
@@ -222,13 +222,7 @@ pub fn route_hop(from: &str, to: &str) -> Option<Hop> {
         | "opus" | "m4a" => Some(Media),
         "json" | "yaml" | "toml" | "csv" => Some(Data),
         "mobi" => Some(MobiInput),
-        "epub" => {
-            if to == "mobi" {
-                Some(EpubToMobi)
-            } else {
-                Some(DocumentPandoc)
-            }
-        }
+        "epub" if to == "mobi" => Some(EpubToMobi),
         "pdf" => match to {
             "mobi" => Some(PdfToMobi),
             "html" => Some(PdfToHtml),
@@ -236,7 +230,7 @@ pub fn route_hop(from: &str, to: &str) -> Option<Hop> {
             "epub" => Some(PdfToEpubOrMarker),
             _ => None,
         },
-        "md" | "txt" | "html" if crate::converter::document::native::handles(from, to) => {
+        "md" | "txt" | "html" | "epub" if crate::converter::document::native::handles(from, to) => {
             Some(DocumentNative)
         }
         "md" | "txt" | "tex" | "typst" => Some(DocumentPandoc),

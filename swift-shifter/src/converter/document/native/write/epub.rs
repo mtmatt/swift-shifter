@@ -666,6 +666,7 @@ table { border-collapse: collapse; margin: 0.8em 0; }
 th, td { border: 1px solid currentColor; padding: 0.2em 0.5em; vertical-align: top; }
 hr { border: 0; border-top: 1px solid currentColor; margin: 1.5em 20%; }
 li.task { list-style: none; }
+li.task input { margin: 0 0.4em 0 -1.3em; }
 sup.footnote-ref a, .footnote-back { text-decoration: none; }
 aside[epub|type~="footnote"] { font-size: 0.9em; }
 .cover { text-align: center; margin: 0; }
