@@ -28,6 +28,20 @@ pub fn read(html: &str) -> Document {
     }
 }
 
+/// Read one page of an ebook: everything in `<body>` is content (an EPUB
+/// chapter's `<header>` or `<aside>` isn't site chrome).
+pub fn read_book_page(html: &str) -> Vec<Block> {
+    let page = Html::parse_document(html);
+    let root = page.root_element();
+    let body = find(root, &["body"]).unwrap_or(root);
+    let mut walker = Walker {
+        in_content: true,
+        ..Walker::default()
+    };
+    walker.children(body);
+    walker.finish()
+}
+
 /// The visible text of an HTML snippet, whitespace collapsed: for writers
 /// that can't keep markup the AST doesn't model.
 pub fn text_of(html: &str) -> String {
@@ -75,6 +89,51 @@ fn read_meta(root: ElementRef) -> Meta {
         }
     }
     meta
+}
+
+/// Footnote roles an element plays, from EPUB's `epub:type`, ARIA's
+/// `role="doc-…"` and the classes pandoc and our own writer use.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NoteRole {
+    /// A reference to a note (`<a epub:type="noteref" href="#n1">`).
+    Ref,
+    /// A note's body.
+    Note,
+    /// A section holding note bodies, usually as `<li id=…>`.
+    Section,
+    /// A link from a note back to its reference: dropped.
+    Backlink,
+}
+
+fn note_role(el: ElementRef) -> Option<NoteRole> {
+    let value = el.value();
+    let epub_types = value.attr("epub:type").unwrap_or("").split_whitespace();
+    let role = value.attr("role").unwrap_or("");
+    let names = epub_types
+        .chain(role.strip_prefix("doc-"))
+        .chain(value.classes());
+    for name in names {
+        let found = match name {
+            "noteref" | "footnote-ref" => NoteRole::Ref,
+            "footnote" | "endnote" | "rearnote" => NoteRole::Note,
+            "footnotes" | "endnotes" | "rearnotes" => NoteRole::Section,
+            "backlink" | "footnote-back" => NoteRole::Backlink,
+            _ => continue,
+        };
+        return Some(found);
+    }
+    None
+}
+
+/// The note label a reference's `href` points at: the id for `#n1`, the
+/// whole target for a note in another file (`notes.xhtml#n1`).
+fn note_label(href: &str) -> Option<String> {
+    let href = href.trim();
+    match href.split_once('#') {
+        Some(("", id)) if !id.is_empty() => Some(id.to_string()),
+        Some((_, id)) if !id.is_empty() => Some(href.to_string()),
+        _ => None,
+    }
 }
 
 fn descendants(root: ElementRef) -> impl Iterator<Item = ElementRef> {
@@ -201,7 +260,30 @@ impl Walker {
 
     fn element(&mut self, el: ElementRef) {
         let name = el.value().name();
+        // Notes before chrome: EPUB notes are `<aside>`s.
+        match note_role(el) {
+            Some(NoteRole::Note) if el.value().id().is_some() && name != "a" => {
+                let label = el.value().id().unwrap_or_default().to_string();
+                let content = self.sub_blocks(el);
+                self.push_block(Block::FootnoteDefinition { label, content });
+                return;
+            }
+            Some(NoteRole::Section) => {
+                self.notes_section(el);
+                return;
+            }
+            _ => {}
+        }
         if SKIPPED.contains(&name) || (CHROME.contains(&name) && !self.in_content) {
+            return;
+        }
+        // An ebook's title and cover pages repeat its metadata, which
+        // writers take from `Meta` anyway.
+        let epub_type = el.value().attr("epub:type").unwrap_or("");
+        if epub_type
+            .split_whitespace()
+            .any(|t| matches!(t, "titlepage" | "cover"))
+        {
             return;
         }
         if name == "math" && el.value().attr("display") == Some("block") {
@@ -230,8 +312,15 @@ impl Walker {
             "p" => {
                 self.flush();
                 let content = tidy(inline_children(el));
-                if !content.is_empty() {
-                    self.blocks.push(Block::Paragraph(content));
+                // `<p><math display="block">…</math></p>` (pandoc) is
+                // display math, not an inline formula.
+                let block_math = el.children().filter_map(ElementRef::wrap).all(|c| {
+                    c.value().name() == "math" && c.value().attr("display") == Some("block")
+                });
+                match content.as_slice() {
+                    [Inline::Math(tex)] if block_math => self.blocks.push(Block::Math(tex.clone())),
+                    [] => {}
+                    _ => self.blocks.push(Block::Paragraph(content)),
                 }
             }
             "blockquote" => {
@@ -275,6 +364,30 @@ impl Walker {
         }
     }
 
+    /// A notes section: each `<li id=…>` is a note's body (pandoc and our
+    /// own HTML), and anything else, such as note `<aside>`s, is read as
+    /// usual. Rules and headings in the section are left out.
+    fn notes_section(&mut self, el: ElementRef) {
+        let items: Vec<ElementRef> = descendants(el)
+            .filter(|li| li.value().name() == "li" && li.value().id().is_some())
+            .collect();
+        if items.is_empty() {
+            let blocks = self.sub_blocks(el);
+            self.flush();
+            self.blocks.extend(
+                blocks
+                    .into_iter()
+                    .filter(|b| matches!(b, Block::FootnoteDefinition { .. })),
+            );
+            return;
+        }
+        for li in items {
+            let label = li.value().id().unwrap_or_default().to_string();
+            let content = self.sub_blocks(li);
+            self.push_block(Block::FootnoteDefinition { label, content });
+        }
+    }
+
     fn list(&self, el: ElementRef) -> List {
         let start = (el.value().name() == "ol").then(|| {
             el.value()
@@ -287,10 +400,16 @@ impl Walker {
             .filter_map(ElementRef::wrap)
             .filter(|c| c.value().name() == "li")
             .map(|li| {
-                let task = li
-                    .children()
-                    .filter_map(ElementRef::wrap)
-                    .find(|c| c.value().name() == "input")
+                // The item's own checkbox, possibly in a <label> (pandoc),
+                // never one of a nested list's.
+                let task = descendants(li)
+                    .find(|d| {
+                        d.value().name() == "input"
+                            && d.ancestors()
+                                .filter_map(ElementRef::wrap)
+                                .take_while(|a| *a != li)
+                                .all(|a| !matches!(a.value().name(), "ul" | "ol"))
+                    })
                     .filter(|input| input.value().attr("type") == Some("checkbox"))
                     .map(|input| input.value().attr("checked").is_some());
                 ListItem {
@@ -346,10 +465,42 @@ fn push_inline_element(out: &mut Vec<Inline>, el: ElementRef) {
         "em" | "i" | "cite" | "dfn" | "var" => Inline::Emph(inline_children(el)),
         "strong" | "b" => Inline::Strong(inline_children(el)),
         "s" | "del" | "strike" => Inline::Strikethrough(inline_children(el)),
-        "sup" => Inline::Superscript(inline_children(el)),
+        "sup" => {
+            let content = inline_children(el);
+            // `<sup class="footnote-ref"><a href="#fn1">1</a></sup>`: the
+            // reference itself, not superscript.
+            let is_ref = |i: &Inline| match i {
+                Inline::FootnoteRef(_) => true,
+                Inline::Text(t) => t.trim().is_empty(),
+                _ => false,
+            };
+            if content.iter().any(|i| matches!(i, Inline::FootnoteRef(_)))
+                && content.iter().all(is_ref)
+            {
+                out.extend(
+                    content
+                        .into_iter()
+                        .filter(|i| matches!(i, Inline::FootnoteRef(_))),
+                );
+                return;
+            }
+            Inline::Superscript(content)
+        }
         "sub" => Inline::Subscript(inline_children(el)),
         "code" | "kbd" | "samp" | "tt" => Inline::Code(el.text().collect()),
         "a" => {
+            let parent_role = el.parent().and_then(ElementRef::wrap).and_then(note_role);
+            let role = note_role(el).or(parent_role.filter(|r| *r == NoteRole::Ref));
+            match role {
+                Some(NoteRole::Backlink) => return,
+                Some(NoteRole::Ref) => {
+                    if let Some(label) = el.value().attr("href").and_then(note_label) {
+                        out.push(Inline::FootnoteRef(label));
+                        return;
+                    }
+                }
+                _ => {}
+            }
             let content = inline_children(el);
             match el.value().attr("href") {
                 Some(href) if !href.starts_with("javascript:") => Inline::Link {
@@ -423,14 +574,24 @@ fn math(el: ElementRef) -> Inline {
 
 fn code_block(pre: ElementRef) -> Block {
     let code = descendants(pre).find(|c| c.value().name() == "code");
-    let lang = [Some(pre), code]
+    let classes: Vec<&str> = [Some(pre), code]
         .into_iter()
         .flatten()
         .flat_map(|el| el.value().classes())
+        .collect();
+    // `language-rust` (Markdown renderers), or pandoc's `sourceCode rust`.
+    let lang = classes
+        .iter()
         .find_map(|class| {
             class
                 .strip_prefix("language-")
                 .or_else(|| class.strip_prefix("lang-"))
+        })
+        .or_else(|| {
+            classes
+                .contains(&"sourceCode")
+                .then(|| classes.iter().find(|c| **c != "sourceCode").copied())
+                .flatten()
         })
         .map(str::to_string);
     let text: String = pre.text().collect();
@@ -443,6 +604,8 @@ fn code_block(pre: ElementRef) -> Block {
 fn table(el: ElementRef) -> Table {
     let mut header: Vec<Vec<Inline>> = Vec::new();
     let mut rows: Vec<Vec<Vec<Inline>>> = Vec::new();
+    // Column alignment, from the first row's cells.
+    let mut align: Vec<Align> = Vec::new();
     for tr in descendants(el).filter(|e| e.value().name() == "tr") {
         // Skip rows of nested tables; they're read as part of their cell.
         if tr
@@ -463,8 +626,12 @@ fn table(el: ElementRef) -> Table {
             .and_then(ElementRef::wrap)
             .is_some_and(|p| p.value().name() == "thead");
         let all_th = !cells.is_empty() && cells.iter().all(|c| c.value().name() == "th");
+        let first_row = header.is_empty() && rows.is_empty();
         let mut row = Vec::new();
         for cell in &cells {
+            if first_row {
+                align.push(cell_align(*cell));
+            }
             row.push(tidy(inline_children(*cell)));
             // A cell spanning columns is followed by empty cells, keeping
             // the grid rectangular.
@@ -474,6 +641,9 @@ fn table(el: ElementRef) -> Table {
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(1);
             row.extend(std::iter::repeat_n(Vec::new(), span.clamp(1, 100) - 1));
+            if first_row {
+                align.extend(std::iter::repeat_n(Align::Default, span.clamp(1, 100) - 1));
+            }
         }
         if header.is_empty() && rows.is_empty() && (in_thead || all_th) {
             header = row;
@@ -489,10 +659,31 @@ fn table(el: ElementRef) -> Table {
             row.resize(width, Vec::new());
         }
     }
+    align.resize(width, Align::Default);
     Table {
-        align: vec![Align::Default; width],
+        align,
         header,
         rows,
+    }
+}
+
+/// A cell's alignment from `style="text-align: …"` or the old `align`.
+fn cell_align(cell: ElementRef) -> Align {
+    let style = cell
+        .value()
+        .attr("style")
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    let from_style = style.split(';').find_map(|decl| {
+        let (property, value) = decl.split_once(':')?;
+        (property.trim() == "text-align").then(|| value.trim().to_string())
+    });
+    let value = from_style.or_else(|| cell.value().attr("align").map(str::to_ascii_lowercase));
+    match value.as_deref() {
+        Some("left") => Align::Left,
+        Some("center") => Align::Center,
+        Some("right") => Align::Right,
+        _ => Align::Default,
     }
 }
 
@@ -677,6 +868,92 @@ mod tests {
 
     fn text(s: &str) -> Inline {
         Inline::Text(s.to_string())
+    }
+
+    #[test]
+    fn reads_pandoc_and_epub_footnotes() {
+        // pandoc's HTML: references in <sup>, notes as <li> in an endnotes
+        // section, back-links dropped.
+        let doc = read(
+            "<body><p>A<sup><a href=\"#fn1\" class=\"footnote-ref\" role=\"doc-noteref\">1</a></sup>.</p>\
+             <section role=\"doc-endnotes\"><hr><ol><li id=\"fn1\"><p>Note one. \
+             <a href=\"#fnref1\" role=\"doc-backlink\">↩</a></p></li></ol></section></body>",
+        );
+        assert_eq!(
+            doc.blocks,
+            vec![
+                Block::Paragraph(vec![
+                    text("A"),
+                    Inline::FootnoteRef("fn1".into()),
+                    text(".")
+                ]),
+                Block::FootnoteDefinition {
+                    label: "fn1".into(),
+                    content: vec![Block::Paragraph(vec![text("Note one.")])],
+                },
+            ]
+        );
+        // EPUB: an <aside> note (page chrome elsewhere) and a reference to
+        // a note in another file.
+        let blocks = read_book_page(
+            "<body><p>B<a epub:type=\"noteref\" href=\"notes.xhtml#n2\">2</a></p>\
+             <aside epub:type=\"footnote\" id=\"n1\"><p>Aside note.</p></aside></body>",
+        );
+        assert_eq!(
+            blocks,
+            vec![
+                Block::Paragraph(vec![
+                    text("B"),
+                    Inline::FootnoteRef("notes.xhtml#n2".into())
+                ]),
+                Block::FootnoteDefinition {
+                    label: "n1".into(),
+                    content: vec![Block::Paragraph(vec![text("Aside note.")])],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn book_pages_keep_headers_but_skip_title_pages() {
+        let blocks = read_book_page(
+            "<body><section epub:type=\"titlepage\"><h1>Book</h1><p>Author</p></section>\
+             <header><h1>Chapter</h1></header><p>Text</p></body>",
+        );
+        assert_eq!(
+            blocks,
+            vec![
+                Block::Heading {
+                    level: 1,
+                    content: vec![text("Chapter")]
+                },
+                Block::Paragraph(vec![text("Text")]),
+            ]
+        );
+    }
+
+    #[test]
+    fn reads_pandoc_tasks_code_languages_and_alignment() {
+        let doc = read(
+            "<body><ul><li><label><input type=\"checkbox\" checked=\"\">Done</label>\
+             <ul><li><input type=\"checkbox\">Nested</li></ul></li><li>Plain</li></ul>\
+             <pre class=\"sourceCode rust\"><code class=\"sourceCode rust\">fn x() {}</code></pre>\
+             <table><tr><th style=\"text-align: center;\">a</th><th align=\"right\">b</th><th>c</th></tr>\
+             <tr><td>1</td><td>2</td><td>3</td></tr></table></body>",
+        );
+        let Block::List(list) = &doc.blocks[0] else {
+            panic!("{doc:?}");
+        };
+        assert_eq!(list.items[0].task, Some(true));
+        assert_eq!(
+            list.items[1].task, None,
+            "a nested checkbox isn't the item's"
+        );
+        assert!(matches!(&doc.blocks[1], Block::Code { lang: Some(l), .. } if l == "rust"));
+        let Block::Table(table) = &doc.blocks[2] else {
+            panic!("{doc:?}");
+        };
+        assert_eq!(table.align, [Align::Center, Align::Right, Align::Default]);
     }
 
     #[test]

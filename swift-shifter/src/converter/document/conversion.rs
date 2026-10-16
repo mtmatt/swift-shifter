@@ -320,8 +320,8 @@ pub async fn convert_document(
     };
     let to_fmt = ext_to_pandoc_format(target_format);
 
-    // PDF: `.tex` keeps LaTeX when an engine is installed; everything else
-    // (epub, or tex without an engine) goes pandoc → typst → embedded typst.
+    // PDF (only `.tex` reaches here): LaTeX when an engine is installed,
+    // otherwise pandoc → typst → embedded typst.
     let latex = if target_format == "pdf" {
         let setup = (normalize_ext(&input_ext) == "tex")
             .then(|| pdf::latex_setup(source))
@@ -394,8 +394,8 @@ pub async fn convert_document(
     Ok(out.to_string_lossy().to_string())
 }
 
-/// PDF via pandoc's typst writer and the embedded typst compiler, for
-/// epub (and tex without a LaTeX engine).
+/// PDF via pandoc's typst writer and the embedded typst compiler, for tex
+/// without a LaTeX engine.
 async fn convert_via_pandoc_typst(
     app: &tauri::AppHandle,
     path: &str,
@@ -810,7 +810,6 @@ pub async fn convert_mobi(
             Ok(out.to_string_lossy().to_string())
         }
         "md" => {
-            let pandoc = get_pandoc()?;
             let out = output_path(path, "md", output_dir)?;
             let tmp_epub = std::env::temp_dir()
                 .join(format!("swift_shifter_mobi_{}.epub", unique_tmp_suffix()));
@@ -825,30 +824,16 @@ pub async fn convert_mobi(
             )
             .ok();
 
-            let status = crate::process::async_command(&pandoc)
-                .args([
-                    "-f",
-                    "epub",
-                    "-t",
-                    "markdown",
-                    "-o",
-                    out.to_str().unwrap_or(""),
-                    tmp_epub.to_str().unwrap_or(""),
-                ])
-                .stdout(std::process::Stdio::null())
-                .stderr(std::process::Stdio::null())
-                .status()
-                .await
-                .map_err(|e| format!("Failed to spawn pandoc: {e}"))?;
-
+            // Calibre's EPUB → Markdown with the native reader; its images
+            // are copied next to the output.
+            let epub = tmp_epub.clone();
+            let md = out.clone();
+            let result =
+                tokio::task::spawn_blocking(move || super::native::convert(&epub, "md", &md))
+                    .await
+                    .map_err(|e| format!("task panicked: {e}"));
             let _ = std::fs::remove_file(&tmp_epub);
-
-            if !status.success() {
-                return Err(format!(
-                    "pandoc exited with code {}",
-                    status.code().unwrap_or(-1)
-                ));
-            }
+            result??;
 
             app.emit(
                 "convert:progress",
