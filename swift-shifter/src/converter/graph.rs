@@ -128,15 +128,15 @@ pub fn edges() -> Vec<Edge> {
     // for the typst compiler, not for other readers), otherwise 4. So chains
     // pass through md rather than txt or typst.
     let doc: &[(&str, &[&str])] = &[
-        ("md", &["txt", "html", "pdf", "tex", "typst"]),
-        ("txt", &["md", "html", "pdf", "tex", "typst"]),
+        ("md", &["txt", "html", "pdf", "tex", "typst", "epub"]),
+        ("txt", &["md", "html", "pdf", "tex", "typst", "epub"]),
         ("tex", &["md", "html", "pdf", "typst"]),
         ("typst", &["md", "html", "pdf", "tex"]),
         ("epub", &["pdf", "mobi", "md", "html"]),
         ("mobi", &["epub", "pdf", "html", "md"]),
         ("pdf", &["epub", "mobi", "html", "md"]),
         // html is an input only; tex output chains through md.
-        ("html", &["md", "txt", "pdf", "typst"]),
+        ("html", &["md", "txt", "pdf", "typst", "epub"]),
     ];
     for &(from, tos) in doc {
         for &to in tos {
@@ -191,7 +191,7 @@ pub enum Hop {
     PdfToMd,
     PdfToEpubOrMarker,
     DocumentPandoc, // document::convert_document (md/txt/tex/typst, epub non-mobi)
-    DocumentNative, // document::native (md/txt/html → md/txt/html/typst/pdf)
+    DocumentNative, // document::native (md/txt/html → md/txt/html/typst/pdf/epub)
 }
 
 /// Classify a single hop. Inputs MUST already be normalized.

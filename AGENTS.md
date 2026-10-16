@@ -56,6 +56,7 @@ All conversions are edges in one directed graph. `graph::edges()` is the authori
 `convert_file` finds the path, then runs each hop; multi-hop chains stage intermediates in a `tempfile::TempDir` (auto-cleaned) and write only the final artifact to `output_dir`, emitting overall `convert:progress` keyed to the original path.
 
 **To add a format pairing, edit `graph.rs`:** add the `Edge`(s) and a `route_hop` arm (+ a `run_single_hop` branch if it's a new `Hop`). Quirks encoded here: HEIC is macOS-only (`sips`); JPEG/`tif`/`typ` normalize via `normalize_ext` (so no jpg→jpg or pointless tif→tiff; `.typ` maps to the `typst` key, and Typst output is written as `.typ` via `target_to_ext`); PDF routing branches on `use_marker_pdf` and the Ollama LLM config; csv→toml is a semantic dead-end (`is_semantically_blocked`) even though csv→json→toml exists structurally, because a top-level array has no TOML form. **Document→PDF is typeset in-process** with typst, which is linked as a library (`document/native/typst/`). There is no typst binary. The one exception is `.tex` input: when a LaTeX engine is installed (tectonic, xelatex, lualatex or pdflatex; see `document/pdf.rs`), pandoc drives it, since LaTeX keeps raw LaTeX that pandoc's typst writer would drop. Otherwise `.tex`, like epub, goes pandoc → typst source → the embedded typst.
+
 - **md, txt, html → pdf** go through the native typst writer (`native/write/typst.rs`, which also writes `.typ` output) and `native::typeset`. TeX math is converted with `mitex`. Its Typst scope is vendored in `native/typst/mitex/` and served under the virtual `/__shifter__/` path, together with a symbol-rename table for typst 0.15 (`typst/math.rs`). A formula that still fails to compile is shown as TeX code instead of failing the document.
 - **typst input** compiles directly (`native::typst_file_to_pdf`); `@preview` packages are downloaded through reqwest into typst's usual cache.
 - **Images** become a page the size of the image (`native::image_to_pdf`).
@@ -65,11 +66,17 @@ All conversions are edges in one directed graph. `graph::edges()` is the authori
 
 Pandoc has no `plain` reader, so for the txt→tex hop `convert_document` first turns `.txt` into GFM with `native::plain_text_to_markdown`. That keeps `.txt` literal on every route.
 
-**Native document engine (`document/native/`).** This replaces pandoc one hop at a time; see `docs/superpowers/specs/2026-10-15-native-document-converter-design.md`. Readers (`read/markdown.rs` via comrak, which keeps HTML blocks verbatim as `Block::Raw`; `read/html.rs` via scraper; and `read/plain.rs`) build an `ast::Document`, and writers (`write/html.rs`, `write/markdown.rs`, `write/plain.rs`) render it. `route_hop` sends a pair to `Hop::DocumentNative` whenever `native::handles(from, to)` holds, which today means md, txt and html into each other, plus pdf and typst output. Everything else stays on `DocumentPandoc`.
+**Native document engine (`document/native/`).** This replaces pandoc one hop at a time; see `docs/superpowers/specs/2026-10-15-native-document-converter-design.md`. Readers (`read/markdown.rs` via comrak, which keeps HTML blocks verbatim as `Block::Raw` and folds bare inline tag pairs like `<sup>…</sup>` into AST nodes; `read/html.rs` via scraper; and `read/plain.rs`) build an `ast::Document`, and writers (`write/html.rs`, `write/markdown.rs`, `write/plain.rs`, `write/typst.rs`, `write/epub.rs`) render it. `route_hop` sends a pair to `Hop::DocumentNative` whenever `native::handles(from, to)` holds, which today means md, txt and html into each other, plus pdf, typst and epub output. Everything else stays on `DocumentPandoc`.
 
-- **Inputs.** html is an input format only: html → md/txt/pdf/typst directly, and html → tex by chaining through md. Edges into `txt` and `typst` cost 5, so chains pass through md instead. The native `.txt` reader is literal: blank lines separate paragraphs, newlines are line breaks, and there's no Markdown interpretation.
-- **pdf→html** keeps pymupdf4llm for extraction and uses `native::markdown_to_html` for the HTML step.
+- **Inputs.** html is an input format only: html → md/txt/pdf/typst/epub directly, and html → tex by chaining through md. Edges into `txt` and `typst` cost 5, so chains pass through md instead. The native `.txt` reader is literal: blank lines separate paragraphs, newlines are line breaks, and there's no Markdown interpretation.
+- **pdf→html and pdf→epub** keep pymupdf4llm (or marker) for extraction and use `native::markdown_to_html` / `native::markdown_to_epub` for the last step.
 - **Output.** HTML is standalone, with a light/dark stylesheet, `lang` (CJK auto-detected), MathML via pulldown-latex with a TeX annotation, and numbered footnotes. Relative image and link targets become absolute `file://` URLs when the output lands in a different directory.
+- **EPUB 3** (`write/epub.rs`):
+  - **Rendering:** chapters are rendered by the HTML writer, then re-parsed with html5ever and serialized as XHTML (`write/xhtml.rs`). That keeps raw HTML from the source well-formed, puts MathML and SVG in their namespaces, and drops scripts and remote embeds.
+  - **Chapters:** the book is split at the top heading level, or the level below a lone title heading.
+  - **Footnotes:** each note is an `<aside epub:type="footnote">` in the chapter that first cites it.
+  - **Images:** local images are packaged, and non-EPUB formats are converted to PNG. Remote images become their alt text.
+  - **Cover and TOC:** front matter `cover-image:` sets the cover, and `nav.xhtml` and `toc.ncx` are built from the headings.
 
 ### External binary management — two strategies by platform
 

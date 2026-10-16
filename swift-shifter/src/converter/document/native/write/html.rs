@@ -4,24 +4,36 @@
 use pulldown_latex::{Parser, RenderConfig, Storage, config::DisplayMode};
 
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use super::{Footnotes, HeadingIds};
 use crate::converter::document::native::ast::{
-    Align, Block, Document, Inline, List, RawFormat, Table,
+    Align, Block, Document, Inline, List, RawFormat, Table, inline_text,
 };
 
 pub fn write(doc: &Document) -> String {
-    let (notes, note_bodies) = Footnotes::collect(doc);
-    let mut w = Writer {
-        out: String::new(),
-        notes,
-        ref_counts: RefCell::new(HashMap::new()),
-        ids: HeadingIds::default(),
-    };
+    let mut w = Writer::new(doc, NoteStyle::Section);
     w.blocks(&doc.blocks);
-    w.footnote_section(&note_bodies);
+    w.footnote_section();
     page(doc, &w.out)
+}
+
+/// Where footnote bodies go.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum NoteStyle {
+    /// One numbered list at the end of the page.
+    Section,
+    /// EPUB: an `<aside epub:type="footnote">` per note, at the end of the
+    /// chapter that first references it (see [`Writer::chapter`]).
+    EpubAsides,
+}
+
+/// A heading as written, for tables of contents.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) struct WrittenHeading {
+    pub level: u8,
+    pub text: String,
+    pub id: String,
 }
 
 fn page(doc: &Document, body: &str) -> String {
@@ -50,19 +62,85 @@ fn page(doc: &Document, body: &str) -> String {
     )
 }
 
-struct Writer {
+/// Renders blocks to HTML. One writer can render a document in several
+/// parts (EPUB chapters) with shared footnote numbers and heading ids.
+pub(crate) struct Writer {
     out: String,
     notes: Footnotes,
+    /// Body of note `n` at index `n - 1`.
+    note_bodies: Vec<Vec<Block>>,
+    style: NoteStyle,
     /// References written so far per note number, so each gets its own id.
     ref_counts: RefCell<HashMap<usize, usize>>,
+    /// [`NoteStyle::EpubAsides`]: notes referenced in the current chapter
+    /// whose body hasn't been written yet, in reference order.
+    pending_notes: RefCell<Vec<usize>>,
+    written_notes: HashSet<usize>,
     ids: HeadingIds,
+    /// Top-level headings written since the last [`Writer::chapter`]
+    /// (headings in quotes, lists and notes aren't part of the outline).
+    headings: Vec<WrittenHeading>,
+    /// How deep inside quotes, lists or notes the writer is.
+    depth: usize,
 }
 
 impl Writer {
+    pub fn new(doc: &Document, style: NoteStyle) -> Self {
+        let (notes, note_bodies) = Footnotes::collect(doc);
+        Writer {
+            out: String::new(),
+            notes,
+            note_bodies,
+            style,
+            ref_counts: RefCell::new(HashMap::new()),
+            pending_notes: RefCell::new(Vec::new()),
+            written_notes: HashSet::new(),
+            ids: HeadingIds::default(),
+            headings: Vec::new(),
+            depth: 0,
+        }
+    }
+
+    /// One part of the document as an HTML fragment, followed by the asides
+    /// of the notes it references first (and the notes those reference), and
+    /// its top-level headings.
+    pub fn chapter(&mut self, blocks: &[Block]) -> (String, Vec<WrittenHeading>) {
+        self.blocks(blocks);
+        while !self.pending_notes.borrow().is_empty() {
+            let pending = std::mem::take(&mut *self.pending_notes.borrow_mut());
+            for n in pending {
+                if self.written_notes.insert(n) {
+                    self.aside(n);
+                }
+            }
+        }
+        (
+            std::mem::take(&mut self.out),
+            std::mem::take(&mut self.headings),
+        )
+    }
+
+    fn aside(&mut self, n: usize) {
+        let body = self.note_bodies[n - 1].clone();
+        self.out.push_str(&format!(
+            "<aside id=\"fn-{n}\" epub:type=\"footnote\" role=\"doc-footnote\">\n"
+        ));
+        self.nested(|w| w.blocks(&body));
+        self.out.push_str(&format!(
+            "<p><a href=\"#fnref-{n}\" class=\"footnote-back\" aria-label=\"Back to reference {n}\">↩</a></p>\n</aside>\n"
+        ));
+    }
+
     fn blocks(&mut self, blocks: &[Block]) {
         for block in blocks {
             self.block(block);
         }
+    }
+
+    fn nested(&mut self, write: impl FnOnce(&mut Self)) {
+        self.depth += 1;
+        write(self);
+        self.depth -= 1;
     }
 
     fn block(&mut self, block: &Block) {
@@ -70,6 +148,13 @@ impl Writer {
             Block::Heading { level, content } => {
                 let level = level.clamp(&1, &6);
                 let id = self.ids.next(content);
+                if self.depth == 0 {
+                    self.headings.push(WrittenHeading {
+                        level: *level,
+                        text: inline_text(content),
+                        id: id.clone(),
+                    });
+                }
                 let inner = self.inlines(content);
                 self.out.push_str(&format!(
                     "<h{level} id=\"{}\">{inner}</h{level}>\n",
@@ -82,10 +167,10 @@ impl Writer {
             }
             Block::Quote(children) => {
                 self.out.push_str("<blockquote>\n");
-                self.blocks(children);
+                self.nested(|w| w.blocks(children));
                 self.out.push_str("</blockquote>\n");
             }
-            Block::List(list) => self.list(list),
+            Block::List(list) => self.nested(|w| w.list(list)),
             Block::Code { lang, code } => {
                 let class = lang
                     .as_deref()
@@ -193,16 +278,17 @@ impl Writer {
         self.out.push_str("</table>\n");
     }
 
-    fn footnote_section(&mut self, bodies: &[Vec<Block>]) {
-        if bodies.is_empty() {
+    fn footnote_section(&mut self) {
+        if self.note_bodies.is_empty() {
             return;
         }
+        let bodies = std::mem::take(&mut self.note_bodies);
         self.out
             .push_str("<section class=\"footnotes\">\n<hr>\n<ol>\n");
         for (i, body) in bodies.iter().enumerate() {
             let n = i + 1;
             self.out.push_str(&format!("<li id=\"fn-{n}\">\n"));
-            self.blocks(body);
+            self.nested(|w| w.blocks(body));
             // Back to the first reference.
             self.out.push_str(&format!(
                 "<a href=\"#fnref-{n}\" class=\"footnote-back\" aria-label=\"Back to reference {n}\">↩</a>\n</li>\n"
@@ -266,8 +352,20 @@ impl Writer {
                         1 => format!("fnref-{n}"),
                         k => format!("fnref-{n}-{k}"),
                     };
+                    let epub = match self.style {
+                        NoteStyle::Section => "",
+                        NoteStyle::EpubAsides => {
+                            if !self.written_notes.contains(&n) {
+                                let mut pending = self.pending_notes.borrow_mut();
+                                if !pending.contains(&n) {
+                                    pending.push(n);
+                                }
+                            }
+                            " epub:type=\"noteref\" role=\"doc-noteref\""
+                        }
+                    };
                     out.push_str(&format!(
-                        "<sup class=\"footnote-ref\"><a href=\"#fn-{n}\" id=\"{id}\">{n}</a></sup>"
+                        "<sup class=\"footnote-ref\"><a href=\"#fn-{n}\" id=\"{id}\"{epub}>{n}</a></sup>"
                     ));
                 }
                 None => out.push_str(&escape(&format!("[^{label}]"))),

@@ -330,7 +330,9 @@ mod tests {
 
     #[test]
     fn raw_html_is_dropped_but_its_text_kept() {
-        let doc = markdown::read("H<sub>2</sub>O\n");
+        let doc = markdown::read("H<span class=\"x\">2</span>O\n");
         assert_eq!(write(&doc), "H2O\n");
+        // Tags the AST models become nodes instead.
+        assert_eq!(write(&markdown::read("H<sub>2</sub>O\n")), "H₂O\n");
     }
 }

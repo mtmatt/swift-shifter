@@ -7,32 +7,6 @@ use crate::converter::graph::normalize_ext;
 use std::path::{Path, PathBuf};
 use tauri::Emitter;
 
-const EPUB_CSS: &str = concat!(
-    "code, pre, kbd, samp {\n",
-    "  white-space: pre;\n",
-    "  font-family: monospace;\n",
-    "}\n",
-    "pre {\n",
-    "  overflow-x: auto;\n",
-    "  padding: 0.5em;\n",
-    "}\n",
-    ".math, .MathML, math {\n",
-    "  white-space: pre;\n",
-    "}\n",
-);
-
-/// Replace `<br>` variants with a space so pandoc produces valid XHTML (needed for EPUB)
-/// and browsers don't encounter unclosed void elements in HTML output.
-fn sanitize_br_tags(content: &str) -> String {
-    content
-        .replace("<br/>", " ")
-        .replace("<br />", " ")
-        .replace("<BR/>", " ")
-        .replace("<BR />", " ")
-        .replace("<br>", " ")
-        .replace("<BR>", " ")
-}
-
 fn unique_tmp_suffix() -> String {
     use std::time::{SystemTime, UNIX_EPOCH};
     let ms = SystemTime::now()
@@ -45,7 +19,7 @@ fn unique_tmp_suffix() -> String {
 
 /// Convert a PDF to EPUB using the marker-pdf ML pipeline:
 ///   1. `marker input.pdf --output_dir tmp` — produces Markdown + images
-///   2. `pandoc *.md -t epub` — packages them into EPUB
+///   2. the native EPUB writer packages them
 pub async fn convert_pdf_with_marker(
     app: &tauri::AppHandle,
     path: &str,
@@ -54,7 +28,6 @@ pub async fn convert_pdf_with_marker(
 ) -> Result<String, String> {
     let marker = find_marker_binary()
         .ok_or_else(|| "marker not found — install with: pip install marker-pdf".to_string())?;
-    let pandoc = get_pandoc()?;
 
     let user_output_dir = output_dir;
     let out = output_path(path, "epub", user_output_dir)?;
@@ -239,29 +212,11 @@ pub async fn convert_pdf_with_marker(
     let md_file =
         find_md_file(&output_dir).ok_or_else(|| "marker produced no Markdown file".to_string())?;
 
-    if let Ok(mut content) = tokio::fs::read_to_string(&md_file).await {
-        // Sanitize <br> — EPUB content is XHTML, bare <br> is invalid XML
-        content = sanitize_br_tags(&content);
-
-        let tags = ["sup", "sub"];
-        for tag in tags {
-            let open = format!("<{}>", tag);
-            let close = format!("</{}>", tag);
-            let open_count = content.matches(&open).count();
-            let close_count = content.matches(&close).count();
-
-            if open_count > close_count {
-                for _ in 0..(open_count - close_count) {
-                    content.push_str(&close);
-                }
-            }
-        }
-
-        if llm.enabled {
-            content = llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
-        }
-
-        let _ = tokio::fs::write(&md_file, content).await;
+    let mut content = tokio::fs::read_to_string(&md_file)
+        .await
+        .map_err(|e| format!("Failed to read marker's output: {e}"))?;
+    if llm.enabled {
+        content = llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
     }
 
     app.emit(
@@ -273,76 +228,19 @@ pub async fn convert_pdf_with_marker(
     )
     .ok();
 
-    let md_dir = md_file.parent().unwrap_or(&output_dir);
-
-    let file_title = Path::new(path)
-        .file_stem()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
-
-    let epub_css_path: Option<String> = {
-        let p = md_dir.join("_swift_shifter_epub.css");
-        if std::fs::write(&p, EPUB_CSS).is_ok() {
-            p.to_str().map(|s| s.to_string())
-        } else {
-            None
-        }
-    };
-
-    let mut pandoc_cmd = crate::process::async_command(&pandoc);
-    pandoc_cmd.current_dir(md_dir);
-    pandoc_cmd.args([
-        "-f",
-        "markdown+footnotes+superscript+subscript+tex_math_dollars+tex_math_single_backslash",
-        "-t",
-        "epub3",
-        "--mathml",
-    ]);
-    if let Some(ref css_str) = epub_css_path {
-        pandoc_cmd.args(["--css", css_str]);
-    }
-    pandoc_cmd.args([
-        "--metadata",
-        &format!("title={}", file_title),
-        "-o",
-        out.to_str().unwrap_or(""),
-        md_file
-            .file_name()
-            .unwrap_or_default()
-            .to_str()
-            .unwrap_or(""),
-    ]);
-    pandoc_cmd.stdout(std::process::Stdio::null());
-    pandoc_cmd.stderr(std::process::Stdio::piped());
-
-    let mut child = pandoc_cmd
-        .spawn()
-        .map_err(|e| format!("Failed to spawn pandoc: {e}"))?;
-
-    let stderr_out = if let Some(stderr) = child.stderr.take() {
-        use tokio::io::{AsyncReadExt, BufReader};
-        let mut buf = String::new();
-        BufReader::new(stderr).read_to_string(&mut buf).await.ok();
-        buf
-    } else {
-        String::new()
-    };
-
-    let status = child
-        .wait()
-        .await
-        .map_err(|e| format!("pandoc wait error: {e}"))?;
-
+    // Images marker extracted sit next to its Markdown.
+    let md_dir = md_file.parent().unwrap_or(&output_dir).to_path_buf();
+    let title = file_stem(path);
+    let epub = tokio::task::spawn_blocking(move || {
+        super::native::markdown_to_epub(&content, &title, &md_dir)
+    })
+    .await
+    .map_err(|e| format!("task panicked: {e}"));
     let _ = std::fs::remove_dir_all(&tmp_base);
-
-    if !status.success() {
-        return Err(if stderr_out.trim().is_empty() {
-            format!("pandoc exited with code {}", status.code().unwrap_or(-1))
-        } else {
-            stderr_out.trim().to_string()
-        });
-    }
+    let epub = epub??;
+    tokio::fs::write(&out, epub)
+        .await
+        .map_err(|e| format!("Failed to write {}: {e}", out.display()))?;
 
     app.emit(
         "convert:progress",
@@ -354,6 +252,15 @@ pub async fn convert_pdf_with_marker(
     .ok();
 
     Ok(out.to_string_lossy().to_string())
+}
+
+/// The file name without its extension, as a fallback document title.
+fn file_stem(path: &str) -> String {
+    Path::new(path)
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned()
 }
 
 pub async fn convert_document(
@@ -732,7 +639,6 @@ pub async fn convert_pdf_to_epub(
     llm: LlmCfg,
 ) -> Result<String, String> {
     let python = get_pymupdf4llm_python()?;
-    let pandoc = get_pandoc()?;
     let out = output_path(path, "epub", output_dir)?;
 
     app.emit(
@@ -793,17 +699,16 @@ pub async fn convert_pdf_to_epub(
     )
     .ok();
 
-    // Sanitize <br> tags — EPUB content is XHTML, bare <br> is invalid XML
-    if let Ok(content) = tokio::fs::read_to_string(&tmp_md).await {
-        let _ = tokio::fs::write(&tmp_md, sanitize_br_tags(&content)).await;
-    }
-
-    // Optional LLM post-processing
-    if llm.enabled
-        && let Ok(content) = tokio::fs::read_to_string(&tmp_md).await
-    {
-        let processed = llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
-        let _ = tokio::fs::write(&tmp_md, processed).await;
+    let read = tokio::fs::read_to_string(&tmp_md).await;
+    let mut content = match read {
+        Ok(content) => content,
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&tmp_dir);
+            return Err(format!("Failed to read pymupdf4llm's output: {e}"));
+        }
+    };
+    if llm.enabled {
+        content = llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
     }
 
     app.emit(
@@ -815,48 +720,18 @@ pub async fn convert_pdf_to_epub(
     )
     .ok();
 
-    // Step 2: Markdown → EPUB via pandoc
-    let file_title = std::path::Path::new(path)
-        .file_stem()
-        .unwrap_or_default()
-        .to_string_lossy()
-        .to_string();
-
-    let pandoc_result = crate::process::async_command(&pandoc)
-        .current_dir(&tmp_dir)
-        .args([
-            "-f",
-            "markdown",
-            "-t",
-            "epub",
-            "--metadata",
-            &format!("title={}", file_title),
-            "-o",
-            out.to_str().unwrap_or(""),
-            tmp_md_str,
-        ])
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| {
-            let _ = std::fs::remove_dir_all(&tmp_dir);
-            format!("Failed to spawn pandoc: {e}")
-        })?;
-
+    // Step 2: Markdown → EPUB with the native writer
+    let title = file_stem(path);
+    let base_dir = tmp_dir.clone();
+    let epub = tokio::task::spawn_blocking(move || {
+        super::native::markdown_to_epub(&content, &title, &base_dir)
+    })
+    .await
+    .map_err(|e| format!("task panicked: {e}"));
     let _ = std::fs::remove_dir_all(&tmp_dir);
-
-    if !pandoc_result.status.success() {
-        let stderr = String::from_utf8_lossy(&pandoc_result.stderr);
-        return Err(if stderr.trim().is_empty() {
-            format!(
-                "pandoc exited with code {}",
-                pandoc_result.status.code().unwrap_or(-1)
-            )
-        } else {
-            stderr.trim().to_string()
-        });
-    }
+    tokio::fs::write(&out, epub??)
+        .await
+        .map_err(|e| format!("Failed to write {}: {e}", out.display()))?;
 
     app.emit(
         "convert:progress",

@@ -4,7 +4,7 @@ use comrak::nodes::{ListType, NodeValue, TableAlignment};
 use comrak::{Arena, Node, Options, parse_document};
 
 use crate::converter::document::native::ast::{
-    Align, Block, Document, Inline, List, ListItem, Meta, RawFormat, Table,
+    Align, Block, Document, Inline, List, ListItem, Meta, RawFormat, Table, inline_text,
 };
 
 pub fn read(markdown: &str) -> Document {
@@ -70,7 +70,7 @@ fn front_matter_body(raw: &str) -> &str {
         .trim_end_matches("...")
 }
 
-/// Title, authors, lang, date and description from YAML front matter, or
+/// Title, authors, lang, date, description and cover from YAML front matter, or
 /// `None` when it isn't a YAML mapping (then it's ordinary text).
 fn parse_front_matter(raw: &str) -> Option<Meta> {
     let map = match serde_yaml::from_str(front_matter_body(raw)) {
@@ -98,6 +98,7 @@ fn parse_front_matter(raw: &str) -> Option<Meta> {
         lang: text("lang").or_else(|| text("language")),
         date: text("date"),
         description: text("description").or_else(|| text("abstract")),
+        cover: text("cover-image").or_else(|| text("cover")),
     })
 }
 
@@ -208,7 +209,8 @@ fn paragraph<'a>(node: Node<'a>) -> Vec<Block> {
 
 /// Push a paragraph unless it holds only whitespace and breaks (what's left
 /// around display math).
-fn push_paragraph(blocks: &mut Vec<Block>, mut content: Vec<Inline>) {
+fn push_paragraph(blocks: &mut Vec<Block>, content: Vec<Inline>) {
+    let mut content = fold_html_spans(content);
     while matches!(content.first(), Some(Inline::SoftBreak | Inline::LineBreak)) {
         content.remove(0);
     }
@@ -227,6 +229,77 @@ fn inlines<'a>(node: Node<'a>) -> Vec<Inline> {
     let mut out = Vec::new();
     for child in node.children() {
         push_inline(&mut out, child);
+    }
+    fold_html_spans(out)
+}
+
+/// Inline HTML tags that map onto an AST node, as written without
+/// attributes (`<sup>`, never `<span class=…>`).
+fn html_span(tag: &str) -> Option<fn(Vec<Inline>) -> Inline> {
+    Some(match tag {
+        "sup" => Inline::Superscript,
+        "sub" => Inline::Subscript,
+        "em" | "i" => Inline::Emph,
+        "strong" | "b" => Inline::Strong,
+        "del" | "s" | "strike" => Inline::Strikethrough,
+        "code" => |content: Vec<Inline>| Inline::Code(inline_text(&content)),
+        _ => return None,
+    })
+}
+
+/// The tag name of a bare HTML tag (`<sup>` or `</sup>`, any case), and
+/// whether it closes.
+fn bare_tag(inline: &Inline) -> Option<(String, bool)> {
+    let Inline::Raw { text, .. } = inline else {
+        return None;
+    };
+    let inner = text.trim().strip_prefix('<')?.strip_suffix('>')?;
+    let (closing, name) = match inner.strip_prefix('/') {
+        Some(name) => (true, name),
+        None => (false, inner),
+    };
+    let name = name.trim().to_ascii_lowercase();
+    name.chars()
+        .all(|c| c.is_ascii_alphabetic())
+        .then_some((name, closing))
+}
+
+/// comrak gives inline HTML tag by tag: `<sup>`, `2`, `</sup>`. Fold each
+/// matched pair of a tag [`html_span`] knows into its node, so every writer
+/// gets superscript rather than raw markup; unmatched tags stay raw.
+fn fold_html_spans(inlines: Vec<Inline>) -> Vec<Inline> {
+    let mut out = Vec::with_capacity(inlines.len());
+    let mut rest = inlines.into_iter().peekable();
+    while let Some(inline) = rest.next() {
+        let span = bare_tag(&inline)
+            .filter(|(_, closing)| !closing)
+            .and_then(|(name, _)| html_span(&name).map(|make| (name, make)));
+        let Some((name, make)) = span else {
+            out.push(inline);
+            continue;
+        };
+        // Collect up to the matching close tag, counting nested opens.
+        let mut inner = Vec::new();
+        let mut depth = 0usize;
+        let mut closed = false;
+        for next in rest.by_ref() {
+            match bare_tag(&next) {
+                Some((n, false)) if n == name => depth += 1,
+                Some((n, true)) if n == name && depth == 0 => {
+                    closed = true;
+                    break;
+                }
+                Some((n, true)) if n == name => depth -= 1,
+                _ => {}
+            }
+            inner.push(next);
+        }
+        if closed {
+            out.push(make(fold_html_spans(inner)));
+        } else {
+            out.push(inline);
+            out.extend(fold_html_spans(inner));
+        }
     }
     out
 }
@@ -252,7 +325,7 @@ fn push_inline<'a>(out: &mut Vec<Inline>, node: Node<'a>) {
         NodeValue::Image(l) => Inline::Image {
             url: l.url,
             title: (!l.title.is_empty()).then_some(l.title),
-            alt: crate::converter::document::native::ast::inline_text(&inlines(node)),
+            alt: inline_text(&inlines(node)),
         },
         NodeValue::FootnoteReference(f) => Inline::FootnoteRef(f.name),
         NodeValue::HtmlInline(html) => match html_inline(&html) {
@@ -324,6 +397,52 @@ mod tests {
                     Inline::Strong(vec![text("strong")]),
                     text(" text."),
                 ]),
+            ]
+        );
+    }
+
+    #[test]
+    fn inline_html_spans_become_nodes() {
+        let doc = read("x<sup>2</sup> H<SUB>2</SUB>O <b>bold <i>both</i></b> <code>a*b</code>\n");
+        let Block::Paragraph(content) = &doc.blocks[0] else {
+            panic!("{doc:?}");
+        };
+        assert_eq!(
+            content,
+            &vec![
+                text("x"),
+                Inline::Superscript(vec![text("2")]),
+                text(" H"),
+                Inline::Subscript(vec![text("2")]),
+                text("O "),
+                Inline::Strong(vec![text("bold "), Inline::Emph(vec![text("both")])]),
+                text(" "),
+                Inline::Code("a*b".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn unmatched_or_attributed_tags_stay_raw() {
+        let doc = read("a<sup>open <span class=\"k\">s</span> <sup>x<sup>y</sup></sup>\n");
+        let Block::Paragraph(content) = &doc.blocks[0] else {
+            panic!("{doc:?}");
+        };
+        let raw = |t: &str| Inline::Raw {
+            format: RawFormat::Html,
+            text: t.into(),
+        };
+        assert_eq!(
+            content,
+            &vec![
+                text("a"),
+                raw("<sup>"),
+                text("open "),
+                raw("<span class=\"k\">"),
+                text("s"),
+                raw("</span>"),
+                text(" "),
+                Inline::Superscript(vec![text("x"), Inline::Superscript(vec![text("y")])]),
             ]
         );
     }
