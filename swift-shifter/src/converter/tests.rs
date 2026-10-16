@@ -166,7 +166,10 @@ fn test_detect_output_formats_snapshot() {
         ("/x.latex", &["md", "html", "pdf", "typst"]),
         ("/x.typst", &["md", "html", "pdf", "tex"]),
         ("/x.typ", &["md", "html", "pdf", "tex"]),
-        ("/x.epub", &["pdf", "mobi", "md", "html", "txt", "typst"]),
+        (
+            "/x.epub",
+            &["pdf", "mobi", "md", "html", "txt", "typst", "tex"],
+        ),
         ("/x.mobi", &["epub", "pdf", "html", "md"]),
         ("/x.pdf", &["epub", "mobi", "html", "md"]),
     ];
@@ -339,6 +342,10 @@ fn test_native_engine_routes_md_txt_html_hops() {
         ("epub", "pdf"),
         ("epub", "txt"),
         ("epub", "typst"),
+        ("md", "tex"),
+        ("txt", "tex"),
+        ("html", "tex"),
+        ("epub", "tex"),
     ] {
         assert_eq!(
             route_hop(from, to),
@@ -348,10 +355,10 @@ fn test_native_engine_routes_md_txt_html_hops() {
     }
     // Not covered natively yet: still pandoc.
     for (from, to) in [
-        ("md", "tex"),
-        ("txt", "tex"),
         ("tex", "html"),
+        ("tex", "md"),
         ("typst", "md"),
+        ("typst", "tex"),
     ] {
         assert_eq!(
             route_hop(from, to),
@@ -362,14 +369,14 @@ fn test_native_engine_routes_md_txt_html_hops() {
 }
 
 #[test]
-fn test_html_is_an_input_and_chains_through_markdown() {
+fn test_html_is_an_input_only() {
     use crate::converter::graph::{direct_targets, find_path, normalize_ext};
     assert_eq!(normalize_ext("htm"), "html");
     let mut direct = direct_targets("html");
     direct.sort();
-    assert_eq!(direct, ["epub", "md", "pdf", "txt", "typst"]);
+    assert_eq!(direct, ["epub", "md", "pdf", "tex", "txt", "typst"]);
     assert_eq!(
         find_path("html", "tex").expect("html reaches tex"),
-        ["html", "md", "tex"]
+        ["html", "tex"]
     );
 }
