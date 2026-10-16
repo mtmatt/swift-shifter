@@ -99,6 +99,7 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<(), String> {
         .parent()
         .is_some_and(|out_dir| !same_dir(&base_dir, out_dir));
     if target == "tex" {
+        read_raw_html(&mut doc.blocks);
         copy_images_for_latex(
             &mut doc.blocks,
             &base_dir,
@@ -507,8 +508,8 @@ fn copy_images_beside(blocks: &mut [Block], src_dir: &Path, out: &Path) -> Resul
 /// For `.tex` output: copy local images into an ASCII-named
 /// `<name>-images` folder beside it as `N.ext`, paths no LaTeX engine
 /// stumbles on. PNG, JPEG and PDF are copied as they are; other raster
-/// formats become PNG, and an image the `image` crate can't decode (SVG)
-/// is replaced by its alt text (an empty URL). Links are rebased only when
+/// formats become PNG, and a missing image or one the `image` crate can't
+/// decode (SVG) is replaced by its alt text (an empty URL). Links are rebased only when
 /// `rebase_links` (the output is in another folder).
 fn copy_images_for_latex(
     blocks: &mut [Block],
@@ -526,6 +527,11 @@ fn copy_images_for_latex(
         UrlKind::Link => {}
         UrlKind::Image => {
             let Some(path) = local_path(url, src_dir) else {
+                // A missing local image would stop the LaTeX run: alt
+                // text instead. Remote ones are left for the writer.
+                if write::latex::is_local(url) {
+                    url.clear();
+                }
                 return;
             };
             let ext = path
@@ -565,6 +571,74 @@ fn copy_images_for_latex(
         }
     });
     error.map_or(Ok(()), Err)
+}
+
+/// For LaTeX, which can't keep markup: raw HTML (an HTML block in
+/// Markdown, an inline `<img>`) read into the AST, so its images are
+/// copied and converted like any other and its text keeps its structure.
+/// What the HTML reader keeps raw (MathML without TeX) stays raw.
+fn read_raw_html(blocks: &mut Vec<Block>) {
+    for block in std::mem::take(blocks) {
+        match block {
+            Block::Raw { ref text, .. } => blocks.extend(read::html::read_fragment(text)),
+            mut block => {
+                match &mut block {
+                    Block::Heading { content, .. } | Block::Paragraph(content) => {
+                        read_raw_inlines(content)
+                    }
+                    Block::Quote(children)
+                    | Block::FootnoteDefinition {
+                        content: children, ..
+                    } => read_raw_html(children),
+                    Block::List(List { items, .. }) => items
+                        .iter_mut()
+                        .for_each(|item| read_raw_html(&mut item.content)),
+                    Block::Table(table) => table
+                        .header
+                        .iter_mut()
+                        .chain(table.rows.iter_mut().flatten())
+                        .for_each(read_raw_inlines),
+                    _ => {}
+                }
+                blocks.push(block);
+            }
+        }
+    }
+}
+
+/// [`read_raw_html`] for a run of inlines: each raw tag becomes the inlines
+/// it reads as (an `<img>` an image; a lone `<span>` nothing).
+fn read_raw_inlines(inlines: &mut Vec<Inline>) {
+    for inline in std::mem::take(inlines) {
+        match inline {
+            Inline::Raw { ref text, .. } => {
+                let blocks = read::html::read_fragment(text);
+                // Anything that isn't inline (MathML kept raw): leave the tag
+                // to the writer.
+                if !blocks.iter().all(|b| matches!(b, Block::Paragraph(_))) {
+                    inlines.push(inline);
+                    continue;
+                }
+                for block in blocks {
+                    if let Block::Paragraph(content) = block {
+                        inlines.extend(content);
+                    }
+                }
+            }
+            mut inline => {
+                match &mut inline {
+                    Inline::Emph(c)
+                    | Inline::Strong(c)
+                    | Inline::Strikethrough(c)
+                    | Inline::Superscript(c)
+                    | Inline::Subscript(c)
+                    | Inline::Link { content: c, .. } => read_raw_inlines(c),
+                    _ => {}
+                }
+                inlines.push(inline);
+            }
+        }
+    }
 }
 
 /// `name` as ASCII letters, digits and `-`, for paths LaTeX reads. When
@@ -1124,6 +1198,79 @@ mod tests {
         assert!(!src.path().join(dir).join("3.png").exists());
         assert!(tex.contains("\\href{other.md}{o}"), "{tex}");
     }
+
+    /// Our LaTeX compiles, tricky input included: brackets after `\item`
+    /// and rows, notes in headings and table cells, code, images and tables
+    /// inside notes, deep and mixed nesting, display environments, CJK and
+    /// a missing image. Skipped where tectonic (XeLaTeX) isn't installed.
+    #[test]
+    fn our_latex_compiles() {
+        let Ok(tectonic) = which::which("tectonic") else {
+            eprintln!("skipping: tectonic not found");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        image::RgbImage::new(4, 4)
+            .save(dir.path().join("pic.png"))
+            .unwrap();
+        std::fs::write(
+            dir.path().join("logo.svg"),
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+        )
+        .unwrap();
+        let md = dir.path().join("tricky #1.md");
+        std::fs::write(&md, TRICKY_MARKDOWN).unwrap();
+        let tex = dir.path().join("out").join("tricky #1.tex");
+        std::fs::create_dir_all(tex.parent().unwrap()).unwrap();
+        convert(&md, "tex", &tex).unwrap();
+        // Four local raster images (the SVG, missing and remote ones fall
+        // back to alt text), every one a copy, raw HTML ones included.
+        let written = std::fs::read_to_string(&tex).unwrap();
+        assert_eq!(written.matches("\\includegraphics").count(), 4, "{written}");
+        assert!(
+            !written.contains("{pic.png}") && !written.contains("logo.svg"),
+            "{written}"
+        );
+        let output = std::process::Command::new(tectonic)
+            .args(["-c", "minimal"])
+            .arg(&tex)
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_lowercase();
+        // tectonic downloads its bundle on first use.
+        if !output.status.success()
+            && ["network", "dns", "connection"]
+                .iter()
+                .any(|w| stderr.contains(w))
+        {
+            eprintln!("skipping: tectonic couldn't download its bundle");
+            return;
+        }
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stderr),
+            std::fs::read_to_string(&tex).unwrap()
+        );
+        assert!(tex.with_extension("pdf").is_file());
+    }
+
+    const TRICKY_MARKDOWN: &str = "---\ntitle: Tricky [test] & more\nauthor: [A_B, C#D]\n---\n\n\
+# Heading *styled*[^h] with ~~strike~~ and `code`\n\n\
+- [link] text\n- *em* first\n- [x] task\n    1. one\n       - two\n         1. three\n            - four\n              1. five\n                 - six\n\n\
+1. outer\n\n   3. inner\n\n2. next\n\n\
+| [first] | b | c |\n|:--|:-:|--:|\n| *star | [x] cell | z<br>[w] |\n| note[^t] | a<br>b[^t2] | 100% |\n\n\
+Specials: \\\\ { } $ & % # _ ~ ^ [link](https://e.org/a_b?x=1%20#top) <https://e.org/~u> [up](#heading-styled-with-strike-and-code)\n\n\
+$$\\begin{align}a &= b \\\\ c &= d\\end{align}$$\n\n$$\\frac{1}{2}$$\n\n\
+```\n\\end{verbatim}\n  indented\n```\n\n\
+> Quote:\n>\n> - one\n>   - two\n\n\
+中文段落與 α → β ├──\n\n\
+![pic](pic.png) ![missing](missing.png) ![remote](https://e.org/x.png)\n\n\
+<p align=\"center\"><img src=\"pic.png\" alt=\"Logo\"></p>\n\n<img src=\"logo.svg\">\n\n\
+Logo: <img src=\"pic.png\" width=\"50\"> inline.\n\n> ## Only heading\n\n- ## Only in list\n\n---\n\n\
+Ref[^code].\n\n\
+[^h]: Heading note.\n[^t]: Table note.\n[^t2]: Cell note.\n\
+[^code]: Code:\n\n    ```\n    let x = 1;\n\n    let y = 2;\n    ```\n\n    ![pic](pic.png)\n\n    | a | b |\n    |---|---|\n    | 1 | 2 |\n";
 
     /// Our LaTeX, read back by pandoc's LaTeX reader, has the source's
     /// structure. Skipped where pandoc isn't installed.

@@ -186,7 +186,10 @@ impl BlockWriter for Writer {
                 self.nesting.set(self.nesting.get() + 1);
                 let inner = self.blocks(children);
                 self.nesting.set(self.nesting.get() - 1);
-                format!("\\begin{{quote}}\n{inner}\n\\end{{quote}}")
+                format!(
+                    "\\begin{{quote}}\n{}{inner}\n\\end{{quote}}",
+                    heading_opener(children)
+                )
             }
             Block::List(list) => self.list(list),
             Block::Code { code, .. } => {
@@ -273,6 +276,7 @@ impl Writer {
             };
             let sep = if list.tight { "\n" } else { "\n\n" };
             out.push_str(marker);
+            out.push_str(heading_opener(&item.content));
             // `{}` keeps a leading `[` or `*` from being read as an option.
             out.push_str(&guard(&self.blocks_joined(&item.content, sep)));
             out.push('\n');
@@ -297,7 +301,12 @@ impl Writer {
                     (None, Some(start)) => format!("{}.", start + i as u64),
                     (None, None) => "\\textbullet".to_string(),
                 };
-                format!("{marker}~{}", self.blocks_joined(&item.content, "\n\n"))
+                // `\par` starts each item afresh, even where the list
+                // follows its parent item's text with a single newline.
+                format!(
+                    "\\par {marker}~{}",
+                    self.blocks_joined(&item.content, "\n\n")
+                )
             })
             .collect();
         items.join("\n\n")
@@ -465,6 +474,17 @@ impl Writer {
     }
 }
 
+/// `\mbox{}` before a heading that opens a quote or list item: a sectioning
+/// command can't be the first thing in LaTeX's list machinery ("perhaps a
+/// missing \item").
+fn heading_opener(blocks: &[Block]) -> &'static str {
+    if matches!(blocks.first(), Some(Block::Heading { .. })) {
+        "\\mbox{}\n"
+    } else {
+        ""
+    }
+}
+
 /// Display math in `\[ … \]`, unless the formula is itself a display
 /// environment (`align`, `equation`, …), which can't nest there.
 fn display_math(tex: &str) -> String {
@@ -519,7 +539,7 @@ fn guard(line: &str) -> String {
 
 /// Whether an image URL names a file (the converter made local images
 /// relative); remote and `data:` images can't be included.
-fn is_local(url: &str) -> bool {
+pub(crate) fn is_local(url: &str) -> bool {
     !url.is_empty() && !url.contains("://") && !url.starts_with("data:")
 }
 
@@ -675,7 +695,7 @@ mod tests {
         let opened =
             mixed.matches("\\begin{itemize}").count() + mixed.matches("\\begin{enumerate}").count();
         assert_eq!(opened, MAX_NESTING, "{mixed}");
-        assert!(deep.contains("\\textbullet~5"), "{deep}");
+        assert!(deep.contains("\\par \\textbullet~5"), "{deep}");
     }
 
     #[test]
