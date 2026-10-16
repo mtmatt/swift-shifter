@@ -19,7 +19,7 @@ use ast::{Block, Document, Inline, List};
 /// Input formats the native readers handle (normalized extensions).
 pub const INPUTS: &[&str] = &["md", "txt", "html"];
 /// Output formats the native writers handle.
-pub const OUTPUTS: &[&str] = &["md", "txt", "html", "pdf", "typst"];
+pub const OUTPUTS: &[&str] = &["md", "txt", "html", "pdf", "typst", "epub"];
 
 /// Whether the native engine converts `from` → `to` (normalized extensions).
 pub fn handles(from: &str, to: &str) -> bool {
@@ -76,16 +76,18 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<(), String> {
         "html" => read::html::read(source),
         other => return Err(format!("The native converter can't read .{other}")),
     };
-    if target == "html" {
+    if matches!(target, "html" | "epub") {
         fill_title(&mut doc, input);
     }
     if let (Some(src_dir), Some(out_dir)) = (input.parent(), out.parent())
         && !same_dir(src_dir, out_dir)
     {
-        if target == "typst" {
-            copy_images_beside(&mut doc.blocks, src_dir, out)?;
-        } else {
-            rebase_relative_urls(&mut doc.blocks, src_dir);
+        match target {
+            "typst" => copy_images_beside(&mut doc.blocks, src_dir, out)?,
+            // Images are packaged into the book from `src_dir`, and
+            // `file://` links would only work on this computer.
+            "epub" => {}
+            _ => rebase_relative_urls(&mut doc.blocks, src_dir),
         }
     }
 
@@ -96,6 +98,12 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<(), String> {
         "html" => write::html::write(&doc).into_bytes(),
         "typst" => typst_file_source(&doc, base_dir).into_bytes(),
         "pdf" => typeset(&doc, base_dir)?,
+        "epub" => write::epub::write(
+            &doc,
+            &write::epub::Options {
+                base_dir: base_dir.to_path_buf(),
+            },
+        )?,
         other => return Err(format!("The native converter can't write {other}")),
     };
     std::fs::write(out, rendered).map_err(|e| format!("Failed to write {}: {e}", out.display()))
@@ -329,6 +337,7 @@ fn label_at(body: &str, at: usize) -> Option<(&str, usize)> {
         .starts_with(')')
         .then(|| (&after[..end], "label(\"".len() + end + 2))
 }
+
 /// Markdown → standalone HTML, for converters that produce Markdown first
 /// (PDF → HTML via pymupdf4llm).
 pub fn markdown_to_html(markdown: &str, title: &str) -> String {
@@ -337,6 +346,21 @@ pub fn markdown_to_html(markdown: &str, title: &str) -> String {
         doc.meta.title = Some(title.to_string());
     }
     write::html::write(&doc)
+}
+
+/// Markdown → EPUB, for converters that produce Markdown first (PDF → EPUB
+/// via pymupdf4llm or marker). Images resolve from `base_dir`.
+pub fn markdown_to_epub(markdown: &str, title: &str, base_dir: &Path) -> Result<Vec<u8>, String> {
+    let mut doc = read::markdown::read(markdown);
+    if doc.meta.title.is_none() {
+        doc.meta.title = Some(title.to_string());
+    }
+    write::epub::write(
+        &doc,
+        &write::epub::Options {
+            base_dir: base_dir.to_path_buf(),
+        },
+    )
 }
 
 /// Plain text as Markdown with the same meaning (markup characters escaped),

@@ -15,6 +15,8 @@ pub struct Meta {
     pub lang: Option<String>,
     pub date: Option<String>,
     pub description: Option<String>,
+    /// A cover image (path or URL), for ebook output.
+    pub cover: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]

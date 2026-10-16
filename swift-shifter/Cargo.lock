@@ -6320,6 +6320,7 @@ dependencies = [
 name = "swift-shifter"
 version = "1.0.1"
 dependencies = [
+ "base64 0.22.1",
  "chrono",
  "clap",
  "comrak",
@@ -6336,6 +6337,7 @@ dependencies = [
  "ravif",
  "reqwest 0.12.28",
  "rgb",
+ "roxmltree 0.21.1",
  "scraper",
  "serde",
  "serde_json",

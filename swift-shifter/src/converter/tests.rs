@@ -156,9 +156,12 @@ fn test_detect_output_formats_snapshot() {
         ("/x.yml", &["json", "toml", "csv"]),
         ("/x.toml", &["json", "yaml", "csv"]),
         ("/x.csv", &["json", "yaml"]),
-        ("/x.md", &["txt", "html", "pdf", "tex", "typst"]),
-        ("/x.markdown", &["txt", "html", "pdf", "tex", "typst"]),
-        ("/x.txt", &["md", "html", "pdf", "tex", "typst"]),
+        ("/x.md", &["txt", "html", "pdf", "tex", "typst", "epub"]),
+        (
+            "/x.markdown",
+            &["txt", "html", "pdf", "tex", "typst", "epub"],
+        ),
+        ("/x.txt", &["md", "html", "pdf", "tex", "typst", "epub"]),
         ("/x.tex", &["md", "html", "pdf", "typst"]),
         ("/x.latex", &["md", "html", "pdf", "typst"]),
         ("/x.typst", &["md", "html", "pdf", "tex"]),
@@ -328,6 +331,9 @@ fn test_native_engine_routes_md_txt_html_hops() {
         ("html", "pdf"),
         ("md", "typst"),
         ("html", "typst"),
+        ("md", "epub"),
+        ("txt", "epub"),
+        ("html", "epub"),
     ] {
         assert_eq!(
             route_hop(from, to),
@@ -357,7 +363,7 @@ fn test_html_is_an_input_and_chains_through_markdown() {
     assert_eq!(normalize_ext("htm"), "html");
     let mut direct = direct_targets("html");
     direct.sort();
-    assert_eq!(direct, ["md", "pdf", "txt", "typst"]);
+    assert_eq!(direct, ["epub", "md", "pdf", "txt", "typst"]);
     assert_eq!(
         find_path("html", "tex").expect("html reaches tex"),
         ["html", "md", "tex"]

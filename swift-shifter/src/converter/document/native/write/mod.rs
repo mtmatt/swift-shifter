@@ -1,7 +1,9 @@
+pub mod epub;
 pub mod html;
 pub mod markdown;
 pub mod plain;
 pub mod typst;
+pub(crate) mod xhtml;
 
 use std::collections::{HashMap, HashSet};
 
