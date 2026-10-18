@@ -19,7 +19,7 @@ use ast::{Block, Document, Inline, List};
 /// Input formats the native readers handle (normalized extensions).
 pub const INPUTS: &[&str] = &["md", "txt", "html", "epub"];
 /// Output formats the native writers handle.
-pub const OUTPUTS: &[&str] = &["md", "txt", "html", "pdf", "typst", "epub"];
+pub const OUTPUTS: &[&str] = &["md", "txt", "html", "pdf", "typst", "epub", "tex"];
 
 /// Whether the native engine converts `from` → `to` (normalized extensions).
 pub fn handles(from: &str, to: &str) -> bool {
@@ -95,7 +95,18 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<(), String> {
         Some(dir) => dir.path().to_path_buf(),
         None => input.parent().unwrap_or(Path::new(".")).to_path_buf(),
     };
-    if book_dir.is_some() {
+    let elsewhere = out
+        .parent()
+        .is_some_and(|out_dir| !same_dir(&base_dir, out_dir));
+    if target == "tex" {
+        read_raw_html(&mut doc.blocks);
+        copy_images_for_latex(
+            &mut doc.blocks,
+            &base_dir,
+            out,
+            elsewhere && book_dir.is_none(),
+        )?;
+    } else if book_dir.is_some() {
         // The book's images vanish with its temp folder: keep copies.
         if matches!(target, "md" | "html" | "typst") {
             copy_images_beside(&mut doc.blocks, &base_dir, out)?;
@@ -117,6 +128,7 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<(), String> {
         "txt" => write::plain::write(&doc).into_bytes(),
         "html" => write::html::write(&doc).into_bytes(),
         "typst" => typst_file_source(&doc, &base_dir).into_bytes(),
+        "tex" => write::latex::write(&doc).into_bytes(),
         "pdf" => typeset(&doc, &base_dir)?,
         "epub" => write::epub::write(
             &doc,
@@ -383,12 +395,6 @@ pub fn markdown_to_epub(markdown: &str, title: &str, base_dir: &Path) -> Result<
     )
 }
 
-/// Plain text as Markdown with the same meaning (markup characters escaped),
-/// for converters that only take Markdown (pandoc, for txt → pdf/tex/typst).
-pub fn plain_text_to_markdown(text: &str) -> String {
-    write::markdown::write(&read::plain::read(text))
-}
-
 /// HTML pages need a `<title>`: use the document's own, else its first
 /// heading, else the file name. (Markdown and plain output only show a title
 /// the document declared, so they don't get this fallback.)
@@ -499,6 +505,167 @@ fn copy_images_beside(blocks: &mut [Block], src_dir: &Path, out: &Path) -> Resul
     error.map_or(Ok(()), Err)
 }
 
+/// For `.tex` output: copy local images into an ASCII-named
+/// `<name>-images` folder beside it as `N.ext`, paths no LaTeX engine
+/// stumbles on. PNG, JPEG and PDF are copied as they are; other raster
+/// formats become PNG, and a missing image or one the `image` crate can't
+/// decode (SVG) is replaced by its alt text (an empty URL). Links are rebased only when
+/// `rebase_links` (the output is in another folder).
+fn copy_images_for_latex(
+    blocks: &mut [Block],
+    src_dir: &Path,
+    out: &Path,
+    rebase_links: bool,
+) -> Result<(), String> {
+    let stem = out.file_stem().unwrap_or_default().to_string_lossy();
+    let dir_name = format!("{}-images", ascii_name(&stem));
+    let dir = out.with_file_name(&dir_name);
+    let mut copied = 0usize;
+    let mut error = None;
+    for_each_url(blocks, &mut |kind, url| match kind {
+        UrlKind::Link if rebase_links => rebase_url(url, src_dir),
+        UrlKind::Link => {}
+        UrlKind::Image => {
+            let Some(path) = local_path(url, src_dir) else {
+                // A missing local image would stop the LaTeX run: alt
+                // text instead. Remote ones are left for the writer.
+                if write::latex::is_local(url) {
+                    url.clear();
+                }
+                return;
+            };
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(str::to_ascii_lowercase)
+                .unwrap_or_default();
+            let as_is = matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "pdf");
+            let file_name = format!("{}.{}", copied + 1, if as_is { &ext } else { "png" });
+            let target = dir.join(&file_name);
+            if let Err(e) = std::fs::create_dir_all(&dir) {
+                error = Some(format!("Failed to create {}: {e}", dir.display()));
+                return;
+            }
+            let written = if as_is {
+                std::fs::copy(&path, &target)
+                    .map(|_| ())
+                    .map_err(|e| e.to_string())
+            } else {
+                match ::image::open(&path) {
+                    Ok(image) => image.save(&target).map_err(|e| e.to_string()),
+                    // Not a raster format we read (SVG): alt text instead.
+                    Err(::image::ImageError::Decoding(_) | ::image::ImageError::Unsupported(_)) => {
+                        url.clear();
+                        return;
+                    }
+                    Err(e) => Err(e.to_string()),
+                }
+            };
+            match written {
+                Ok(()) => {
+                    *url = format!("{dir_name}/{file_name}");
+                    copied += 1;
+                }
+                Err(e) => error = Some(format!("Failed to copy {}: {e}", path.display())),
+            }
+        }
+    });
+    error.map_or(Ok(()), Err)
+}
+
+/// For LaTeX, which can't keep markup: raw HTML (an HTML block in
+/// Markdown, an inline `<img>`) read into the AST, so its images are
+/// copied and converted like any other and its text keeps its structure.
+/// What the HTML reader keeps raw (MathML without TeX) stays raw.
+fn read_raw_html(blocks: &mut Vec<Block>) {
+    for block in std::mem::take(blocks) {
+        match block {
+            Block::Raw { ref text, .. } => blocks.extend(read::html::read_fragment(text)),
+            mut block => {
+                match &mut block {
+                    Block::Heading { content, .. } | Block::Paragraph(content) => {
+                        read_raw_inlines(content)
+                    }
+                    Block::Quote(children)
+                    | Block::FootnoteDefinition {
+                        content: children, ..
+                    } => read_raw_html(children),
+                    Block::List(List { items, .. }) => items
+                        .iter_mut()
+                        .for_each(|item| read_raw_html(&mut item.content)),
+                    Block::Table(table) => table
+                        .header
+                        .iter_mut()
+                        .chain(table.rows.iter_mut().flatten())
+                        .for_each(read_raw_inlines),
+                    _ => {}
+                }
+                blocks.push(block);
+            }
+        }
+    }
+}
+
+/// [`read_raw_html`] for a run of inlines: each raw tag becomes the inlines
+/// it reads as (an `<img>` an image; a lone `<span>` nothing).
+fn read_raw_inlines(inlines: &mut Vec<Inline>) {
+    for inline in std::mem::take(inlines) {
+        match inline {
+            Inline::Raw { ref text, .. } => {
+                let blocks = read::html::read_fragment(text);
+                // Anything that isn't inline (MathML kept raw): leave the tag
+                // to the writer.
+                if !blocks.iter().all(|b| matches!(b, Block::Paragraph(_))) {
+                    inlines.push(inline);
+                    continue;
+                }
+                for block in blocks {
+                    if let Block::Paragraph(content) = block {
+                        inlines.extend(content);
+                    }
+                }
+            }
+            mut inline => {
+                match &mut inline {
+                    Inline::Emph(c)
+                    | Inline::Strong(c)
+                    | Inline::Strikethrough(c)
+                    | Inline::Superscript(c)
+                    | Inline::Subscript(c)
+                    | Inline::Link { content: c, .. } => read_raw_inlines(c),
+                    _ => {}
+                }
+                inlines.push(inline);
+            }
+        }
+    }
+}
+
+/// `name` as ASCII letters, digits and `-`, for paths LaTeX reads. When
+/// characters had to go, a short hash of the original name is appended,
+/// so `報告` and `提案` don't share (and overwrite) one image folder.
+fn ascii_name(name: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut kept = String::new();
+    for c in name.chars() {
+        if c.is_ascii_alphanumeric() || c == '-' {
+            kept.push(c);
+        } else if !kept.ends_with('-') {
+            kept.push('-');
+        }
+    }
+    let lossy = kept != name;
+    let mut out = kept.trim_matches('-').to_string();
+    if out.is_empty() {
+        out = "document".to_string();
+    }
+    if lossy {
+        let hash = Sha256::digest(name.as_bytes());
+        out.push_str(&format!("-{:02x}{:02x}{:02x}", hash[0], hash[1], hash[2]));
+    }
+    out
+}
+
 /// The local file a URL points at, if it exists: a `file://` URL, an
 /// absolute path, or a path relative to `base` (percent-decoded, without
 /// any `?query` or `#fragment`). `None` for remote URLs, data URLs, in-page
@@ -579,7 +746,8 @@ mod tests {
         assert!(!handles("md", "md"));
         assert!(handles("md", "pdf"));
         assert!(handles("html", "typst"));
-        assert!(!handles("md", "tex"));
+        assert!(handles("md", "tex"));
+        assert!(handles("epub", "tex"));
         assert!(!handles("tex", "html"));
     }
 
@@ -754,15 +922,6 @@ mod tests {
                 "changed through:\n{md}"
             );
         }
-    }
-
-    #[test]
-    fn plain_text_to_markdown_keeps_markup_literal() {
-        let md = plain_text_to_markdown("# not a heading\n*literal*");
-        assert_eq!(
-            read::markdown::read(&md).blocks,
-            read::plain::read("# not a heading\n*literal*").blocks
-        );
     }
 
     fn page_count(pdf: &[u8]) -> usize {
@@ -985,6 +1144,190 @@ mod tests {
         assert!(out_dir.path().join("book-images/0-1.png").is_file());
         // PDF reads the images from the extracted book directly.
         convert(&epub, "pdf", &out_dir.path().join("book.pdf")).unwrap();
+    }
+
+    #[test]
+    fn ascii_names_stay_distinct() {
+        assert_eq!(ascii_name("report-2024"), "report-2024");
+        assert_ne!(ascii_name("報告"), ascii_name("提案"));
+        assert!(ascii_name("報告").starts_with("document-"));
+        assert_ne!(ascii_name("résumé"), ascii_name("résumà"));
+    }
+
+    #[test]
+    fn latex_output_gets_safe_image_copies() {
+        let src = tempfile::tempdir().unwrap();
+        image::RgbImage::new(2, 2)
+            .save(src.path().join("my pic.png"))
+            .unwrap();
+        image::RgbImage::new(2, 2)
+            .save(src.path().join("b.bmp"))
+            .unwrap();
+        std::fs::write(
+            src.path().join("c.svg"),
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+        )
+        .unwrap();
+        std::fs::write(src.path().join("other.md"), "x").unwrap();
+        let md = src.path().join("doc.md");
+        std::fs::write(
+            &md,
+            "![a](my%20pic.png) ![b](b.bmp) ![c](c.svg) [o](other.md)\n",
+        )
+        .unwrap();
+        // Same folder as the input: images are still copied, into a folder
+        // with an ASCII name; links stay relative.
+        let out = src.path().join("my #1 ~résumé.tex");
+        convert(&md, "tex", &out).unwrap();
+        let tex = std::fs::read_to_string(&out).unwrap();
+        let dir = format!("{}-images", ascii_name("my #1 ~résumé"));
+        assert!(dir.starts_with("my-1-r-sum-") && dir.is_ascii(), "{dir}");
+        let dir = dir.as_str();
+        assert!(
+            tex.contains(&format!("\\includegraphics[height=1.2em]{{{dir}/1.png}}")),
+            "{tex}"
+        );
+        assert!(
+            tex.contains(&format!("{{{dir}/2.png}}")) && tex.contains("{[}c{]}"),
+            "{tex}"
+        );
+        assert!(
+            image::open(src.path().join(dir).join("2.png")).is_ok(),
+            "bmp became png"
+        );
+        assert!(!src.path().join(dir).join("3.png").exists());
+        assert!(tex.contains("\\href{other.md}{o}"), "{tex}");
+    }
+
+    /// Our LaTeX compiles, tricky input included: brackets after `\item`
+    /// and rows, notes in headings and table cells, code, images and tables
+    /// inside notes, deep and mixed nesting, display environments, CJK and
+    /// a missing image. Skipped where tectonic (XeLaTeX) isn't installed.
+    #[test]
+    fn our_latex_compiles() {
+        let Ok(tectonic) = which::which("tectonic") else {
+            eprintln!("skipping: tectonic not found");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        image::RgbImage::new(4, 4)
+            .save(dir.path().join("pic.png"))
+            .unwrap();
+        std::fs::write(
+            dir.path().join("logo.svg"),
+            "<svg xmlns=\"http://www.w3.org/2000/svg\"/>",
+        )
+        .unwrap();
+        let md = dir.path().join("tricky #1.md");
+        std::fs::write(&md, TRICKY_MARKDOWN).unwrap();
+        let tex = dir.path().join("out").join("tricky #1.tex");
+        std::fs::create_dir_all(tex.parent().unwrap()).unwrap();
+        convert(&md, "tex", &tex).unwrap();
+        // Four local raster images (the SVG, missing and remote ones fall
+        // back to alt text), every one a copy, raw HTML ones included.
+        let written = std::fs::read_to_string(&tex).unwrap();
+        assert_eq!(written.matches("\\includegraphics").count(), 4, "{written}");
+        assert!(
+            !written.contains("{pic.png}") && !written.contains("logo.svg"),
+            "{written}"
+        );
+        let output = std::process::Command::new(tectonic)
+            .args(["-c", "minimal"])
+            .arg(&tex)
+            .output()
+            .unwrap();
+        let stderr = String::from_utf8_lossy(&output.stderr).to_lowercase();
+        // tectonic downloads its bundle on first use.
+        if !output.status.success()
+            && ["network", "dns", "connection"]
+                .iter()
+                .any(|w| stderr.contains(w))
+        {
+            eprintln!("skipping: tectonic couldn't download its bundle");
+            return;
+        }
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stderr),
+            std::fs::read_to_string(&tex).unwrap()
+        );
+        assert!(tex.with_extension("pdf").is_file());
+    }
+
+    const TRICKY_MARKDOWN: &str = "---\ntitle: Tricky [test] & more\nauthor: [A_B, C#D]\n---\n\n\
+# Heading *styled*[^h] with ~~strike~~ and `code`\n\n\
+- [link] text\n- *em* first\n- [x] task\n    1. one\n       - two\n         1. three\n            - four\n              1. five\n                 - six\n\n\
+1. outer\n\n   3. inner\n\n2. next\n\n\
+| [first] | b | c |\n|:--|:-:|--:|\n| *star | [x] cell | z<br>[w] |\n| note[^t] | a<br>b[^t2] | 100% |\n\n\
+Specials: \\\\ { } $ & % # _ ~ ^ [link](https://e.org/a_b?x=1%20#top) <https://e.org/~u> [up](#heading-styled-with-strike-and-code)\n\n\
+$$\\begin{align}a &= b \\\\ c &= d\\end{align}$$\n\n$$\\frac{1}{2}$$\n\n\
+```\n\\end{verbatim}\n  indented\n```\n\n\
+> Quote:\n>\n> - one\n>   - two\n\n\
+中文段落與 α → β ├──\n\n\
+![pic](pic.png) ![missing](missing.png) ![remote](https://e.org/x.png)\n\n\
+<p align=\"center\"><img src=\"pic.png\" alt=\"Logo\"></p>\n\n<img src=\"logo.svg\">\n\n\
+Logo: <img src=\"pic.png\" width=\"50\"> inline.\n\n> ## Only heading\n\n- ## Only in list\n\n---\n\n\
+Ref[^code].\n\n\
+[^h]: Heading note.\n[^t]: Table note.\n[^t2]: Cell note.\n\
+[^code]: Code:\n\n    ```\n    let x = 1;\n\n    let y = 2;\n    ```\n\n    ![pic](pic.png)\n\n    | a | b |\n    |---|---|\n    | 1 | 2 |\n";
+
+    /// Our LaTeX, read back by pandoc's LaTeX reader, has the source's
+    /// structure. Skipped where pandoc isn't installed.
+    #[test]
+    fn pandoc_reads_our_latex_back_with_the_same_structure() {
+        let Some(pandoc) = crate::converter::document::binaries::find_pandoc_binary() else {
+            eprintln!("skipping: pandoc not found");
+            return;
+        };
+        /// Headings, then counts of tables, code blocks, display math and
+        /// notes, allowing for how pandoc's GFM writer represents them.
+        fn outline(doc: &Document) -> (Vec<(u8, String)>, [usize; 4]) {
+            let headings = doc
+                .blocks
+                .iter()
+                .filter_map(|b| match b {
+                    Block::Heading { level, content } => Some((*level, ast::inline_text(content))),
+                    _ => None,
+                })
+                .collect();
+            let is_math = |b: &Block| {
+                matches!(b, Block::Math(_))
+                    || matches!(b, Block::Code { lang: Some(l), .. } if l == "math")
+            };
+            let count = |f: &dyn Fn(&Block) -> bool| doc.blocks.iter().filter(|b| f(b)).count();
+            (
+                headings,
+                [
+                    // A table pandoc can't write as GFM comes out as HTML.
+                    count(&|b| {
+                        matches!(b, Block::Table(_))
+                            || matches!(b, Block::Raw { text, .. } if text.trim_start().starts_with("<table"))
+                    }),
+                    count(&|b| matches!(b, Block::Code { .. }) && !is_math(b)),
+                    count(&is_math),
+                    count(&|b| matches!(b, Block::FootnoteDefinition { .. })),
+                ],
+            )
+        }
+        for name in ["kitchen-sink.md", "pymupdf-output.md"] {
+            let doc = read::markdown::read(&fixture(name));
+            let tex = write::latex::write(&doc);
+            let output = std::process::Command::new(&pandoc)
+                .args(["-f", "latex", "-t", "gfm", "--wrap=none"])
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .spawn()
+                .and_then(|mut child| {
+                    use std::io::Write;
+                    child.stdin.take().unwrap().write_all(tex.as_bytes())?;
+                    child.wait_with_output()
+                })
+                .unwrap();
+            assert!(output.status.success(), "{name}: pandoc failed on\n{tex}");
+            let back = read::markdown::read(&String::from_utf8_lossy(&output.stdout));
+            assert_eq!(outline(&back), outline(&doc), "{name}");
+        }
     }
 
     #[test]

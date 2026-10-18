@@ -132,11 +132,14 @@ pub fn edges() -> Vec<Edge> {
         ("txt", &["md", "html", "pdf", "tex", "typst", "epub"]),
         ("tex", &["md", "html", "pdf", "typst"]),
         ("typst", &["md", "html", "pdf", "tex"]),
-        ("epub", &["pdf", "mobi", "md", "html", "txt", "typst"]),
+        (
+            "epub",
+            &["pdf", "mobi", "md", "html", "txt", "typst", "tex"],
+        ),
         ("mobi", &["epub", "pdf", "html", "md"]),
         ("pdf", &["epub", "mobi", "html", "md"]),
-        // html is an input only; tex output chains through md.
-        ("html", &["md", "txt", "pdf", "typst", "epub"]),
+        // html is an input only.
+        ("html", &["md", "txt", "pdf", "typst", "epub", "tex"]),
     ];
     for &(from, tos) in doc {
         for &to in tos {
@@ -190,8 +193,8 @@ pub enum Hop {
     PdfToHtml,
     PdfToMd,
     PdfToEpubOrMarker,
-    DocumentPandoc, // document::convert_document (tex/typst input, md/txt → tex)
-    DocumentNative, // document::native (md/txt/html/epub → md/txt/html/typst/pdf/epub)
+    DocumentPandoc, // document::convert_document (tex and typst input)
+    DocumentNative, // document::native (md/txt/html/epub → md/txt/html/typst/pdf/epub/tex)
 }
 
 /// Classify a single hop. Inputs MUST already be normalized.

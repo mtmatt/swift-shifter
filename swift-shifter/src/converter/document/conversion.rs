@@ -294,30 +294,10 @@ pub async fn convert_document(
     )
     .ok();
 
-    // Plain text is read literally by the native reader and handed to pandoc
-    // as Markdown, so .txt keeps the same meaning whatever the target. The
-    // temp dir lives until pandoc is done.
-    let staged_txt = if normalize_ext(&input_ext) == "txt" {
-        let text = tokio::fs::read(path)
-            .await
-            .map_err(|e| format!("Failed to read {path}: {e}"))?;
-        let dir = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {e}"))?;
-        let staged = dir.path().join("input.md");
-        let markdown = super::native::plain_text_to_markdown(&String::from_utf8_lossy(&text));
-        tokio::fs::write(&staged, markdown)
-            .await
-            .map_err(|e| format!("Failed to stage {path}: {e}"))?;
-        Some((dir, staged))
-    } else {
-        None
-    };
-    let (source, from_fmt) = match &staged_txt {
-        // GFM is the dialect the native writer targets; pandoc's own
-        // Markdown would still read citations, smart quotes, definition
-        // lists and line blocks into the text.
-        Some((_, staged)) => (staged.as_path(), "gfm"),
-        None => (Path::new(path), ext_to_pandoc_input_format(&input_ext)),
-    };
+    // Only tex and typst input reach pandoc; every other document route is
+    // native.
+    let source = Path::new(path);
+    let from_fmt = ext_to_pandoc_input_format(&input_ext);
     let to_fmt = ext_to_pandoc_format(target_format);
 
     // PDF (only `.tex` reaches here): LaTeX when an engine is installed,
