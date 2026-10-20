@@ -275,12 +275,6 @@ pub async fn convert_document(
         .unwrap_or("")
         .to_lowercase();
 
-    // typst → pdf compiles the file with the embedded typst; pandoc's typst
-    // reader would lose most of the document.
-    if normalize_ext(&input_ext) == "typst" && target_format == "pdf" {
-        return convert_typst_to_pdf(app, path, output_dir).await;
-    }
-
     let pandoc = get_pandoc()?;
 
     let out = output_path(path, target_to_ext(target_format), output_dir)?;
@@ -294,8 +288,7 @@ pub async fn convert_document(
     )
     .ok();
 
-    // Only tex and typst input reach pandoc; every other document route is
-    // native.
+    // Only tex input reaches pandoc; every other document route is native.
     let source = Path::new(path);
     let from_fmt = ext_to_pandoc_input_format(&input_ext);
     let to_fmt = ext_to_pandoc_format(target_format);
@@ -518,40 +511,6 @@ async fn pandoc_metadata(
         .map(str::to_string)
         .collect();
     meta
-}
-
-/// Compile a Typst document straight to PDF with the embedded typst
-/// compiler. `@preview/…` packages it imports are downloaded on first use.
-pub async fn convert_typst_to_pdf(
-    app: &tauri::AppHandle,
-    path: &str,
-    output_dir: Option<&str>,
-) -> Result<String, String> {
-    let out = output_path(path, "pdf", output_dir)?;
-    app.emit(
-        "convert:progress",
-        ProgressPayload {
-            path: path.to_string(),
-            percent: 0.0,
-        },
-    )
-    .ok();
-    let input = PathBuf::from(path);
-    let pdf = tokio::task::spawn_blocking(move || super::native::typst_file_to_pdf(&input))
-        .await
-        .map_err(|e| format!("task panicked: {e}"))??;
-    tokio::fs::write(&out, pdf)
-        .await
-        .map_err(|e| format!("Failed to write {}: {e}", out.display()))?;
-    app.emit(
-        "convert:progress",
-        ProgressPayload {
-            path: path.to_string(),
-            percent: 100.0,
-        },
-    )
-    .ok();
-    Ok(out.to_string_lossy().to_string())
 }
 
 pub async fn convert_image_to_pdf(

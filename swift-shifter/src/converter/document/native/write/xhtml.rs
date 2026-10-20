@@ -1,7 +1,9 @@
 //! HTML → XHTML. EPUB content must be well-formed XML, so chapters rendered
 //! by the HTML writer (raw HTML from the source included) are parsed with
 //! html5ever and written back out here: void elements self-closed, every tag
-//! balanced, MathML and SVG in their namespaces.
+//! balanced, MathML and SVG in their namespaces. The LaTeX path rewrites the
+//! URLs of the raw HTML its writer reads the same way (see [`rewrite_urls`]),
+//! but keeps every element.
 //!
 //! This guarantees well-formed XML, not valid EPUB: obsolete markup in raw
 //! HTML (`<font>`, `<center>`, `<a name>`) passes through as written.
@@ -20,10 +22,11 @@ pub(crate) const VOID: &[&str] = &[
     "wbr",
 ];
 
-/// Elements left out of EPUB content: scripts and styles (EPUB readers may
-/// not run or honour them), head-only elements (`<base>` would redirect
-/// every relative URL in the chapter), and elements that load resources we
-/// don't package (embeds, remote stylesheets, `<picture>` sources).
+/// Elements left out of EPUB content (see [`serialize`]): scripts and
+/// styles (EPUB readers may not run or honour them), head-only elements
+/// (`<base>` would redirect every relative URL in the chapter), and elements
+/// that load resources we don't package (embeds, remote stylesheets,
+/// `<picture>` sources).
 const DROPPED: &[&str] = &[
     "script", "style", "noscript", "iframe", "object", "embed", "video", "audio", "template",
     "base", "meta", "link", "source", "title",
@@ -32,7 +35,8 @@ const DROPPED: &[&str] = &[
 /// Attributes left out: `srcset` names images we don't package.
 const DROPPED_ATTRS: &[&str] = &["srcset"];
 
-/// How URLs in the content map into the EPUB.
+/// How URLs in the content map into the EPUB, or to the images copied
+/// beside LaTeX output.
 pub(crate) struct Hooks<'a> {
     /// The packaged path for an image `src`, or `None` to replace the image
     /// with its alt text (remote or missing images).
@@ -63,21 +67,40 @@ pub(crate) fn ids(html: &Html) -> Vec<String> {
         .collect()
 }
 
-/// The fragment's content as XHTML, and the features it uses.
+/// The fragment's content as XHTML for EPUB, without the elements EPUB
+/// content leaves out ([`DROPPED`]), and the features it uses.
 pub(crate) fn serialize(html: &Html, hooks: &mut Hooks) -> (String, Features) {
     let mut writer = Serializer {
         out: String::new(),
         features: Features::default(),
         hooks,
+        dropped: DROPPED,
     };
     writer.children(html.root_element(), XHTML_NS);
     (writer.out, writer.features)
+}
+
+/// The HTML `fragment` with its image and link URLs rewritten by `hooks`,
+/// every element kept, for HTML that's read again: the raw HTML the LaTeX
+/// writer reads, which shows what the HTML reader keeps (the fallback text
+/// of a `<video>`, say).
+pub(crate) fn rewrite_urls(fragment: &str, hooks: &mut Hooks) -> String {
+    let mut writer = Serializer {
+        out: String::new(),
+        features: Features::default(),
+        hooks,
+        dropped: &[],
+    };
+    writer.children(parse(fragment).root_element(), XHTML_NS);
+    writer.out
 }
 
 struct Serializer<'h, 'a> {
     out: String,
     features: Features,
     hooks: &'h mut Hooks<'a>,
+    /// The elements left out, with their content.
+    dropped: &'static [&'static str],
 }
 
 impl Serializer<'_, '_> {
@@ -99,7 +122,7 @@ impl Serializer<'_, '_> {
         let element = el.value();
         let name = element.name();
         let ns: &str = &element.name.ns;
-        if ns == XHTML_NS && DROPPED.contains(&name) {
+        if ns == XHTML_NS && self.dropped.contains(&name) {
             return;
         }
         // `<o:p>` from Word and the like: no XML name we could write, so

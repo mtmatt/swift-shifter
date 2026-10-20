@@ -140,6 +140,9 @@ impl Writer {
                 let fence = "`".repeat(longest_run(code, '`').max(2) + 1);
                 format!("{fence}{}\n{code}\n{fence}", lang.as_deref().unwrap_or(""))
             }
+            // Empty `$$` reads back as text, or as display math around
+            // the text after it; an empty formula shows nothing anyway.
+            Block::Math(tex) if tex.trim().is_empty() => return None,
             Block::Math(tex) => format!("$$\n{}\n$$", tex.trim()),
             Block::Table(table) => self.table(table),
             Block::ThematicBreak => "---".to_string(),
@@ -222,6 +225,7 @@ impl Writer {
             Inline::Superscript(c) => wrap(out, "^", &self.inlines(c, ctx)),
             Inline::Subscript(c) => wrap(out, "~", &self.inlines(c, ctx)),
             Inline::Code(code) => out.push_str(&code_span(code, ctx)),
+            Inline::Math(tex) if tex.trim().is_empty() => {}
             Inline::Math(tex) => out.push_str(&format!("${}$", single_line(tex.trim(), ctx))),
             Inline::Link {
                 url,

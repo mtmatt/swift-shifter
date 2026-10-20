@@ -13,7 +13,9 @@ use typst::WorldExt;
 use typst::diag::SourceDiagnostic;
 use typst_layout::PagedDocument;
 
-pub use fonts::{default_paper, has_cjk_font, text_fonts, warm_up};
+#[cfg(test)]
+pub use fonts::fonts_scanned;
+pub use fonts::{cjk_family, default_paper, has_cjk_font, text_fonts, warm_up};
 pub use math::tex_to_typst;
 use world::ShifterWorld;
 
@@ -47,6 +49,12 @@ pub struct CompileError {
     /// own spans and their call traces), so a caller that generated the
     /// source can find which part of it failed.
     pub main_ranges: Vec<Range<usize>>,
+}
+
+/// typst's standard library, the one every compile uses. Its math scope
+/// holds typst's symbols (`bar.v`, `bracket.l`, …).
+pub fn library() -> &'static typst::Library {
+    &world::LIBRARY
 }
 
 /// Typeset `project` to PDF bytes. Blocking: run it off the async runtime.

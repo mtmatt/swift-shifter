@@ -6360,6 +6360,7 @@ dependencies = [
  "typst-kit",
  "typst-layout",
  "typst-pdf",
+ "unicode-math-class",
  "unicode-width",
  "url",
  "which 7.0.3",

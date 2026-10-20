@@ -33,7 +33,7 @@ pub enum Block {
         lang: Option<String>,
         code: String,
     },
-    /// Display math, as TeX.
+    /// Display math, as TeX (see [`Inline::Math`]).
     Math(String),
     Table(Table),
     ThematicBreak,
@@ -95,7 +95,9 @@ pub enum Inline {
     Superscript(Vec<Inline>),
     Subscript(Vec<Inline>),
     Code(String),
-    /// Inline math, as TeX.
+    /// Inline math, as TeX. Its characters may be Unicode (`α`, `→`), as
+    /// KaTeX, MathJax and unicode-math take them; the LaTeX writer names
+    /// the ones LaTeX's own fonts lack.
     Math(String),
     Link {
         url: String,
@@ -144,7 +146,8 @@ fn push_inline_text(out: &mut String, inlines: &[Inline]) {
 }
 
 impl Document {
-    /// All visible text, for language detection.
+    /// All visible text, for language detection: raw HTML's too, as the
+    /// HTML reader reads it, which the writers show.
     pub fn plain_text(&self) -> String {
         let mut out = String::new();
         for block in &self.blocks {
@@ -185,8 +188,47 @@ fn push_block_text(out: &mut String, block: &Block) {
                 out.push('\n');
             }
         }
-        Block::Code { .. } | Block::Math(_) | Block::ThematicBreak | Block::Raw { .. } => {}
+        // As the HTML reader reads it, which leaves out scripts and styles.
+        Block::Raw { text, .. } => {
+            for block in super::read::html::read_fragment(text) {
+                match block {
+                    // What it keeps raw (MathML without TeX): its text.
+                    Block::Raw { text, .. } => {
+                        out.push_str(&super::read::html::text_of(&text));
+                        out.push('\n');
+                    }
+                    other => push_block_text(out, &other),
+                }
+            }
+        }
+        Block::Code { .. } | Block::Math(_) | Block::ThematicBreak => {}
     }
+}
+
+/// Appends TeX `tex` to `out`, with a space between them where `out` ends
+/// in a control word like `\alpha` and `tex` starts with a letter, which
+/// would run into it (`\alphax`). XeTeX and LuaTeX take any letter to be
+/// part of a control word, not only an ASCII one (`\alpha中`).
+pub fn push_tex(out: &mut String, tex: &str) {
+    if ends_with_command_word(out) && tex.starts_with(char::is_alphabetic) {
+        out.push(' ');
+    }
+    out.push_str(tex);
+}
+
+/// Whether `c` is a variation selector, which picks a glyph for the
+/// character before it (`↪︎` as text, not an emoji, or `∪︀` with serifs).
+/// TeX math has no such choice, and pulldown-latex shows it as a character
+/// of its own.
+pub fn is_variation_selector(c: char) -> bool {
+    matches!(c, '\u{FE00}'..='\u{FE0F}' | '\u{E0100}'..='\u{E01EF}')
+}
+
+/// Whether TeX `tex` ends in a control word like `\alpha`, where a letter
+/// can't follow without a space (see [`push_tex`]).
+fn ends_with_command_word(tex: &str) -> bool {
+    tex.rsplit_once('\\')
+        .is_some_and(|(_, word)| !word.is_empty() && word.chars().all(|c| c.is_ascii_alphabetic()))
 }
 
 /// Whether `text` contains CJK letters (ideographs, kana, Hangul). CJK
@@ -254,6 +296,37 @@ pub fn detect_cjk_lang(text: &str) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn raw_html_counts_toward_the_language() {
+        let doc = Document {
+            meta: Meta::default(),
+            blocks: vec![
+                Block::Raw {
+                    format: RawFormat::Html,
+                    text: "<p align=\"center\">中文標題，這是繁體中文的說明文件。</p>".into(),
+                },
+                Block::Paragraph(vec![Inline::Text("English body.".into())]),
+            ],
+        };
+        assert_eq!(doc.effective_lang().as_deref(), Some("zh-Hant"));
+        // A style, which no writer shows, doesn't count.
+        let doc = Document {
+            meta: Meta::default(),
+            blocks: vec![
+                Block::Paragraph(vec![Inline::Text(
+                    "這是繁體中文的筆記，說明資料表與圖表的用法。".into(),
+                )]),
+                Block::Raw {
+                    format: RawFormat::Html,
+                    text: "<style>\n.dataframe tbody tr th { vertical-align: top; }\n\
+                           .dataframe thead th { text-align: right; }\n</style>"
+                        .into(),
+                },
+            ],
+        };
+        assert_eq!(doc.effective_lang().as_deref(), Some("zh-Hant"));
+    }
 
     #[test]
     fn inline_text_flattens_markup() {

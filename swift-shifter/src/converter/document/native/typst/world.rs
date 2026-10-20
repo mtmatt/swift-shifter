@@ -18,7 +18,8 @@ use typst_kit::packages::SystemPackages;
 
 use super::{Project, VIRTUAL_DIR, fonts};
 
-static LIBRARY: LazyLock<LazyHash<Library>> = LazyLock::new(|| LazyHash::new(Library::default()));
+pub(super) static LIBRARY: LazyLock<LazyHash<Library>> =
+    LazyLock::new(|| LazyHash::new(Library::default()));
 
 /// mitex's Typst scope (see `mitex/README.md`), served under
 /// `/__shifter__/mitex/` so generated documents can import it offline.
