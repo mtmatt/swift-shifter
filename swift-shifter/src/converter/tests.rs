@@ -164,8 +164,8 @@ fn test_detect_output_formats_snapshot() {
         ("/x.txt", &["md", "html", "pdf", "tex", "typst", "epub"]),
         ("/x.tex", &["md", "html", "pdf", "typst"]),
         ("/x.latex", &["md", "html", "pdf", "typst"]),
-        ("/x.typst", &["md", "html", "pdf", "tex"]),
-        ("/x.typ", &["md", "html", "pdf", "tex"]),
+        ("/x.typst", &["md", "html", "pdf", "tex", "txt", "epub"]),
+        ("/x.typ", &["md", "html", "pdf", "tex", "txt", "epub"]),
         (
             "/x.epub",
             &["pdf", "mobi", "md", "html", "txt", "typst", "tex"],
@@ -346,6 +346,12 @@ fn test_native_engine_routes_md_txt_html_hops() {
         ("txt", "tex"),
         ("html", "tex"),
         ("epub", "tex"),
+        ("typst", "md"),
+        ("typst", "html"),
+        ("typst", "tex"),
+        ("typst", "epub"),
+        ("typst", "txt"),
+        ("typst", "pdf"),
     ] {
         assert_eq!(
             route_hop(from, to),
@@ -357,8 +363,8 @@ fn test_native_engine_routes_md_txt_html_hops() {
     for (from, to) in [
         ("tex", "html"),
         ("tex", "md"),
-        ("typst", "md"),
-        ("typst", "tex"),
+        ("tex", "pdf"),
+        ("tex", "typst"),
     ] {
         assert_eq!(
             route_hop(from, to),

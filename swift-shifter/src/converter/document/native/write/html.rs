@@ -1,12 +1,16 @@
 //! [`Document`] → standalone HTML5: a styled page with light/dark themes,
 //! math as MathML, heading ids and numbered footnotes.
 
+use pulldown_latex::event::{Content, Event, ScriptPosition};
 use pulldown_latex::{Parser, RenderConfig, Storage, config::DisplayMode};
+use typst::math::Limits;
+use typst::utils::default_math_class;
+use unicode_math_class::MathClass;
 
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
-use super::{Footnotes, HeadingIds};
+use super::{DocumentIds, Footnotes};
 use crate::converter::document::native::ast::{
     Align, Block, Document, Inline, List, RawFormat, Table, inline_text,
 };
@@ -76,7 +80,10 @@ pub(crate) struct Writer {
     /// whose body hasn't been written yet, in reference order.
     pending_notes: RefCell<Vec<usize>>,
     written_notes: HashSet<usize>,
-    ids: HeadingIds,
+    ids: DocumentIds,
+    /// The note whose body is being written (see [`DocumentIds::next`]),
+    /// 0 for the main text.
+    part: usize,
     /// Top-level headings written since the last [`Writer::chapter`]
     /// (headings in quotes, lists and notes aren't part of the outline).
     headings: Vec<WrittenHeading>,
@@ -89,13 +96,14 @@ impl Writer {
         let (notes, note_bodies) = Footnotes::collect(doc);
         Writer {
             out: String::new(),
+            ids: DocumentIds::new(&doc.blocks, &note_bodies),
+            part: 0,
             notes,
             note_bodies,
             style,
             ref_counts: RefCell::new(HashMap::new()),
             pending_notes: RefCell::new(Vec::new()),
             written_notes: HashSet::new(),
-            ids: HeadingIds::default(),
             headings: Vec::new(),
             depth: 0,
         }
@@ -125,7 +133,7 @@ impl Writer {
         self.out.push_str(&format!(
             "<aside id=\"fn-{n}\" epub:type=\"footnote\" role=\"doc-footnote\">\n"
         ));
-        self.nested(|w| w.blocks(&body));
+        self.note(n, &body);
         self.out.push_str(&format!(
             "<p><a href=\"#fnref-{n}\" class=\"footnote-back\" aria-label=\"Back to reference {n}\">↩</a></p>\n</aside>\n"
         ));
@@ -143,11 +151,18 @@ impl Writer {
         self.depth -= 1;
     }
 
+    /// The body of note `n`.
+    fn note(&mut self, n: usize, body: &[Block]) {
+        let part = std::mem::replace(&mut self.part, n);
+        self.nested(|w| w.blocks(body));
+        self.part = part;
+    }
+
     fn block(&mut self, block: &Block) {
         match block {
             Block::Heading { level, content } => {
                 let level = level.clamp(&1, &6);
-                let id = self.ids.next(content);
+                let id = self.ids.next(self.part, content);
                 if self.depth == 0 {
                     self.headings.push(WrittenHeading {
                         level: *level,
@@ -288,7 +303,7 @@ impl Writer {
         for (i, body) in bodies.iter().enumerate() {
             let n = i + 1;
             self.out.push_str(&format!("<li id=\"fn-{n}\">\n"));
-            self.nested(|w| w.blocks(body));
+            self.note(n, body);
             // Back to the first reference.
             self.out.push_str(&format!(
                 "<a href=\"#fnref-{n}\" class=\"footnote-back\" aria-label=\"Back to reference {n}\">↩</a>\n</li>\n"
@@ -385,10 +400,11 @@ fn wrap(out: &mut String, tag: &str, inner: &str) {
 /// the renderer can't parse is shown as code instead of an error box.
 fn math(tex: &str, display: DisplayMode) -> String {
     let storage = Storage::new();
-    let events: Vec<_> = Parser::new(tex, &storage).collect();
+    let mut events: Vec<_> = Parser::new(tex, &storage).collect();
     if events.iter().any(Result::is_err) {
         return format!("<code class=\"math\">{}</code>", escape(tex));
     }
+    promote_large_operators(&mut events);
     // pulldown-latex writes the annotation verbatim, so `<` in the TeX must
     // be escaped or it would open a tag.
     let annotation = escape(tex);
@@ -401,6 +417,38 @@ fn math(tex: &str, display: DisplayMode) -> String {
     match pulldown_latex::push_mathml(&mut mathml, events.into_iter(), config) {
         Ok(()) => mathml,
         Err(_) => format!("<code class=\"math\">{}</code>", escape(tex)),
+    }
+}
+
+/// Turns typed large operators (`∑`, `∫`), which pulldown-latex takes for
+/// ordinary characters, into the operators its `\sum` and `\int` are, with
+/// typst's limits: above and below in display math, but beside integrals.
+/// Radicals, which typst reads as roots and LaTeX's `\surd` is an ordinary
+/// symbol of, stay ordinary.
+fn promote_large_operators<E>(events: &mut [Result<Event, E>]) {
+    for i in 0..events.len() {
+        let Ok(Event::Content(Content::Ordinary { content, .. })) = events[i] else {
+            continue;
+        };
+        if default_math_class(content) != Some(MathClass::Large)
+            || matches!(content, '√' | '∛' | '∜')
+        {
+            continue;
+        }
+        events[i] = Ok(Event::Content(Content::LargeOp {
+            content,
+            small: false,
+        }));
+        // A script comes before its base. Scripts beside it, where
+        // pulldown-latex puts an ordinary character's, are the operator's
+        // limits; an accent's or `\overset`'s stay above or below it.
+        if matches!(Limits::for_char(content), Limits::Display)
+            && let Some(Ok(Event::Script { position, .. })) =
+                i.checked_sub(1).map(|before| &mut events[before])
+            && *position == ScriptPosition::Right
+        {
+            *position = ScriptPosition::Movable;
+        }
     }
 }
 
@@ -514,6 +562,49 @@ mod tests {
         assert!(html.contains("x^2"), "TeX annotation kept: {html}");
         let display = body("$$\\frac{1}{2}$$\n");
         assert!(display.contains("display=\"block\""), "{display}");
+    }
+
+    /// Regression for #65: typed large operators are operators, with
+    /// typst's limits: above and below in display math (`∑`, `⋃`), and
+    /// beside it inline and on integrals.
+    #[test]
+    fn typed_large_operators_take_limits() {
+        let display = math("∑_{i=1}^n i + ⋃_k A_k + ∫_0^1 f", DisplayMode::Block);
+        for drawn in [
+            "<munderover><mo movablelimits=\"false\">∑</mo>",
+            "<munder><mo movablelimits=\"false\">⋃</mo>",
+            "<msubsup><mo movablelimits=\"false\">∫</mo>",
+        ] {
+            assert!(display.contains(drawn), "{drawn} in {display}");
+        }
+        let inline = math("∑_{i=1}^n i + ∏ x", DisplayMode::Inline);
+        for drawn in [
+            "<msubsup><mo movablelimits=\"false\">∑</mo>",
+            "<mo movablelimits=\"false\">∏</mo>",
+        ] {
+            assert!(inline.contains(drawn), "{drawn} in {inline}");
+        }
+        // The annotation keeps the TeX as it was.
+        assert!(display.contains("∑_{i=1}^n i"), "{display}");
+        // An accent or `\overset` stays above or below it, inline too, and
+        // a radical is no operator.
+        for (tex, drawn) in [
+            ("\\hat ∑", "<mover><mo movablelimits=\"false\">∑</mo>"),
+            ("\\overset{a}∑", "<mover><mo movablelimits=\"false\">∑</mo>"),
+            (
+                "\\underbrace ∑_a",
+                "<munder><munder><mo movablelimits=\"false\">∑</mo>",
+            ),
+            ("√2", "<mi>√</mi>"),
+        ] {
+            let inline = math(tex, DisplayMode::Inline);
+            assert!(inline.contains(drawn), "{drawn} in {inline}");
+        }
+        // Characters in text are text.
+        assert!(
+            math("\\text{∑_a}", DisplayMode::Inline).contains("<mtext>∑_a</mtext>"),
+            "text"
+        );
     }
 
     #[test]

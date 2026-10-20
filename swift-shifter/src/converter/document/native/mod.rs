@@ -17,7 +17,7 @@ use crate::converter::document::utils::{output_path, target_to_ext};
 use ast::{Block, Document, Inline, List};
 
 /// Input formats the native readers handle (normalized extensions).
-pub const INPUTS: &[&str] = &["md", "txt", "html", "epub"];
+pub const INPUTS: &[&str] = &["md", "txt", "html", "epub", "typst"];
 /// Output formats the native writers handle.
 pub const OUTPUTS: &[&str] = &["md", "txt", "html", "pdf", "typst", "epub", "tex"];
 
@@ -65,6 +65,14 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<(), String> {
         .map(|e| crate::converter::graph::normalize_ext(&e.to_lowercase()).to_string())
         .unwrap_or_default();
 
+    // A typst file is compiled as written; reading it into the AST would
+    // only lose what typst can lay out.
+    if from == "typst" && target == "pdf" {
+        let pdf = typst_file_to_pdf(input)?;
+        return std::fs::write(out, pdf)
+            .map_err(|e| format!("Failed to write {}: {e}", out.display()));
+    }
+
     // An EPUB is extracted to a temp folder its images are read from; it
     // must outlive the writing.
     let mut book_dir = None;
@@ -74,7 +82,7 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<(), String> {
             book_dir = Some(book.dir);
             book.doc
         }
-        "md" | "txt" | "html" => {
+        "md" | "txt" | "html" | "typst" => {
             let source = std::fs::read(input)
                 .map_err(|e| format!("Failed to read {}: {e}", input.display()))?;
             // Lossy rather than failing on a stray invalid byte; a BOM is dropped.
@@ -83,6 +91,7 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<(), String> {
             match from.as_str() {
                 "md" => read::markdown::read(source),
                 "txt" => read::plain::read(source),
+                "typst" => read::typst::read_in(source, input.parent().unwrap_or(Path::new("."))),
                 _ => read::html::read(source),
             }
         }
@@ -99,7 +108,7 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<(), String> {
         .parent()
         .is_some_and(|out_dir| !same_dir(&base_dir, out_dir));
     if target == "tex" {
-        read_raw_html(&mut doc.blocks);
+        read_raw_inline_html(&mut doc.blocks);
         copy_images_for_latex(
             &mut doc.blocks,
             &base_dir,
@@ -506,107 +515,190 @@ fn copy_images_beside(blocks: &mut [Block], src_dir: &Path, out: &Path) -> Resul
 }
 
 /// For `.tex` output: copy local images into an ASCII-named
-/// `<name>-images` folder beside it as `N.ext`, paths no LaTeX engine
-/// stumbles on. PNG, JPEG and PDF are copied as they are; other raster
-/// formats become PNG, and a missing image or one the `image` crate can't
-/// decode (SVG) is replaced by its alt text (an empty URL). Links are rebased only when
-/// `rebase_links` (the output is in another folder).
+/// `<name>-images` folder beside it as `N.ext` (see [`LatexImages`]), and
+/// point the URLs there. Links are rebased only when `rebase_links` (the
+/// output is in another folder). The LaTeX writer reads raw HTML blocks
+/// itself, so headings in them take no id of the main text's (see
+/// [`DocumentIds`](write::DocumentIds)): their images and links are
+/// rewritten in the HTML.
 fn copy_images_for_latex(
     blocks: &mut [Block],
     src_dir: &Path,
     out: &Path,
     rebase_links: bool,
 ) -> Result<(), String> {
-    let stem = out.file_stem().unwrap_or_default().to_string_lossy();
-    let dir_name = format!("{}-images", ascii_name(&stem));
-    let dir = out.with_file_name(&dir_name);
-    let mut copied = 0usize;
-    let mut error = None;
+    let mut images = LatexImages::new(src_dir, out);
     for_each_url(blocks, &mut |kind, url| match kind {
         UrlKind::Link if rebase_links => rebase_url(url, src_dir),
         UrlKind::Link => {}
-        UrlKind::Image => {
-            let Some(path) = local_path(url, src_dir) else {
-                // A missing local image would stop the LaTeX run: alt
-                // text instead. Remote ones are left for the writer.
-                if write::latex::is_local(url) {
-                    url.clear();
-                }
-                return;
-            };
-            let ext = path
-                .extension()
-                .and_then(|e| e.to_str())
-                .map(str::to_ascii_lowercase)
-                .unwrap_or_default();
-            let as_is = matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "pdf");
-            let file_name = format!("{}.{}", copied + 1, if as_is { &ext } else { "png" });
-            let target = dir.join(&file_name);
-            if let Err(e) = std::fs::create_dir_all(&dir) {
-                error = Some(format!("Failed to create {}: {e}", dir.display()));
-                return;
-            }
-            let written = if as_is {
-                std::fs::copy(&path, &target)
-                    .map(|_| ())
-                    .map_err(|e| e.to_string())
-            } else {
-                match ::image::open(&path) {
-                    Ok(image) => image.save(&target).map_err(|e| e.to_string()),
-                    // Not a raster format we read (SVG): alt text instead.
-                    Err(::image::ImageError::Decoding(_) | ::image::ImageError::Unsupported(_)) => {
-                        url.clear();
-                        return;
-                    }
-                    Err(e) => Err(e.to_string()),
-                }
-            };
-            match written {
-                Ok(()) => {
-                    *url = format!("{dir_name}/{file_name}");
-                    copied += 1;
-                }
-                Err(e) => error = Some(format!("Failed to copy {}: {e}", path.display())),
-            }
-        }
+        UrlKind::Image => match images.copy(url) {
+            LatexImage::Copied(path) => *url = path,
+            LatexImage::AltText => url.clear(),
+            LatexImage::Unchanged => {}
+        },
     });
-    error.map_or(Ok(()), Err)
+    for_each_raw_html(blocks, &mut |html| {
+        // An image with no source shows its alt text, as the AST's do.
+        let mut image = |src: &str| {
+            Some(match images.copy(src) {
+                LatexImage::Copied(path) => path,
+                LatexImage::AltText => String::new(),
+                LatexImage::Unchanged => src.to_string(),
+            })
+        };
+        let link = |href: &str| {
+            let mut href = href.to_string();
+            if rebase_links {
+                rebase_url(&mut href, src_dir);
+            }
+            Some(href)
+        };
+        let mut hooks = write::xhtml::Hooks {
+            image: &mut image,
+            link: &link,
+        };
+        *html = write::xhtml::rewrite_urls(html, &mut hooks);
+    });
+    images.error.map_or(Ok(()), Err)
 }
 
-/// For LaTeX, which can't keep markup: raw HTML (an HTML block in
-/// Markdown, an inline `<img>`) read into the AST, so its images are
-/// copied and converted like any other and its text keeps its structure.
-/// What the HTML reader keeps raw (MathML without TeX) stays raw.
-fn read_raw_html(blocks: &mut Vec<Block>) {
-    for block in std::mem::take(blocks) {
-        match block {
-            Block::Raw { ref text, .. } => blocks.extend(read::html::read_fragment(text)),
-            mut block => {
-                match &mut block {
-                    Block::Heading { content, .. } | Block::Paragraph(content) => {
-                        read_raw_inlines(content)
-                    }
-                    Block::Quote(children)
-                    | Block::FootnoteDefinition {
-                        content: children, ..
-                    } => read_raw_html(children),
-                    Block::List(List { items, .. }) => items
-                        .iter_mut()
-                        .for_each(|item| read_raw_html(&mut item.content)),
-                    Block::Table(table) => table
-                        .header
-                        .iter_mut()
-                        .chain(table.rows.iter_mut().flatten())
-                        .for_each(read_raw_inlines),
-                    _ => {}
+/// The images `.tex` output shows, copied beside it into one folder with
+/// ASCII paths no LaTeX engine stumbles on: PNG, JPEG and PDF as they are,
+/// other raster formats as PNG.
+struct LatexImages<'a> {
+    src_dir: &'a Path,
+    /// The folder, `<name>-images` beside the output.
+    dir: PathBuf,
+    /// The folder's name, which copied images' paths start with.
+    dir_name: String,
+    copied: usize,
+    /// Why a copy failed, which fails the conversion.
+    error: Option<String>,
+}
+
+/// What an image becomes in `.tex` output (see [`LatexImages::copy`]).
+enum LatexImage {
+    /// A copy, at this path from the output's folder.
+    Copied(String),
+    /// Its alt text: a missing local image, which would stop the LaTeX
+    /// run, or one the `image` crate can't decode (SVG).
+    AltText,
+    /// As it is: a remote image, left for the writer, or one whose copy
+    /// failed.
+    Unchanged,
+}
+
+impl<'a> LatexImages<'a> {
+    fn new(src_dir: &'a Path, out: &Path) -> Self {
+        let stem = out.file_stem().unwrap_or_default().to_string_lossy();
+        let dir_name = format!("{}-images", ascii_name(&stem));
+        LatexImages {
+            src_dir,
+            dir: out.with_file_name(&dir_name),
+            dir_name,
+            copied: 0,
+            error: None,
+        }
+    }
+
+    /// Copies the image at `url`, as `N.ext` for the next `N`.
+    fn copy(&mut self, url: &str) -> LatexImage {
+        let Some(path) = local_path(url, self.src_dir) else {
+            return if write::latex::is_local(url) {
+                LatexImage::AltText
+            } else {
+                LatexImage::Unchanged
+            };
+        };
+        let ext = path
+            .extension()
+            .and_then(|e| e.to_str())
+            .map(str::to_ascii_lowercase)
+            .unwrap_or_default();
+        let as_is = matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "pdf");
+        let file_name = format!("{}.{}", self.copied + 1, if as_is { &ext } else { "png" });
+        let target = self.dir.join(&file_name);
+        if let Err(e) = std::fs::create_dir_all(&self.dir) {
+            self.error = Some(format!("Failed to create {}: {e}", self.dir.display()));
+            return LatexImage::Unchanged;
+        }
+        let written = if as_is {
+            std::fs::copy(&path, &target)
+                .map(|_| ())
+                .map_err(|e| e.to_string())
+        } else {
+            match ::image::open(&path) {
+                Ok(image) => image.save(&target).map_err(|e| e.to_string()),
+                Err(::image::ImageError::Decoding(_) | ::image::ImageError::Unsupported(_)) => {
+                    return LatexImage::AltText;
                 }
-                blocks.push(block);
+                Err(e) => Err(e.to_string()),
+            }
+        };
+        match written {
+            Ok(()) => {
+                self.copied += 1;
+                LatexImage::Copied(format!("{}/{file_name}", self.dir_name))
+            }
+            Err(e) => {
+                self.error = Some(format!("Failed to copy {}: {e}", path.display()));
+                LatexImage::Unchanged
             }
         }
     }
 }
 
-/// [`read_raw_html`] for a run of inlines: each raw tag becomes the inlines
+/// Calls `f` with the HTML of every raw HTML block in `blocks`, those in
+/// quotes, list items and notes included. Every kind of block is listed, so
+/// a new kind of container doesn't compile until it's entered here too.
+fn for_each_raw_html(blocks: &mut [Block], f: &mut dyn FnMut(&mut String)) {
+    for block in blocks {
+        match block {
+            Block::Raw { text, .. } => f(text),
+            Block::Quote(children)
+            | Block::FootnoteDefinition {
+                content: children, ..
+            } => for_each_raw_html(children, f),
+            Block::List(List { items, .. }) => items
+                .iter_mut()
+                .for_each(|item| for_each_raw_html(&mut item.content, f)),
+            Block::Heading { .. }
+            | Block::Paragraph(_)
+            | Block::Code { .. }
+            | Block::Math(_)
+            | Block::Table(_)
+            | Block::ThematicBreak => {}
+        }
+    }
+}
+
+/// For LaTeX, which can't keep markup: raw HTML tags in text (an inline
+/// `<img>`) read into the AST, so their images are copied and converted
+/// like any other. What the HTML reader keeps raw (MathML without TeX)
+/// stays raw, and so do raw HTML blocks, which the writer reads (see
+/// [`copy_images_for_latex`]).
+fn read_raw_inline_html(blocks: &mut [Block]) {
+    for block in blocks {
+        match block {
+            Block::Heading { content, .. } | Block::Paragraph(content) => read_raw_inlines(content),
+            Block::Quote(children)
+            | Block::FootnoteDefinition {
+                content: children, ..
+            } => read_raw_inline_html(children),
+            Block::List(List { items, .. }) => items
+                .iter_mut()
+                .for_each(|item| read_raw_inline_html(&mut item.content)),
+            Block::Table(table) => table
+                .header
+                .iter_mut()
+                .chain(table.rows.iter_mut().flatten())
+                .for_each(read_raw_inlines),
+            _ => {}
+        }
+    }
+}
+
+/// [`read_raw_inline_html`] for a run of inlines: each raw tag becomes the inlines
 /// it reads as (an `<img>` an image; a lone `<span>` nothing).
 fn read_raw_inlines(inlines: &mut Vec<Inline>) {
     for inline in std::mem::take(inlines) {
@@ -748,6 +840,7 @@ mod tests {
         assert!(handles("html", "typst"));
         assert!(handles("md", "tex"));
         assert!(handles("epub", "tex"));
+        assert!(handles("typst", "md") && handles("typst", "pdf"));
         assert!(!handles("tex", "html"));
     }
 
@@ -1199,16 +1292,46 @@ mod tests {
         assert!(tex.contains("\\href{other.md}{o}"), "{tex}");
     }
 
+    #[test]
+    fn raw_html_in_latex_output_keeps_the_main_texts_ids_and_copies_its_images() {
+        // The writer reads raw HTML blocks itself, so a heading in one takes
+        // no id of the main text's, and their images are copied like the
+        // rest, or shown as their alt text.
+        let src = tempfile::tempdir().unwrap();
+        image::RgbImage::new(2, 2)
+            .save(src.path().join("pic.png"))
+            .unwrap();
+        let md = src.path().join("raw.md");
+        std::fs::write(
+            &md,
+            "<h2>Same</h2>\n\n<p align=\"center\"><img src=\"pic.png\" alt=\"Logo\"></p>\n\n\
+             # Same\n\nSee [up](#same).\n\n<img src=\"missing.png\" alt=\"Gone\">\n\n\
+             <video src=\"clip.mp4\">\nThe video's fallback text.\n</video>\n",
+        )
+        .unwrap();
+        let out = src.path().join("raw.tex");
+        convert(&md, "tex", &out).unwrap();
+        let tex = std::fs::read_to_string(&out).unwrap();
+        assert!(
+            tex.contains("\\label{same-1}")
+                && tex.contains("\\section[Same]{\\texorpdfstring{Same}{Same}}\\label{same}")
+                && tex.contains("\\hyperref[same]{up}"),
+            "{tex}"
+        );
+        assert!(tex.contains("{raw-images/1.png}"), "{tex}");
+        assert!(src.path().join("raw-images/1.png").is_file());
+        assert!(tex.contains("{[}Gone{]}"), "{tex}");
+        // What the HTML reader keeps of other elements stays.
+        assert!(tex.contains("The video's fallback text."), "{tex}");
+        assert_tectonic_compiles(&out);
+    }
+
     /// Our LaTeX compiles, tricky input included: brackets after `\item`
     /// and rows, notes in headings and table cells, code, images and tables
-    /// inside notes, deep and mixed nesting, display environments, CJK and
-    /// a missing image. Skipped where tectonic (XeLaTeX) isn't installed.
+    /// inside notes, deep and mixed nesting (quotes past LaTeX's limit
+    /// too), display environments, CJK and a missing image.
     #[test]
     fn our_latex_compiles() {
-        let Ok(tectonic) = which::which("tectonic") else {
-            eprintln!("skipping: tectonic not found");
-            return;
-        };
         let dir = tempfile::tempdir().unwrap();
         image::RgbImage::new(4, 4)
             .save(dir.path().join("pic.png"))
@@ -1231,9 +1354,495 @@ mod tests {
             !written.contains("{pic.png}") && !written.contains("logo.svg"),
             "{written}"
         );
+        assert_tectonic_compiles(&tex);
+    }
+
+    /// Regression for #67: quotes nested past LaTeX's six lists compile,
+    /// whatever they open with (text starting with `plus` or `minus`,
+    /// which TeX would read on into a length before it, included) and
+    /// whatever they hold, in notes and list items too, and so do lists
+    /// of alternating kinds nested more than six deep.
+    #[test]
+    fn quotes_nested_past_the_latex_list_limit_compile() {
+        let dir = tempfile::tempdir().unwrap();
+        let md = dir.path().join("deep.md");
+        std::fs::write(
+            &md,
+            "> > > > > > plus six\n> > > > > >\n\
+             > > > > > > > Plus seven, really\n> > > > > > >\n\
+             > > > > > > > ```\n> > > > > > > code\n> > > > > > > ```\n> > > > > > >\n\
+             > > > > > > > ```\n> > > > > > > \\end{verbatim}\n> > > > > > > ```\n> > > > > > >\n\
+             > > > > > > > ---\n> > > > > > >\n> > > > > > > - item\n> > > > > > >\n\
+             > > > > > > > > > > minus ten[^n]\n> > > > > > >\n> > > > > > > back to seven\n\n\
+             - > > > > > > > minus first in an item\n- next\n\n\
+             - a\n  1. b\n     - c\n       1. d\n          - e\n            1. f\n\
+             \x20              - g\n                 1. h\n                    > plus in lists\n\n\
+             [^n]: > > > > > > > plus in a note\n",
+        )
+        .unwrap();
+        let tex = dir.path().join("deep.tex");
+        convert(&md, "tex", &tex).unwrap();
+        assert_tectonic_compiles(&tex);
+    }
+
+    /// Regression for #67: however deep quotes nest, the line keeps room
+    /// for text, rules and images. Thirty levels once left a line of
+    /// -340pt, which set text a word at a time past the margin, dropped
+    /// rules and drew images mirrored. Levels past LaTeX's six still
+    /// indent one by one, as typst's do, through the tenth, which leaves
+    /// a line just under 10em. A probe at each level's text stops the run
+    /// if its line is narrower than 9em, or if it isn't indented past its
+    /// parent.
+    #[test]
+    fn quotes_nested_thirty_deep_keep_a_readable_line() {
+        const DEEPEST: usize = 30;
+        let dir = tempfile::tempdir().unwrap();
+        image::RgbImage::new(40, 10)
+            .save(dir.path().join("pic.png"))
+            .unwrap();
+        let mut md: String = (1..=DEEPEST)
+            .map(|depth| format!("{}Probe{depth} at depth {depth}.\n", "> ".repeat(depth)))
+            .collect();
+        let deepest = "> ".repeat(DEEPEST);
+        md.push_str(&format!(
+            "{deepest}\n{deepest}---\n{deepest}\n{deepest}A ![](pic.png) B\n{deepest}\n\
+             {deepest}- Probe{} in a list\n",
+            DEEPEST + 1
+        ));
+        let input = dir.path().join("deep.md");
+        std::fs::write(&input, md).unwrap();
+        let tex = dir.path().join("deep.tex");
+        convert(&input, "tex", &tex).unwrap();
+
+        let probe = r"\makeatletter
+\newdimen\probeindent
+\def\probe#1{%
+  \ifdim\linewidth<9em \errmessage{depth #1 leaves a \the\linewidth\space line}\fi
+  \ifnum#1<11 \ifdim\@totalleftmargin>\probeindent\else
+    \errmessage{depth #1 isn't indented past its parent}\fi\fi
+  \global\probeindent\@totalleftmargin}
+\makeatother
+\begin{document}";
+        let written = std::fs::read_to_string(&tex).unwrap();
+        let mut written = written.replacen("\\begin{document}", probe, 1);
+        for depth in 1..=DEEPEST + 1 {
+            written = written.replace(&format!("Probe{depth} "), &format!("\\probe{{{depth}}}"));
+        }
+        assert_eq!(
+            written.matches("\\probe{").count(),
+            DEEPEST + 1,
+            "{written}"
+        );
+        std::fs::write(&tex, written).unwrap();
+        assert_tectonic_compiles(&tex);
+    }
+
+    /// The LaTeX of typst math compiles: `:=`, symbols typed as Unicode
+    /// (next to letters, and degrees and primes after a script), brace
+    /// annotations, alignment points in a single row (nested ones too),
+    /// inline rows, rows and columns between delimiters and in operands,
+    /// and empty equations.
+    #[test]
+    fn typst_math_latex_compiles() {
+        let dir = tempfile::tempdir().unwrap();
+        let typ = dir.path().join("math.typ");
+        std::fs::write(
+            &typ,
+            "Colon $a := b$, $y =: g$, $a ::= b$ and $a :=^\"def\" b$, \
+             symbols $α + β → γ$, $∀ x ∈ ℝ$, $∀中$ and $→é$, \
+             $x^2°$ and $x_1^2′$, \
+             $underbrace(x + y, \"sum\")$, $overbrace(a, b)$, \
+             $underbrace(x, a & b)$ and $underbrace(x, a \\ b)$.\n\n\
+             Aligned $a &= b$, rows $x &= y \\ z &= w$ and $[| a &= b |]$.\n\n\
+             Nested $(a &= b)$, $lr((a &= b))$, $sqrt(a &= b)$, $x_(a &= b)$, \
+             $frac(a &= b, c)$, $bold(a &= b)$, $abs(a &= b)$ and $sin(a &= b)$.\n\n\
+             $ a &= b $\n\n$ [| a \\ b |] $\n\n\
+             $ lr((a &= b \\ c &= d)) $\n\n$ cases((x & y), z) $\n\n\
+             $ mat((a & b), c) $\n\n$ (a \\ b) + [| c \\ d |] $\n\n\
+             $ x_(a \\ b) + [| c \\ d |] $\n\n$ x &= sqrt(a &= b) \\ y &= 2 $\n\n\
+             $ [| a \\ b |]^2 + ⌈ c \\ d ⌉ $\n\n$ (a \\ b)/c + [| d \\ e |] $\n\n\
+             Empty $&$ and $display()$.\n\n$ & $\n\n\
+             Brackets $[0, 1[ \\ x$, $[a \\ b) + c$, $sqrt([0, 1[ \\ x)$, $a \\ [b \\ c]$, \
+             $mat(a; [0, 1[ \\ b)$, $cases(a, [b \\ c])$ and \
+             $x_(a \\ [0, 1[)$.#footnote[Noted $[0, 1[ \\ x$ and [1].]\n\n\
+             $ [0, 1[ \\ x $\n\n$ a &= b \\ [c &= d] $\n\n\
+             Operators $op(a \\ b)$, $op([| a \\ b |])$, $op(hat(x))$, $op(x_1)$ and \
+             $op(\"sin\")$.\n\n\
+             Columns $cases(x &= (a & b))$, $cases(a & b & c, d)$ and \
+             $mat(a & b & c & d & e & f, g & h & i & j & k & l)$.\n\n\
+             Escapes $a \\^ b \\~ c \\\\ d$, $a \\\\ [b]$, $( a \"x\\\\y^\" b )$ and \
+             $op(\"x\\\\y^\")$.\n",
+        )
+        .unwrap();
+        let tex = dir.path().join("math.tex");
+        convert(&typ, "tex", &tex).unwrap();
+        assert_tectonic_compiles(&tex);
+    }
+
+    /// Math symbols typed as Unicode get TeX names, which LaTeX's math
+    /// fonts have glyphs for, rather than passing through as characters
+    /// they don't.
+    #[test]
+    fn typst_math_symbols_have_latex_glyphs() {
+        let dir = tempfile::tempdir().unwrap();
+        let typ = dir.path().join("symbols.typ");
+        std::fs::write(
+            &typ,
+            "Greek $α + β → γ$ and $µ + ∆x$, sets $∀ x ∈ ℝ$, $A ⊄ B ⊈ C$ and \
+             $ℙ(𝔼) ⊑ ℒ$, relations $a ≢ b ≰ c ∤ d ∦ e$ and $a ⊲ b ≜ c ⊣ d$, \
+             arrows $a ↛ b ⇏ c ⇀ d$, and $a ::= b$. \
+             CJK input $a ≦ b ≧ c ≒ d$, sets $a ∊ B ∍ c$ and $𝕂 ⊂ 𝒪 ∪ 𝔄 ∪ 𝐅$, \
+             letters $ħ + ı + ð + ϝ + ℶ$, $Α Β Μ ο$, scripts $x₁₂ + y² + z^2²$, \
+             arrows $a ⇋ b ↷ c ⇢ d ↺ e$, operators $a ⊘ b ⊞ c ∙ d ≀ e$, \
+             shapes $▷ ★ ✓ ■ ○$ and $⟪ a ⟫$.\n",
+        )
+        .unwrap();
+        let tex = dir.path().join("symbols.tex");
+        convert(&typ, "tex", &tex).unwrap();
+        // Every character has a name, so the math is ASCII, as pdfLaTeX
+        // needs it.
+        let written = std::fs::read_to_string(&tex).unwrap();
+        let body = &written[written.find("\\begin{document}").unwrap()..];
+        assert!(body.is_ascii(), "{body}");
+        if let Some(log) = assert_tectonic_compiles(&tex) {
+            assert!(!log.contains("Missing character"), "{log}");
+        }
+    }
+
+    /// `:=` from typst is MathML's one `≔`, not a `:` and an `=` drawn
+    /// apart, and the LaTeX preamble defines the commands for it that
+    /// amsmath lacks, written in Markdown too.
+    #[test]
+    fn colon_equals_is_one_symbol_in_html_and_compiles_in_latex() {
+        let dir = tempfile::tempdir().unwrap();
+        let typ = dir.path().join("colon.typ");
+        std::fs::write(&typ, "Colon $a := b$ and $y =: g$.\n").unwrap();
+        let html = dir.path().join("colon.html");
+        convert(&typ, "html", &html).unwrap();
+        let html = std::fs::read_to_string(html).unwrap();
+        assert!(
+            html.contains("<mo>≔</mo>") && html.contains("<mo>≕</mo>"),
+            "{html}"
+        );
+        assert!(!html.contains("<code class=\"math\">"), "{html}");
+
+        let md = dir.path().join("colon.md");
+        std::fs::write(&md, "$a \\coloneqq b \\eqqcolon c \\Coloneqq d$\n").unwrap();
+        let tex = dir.path().join("colon.tex");
+        convert(&md, "tex", &tex).unwrap();
+        assert_tectonic_compiles(&tex);
+    }
+
+    /// An equation with nothing in it (only an alignment point) writes no
+    /// empty `$$`, which Markdown would read back as display math around
+    /// the text after it, or as two literal `$$` paragraphs.
+    #[test]
+    fn empty_typst_equations_write_no_empty_markdown_math() {
+        let dir = tempfile::tempdir().unwrap();
+        let typ = dir.path().join("empty.typ");
+        std::fs::write(&typ, "Inline lone $&$ and $&&$ end.\n\n$ & $\n\nAfter.\n").unwrap();
+        let md = dir.path().join("empty.md");
+        convert(&typ, "md", &md).unwrap();
+        let md = std::fs::read_to_string(md).unwrap();
+        assert!(!md.contains('$'), "{md}");
+        assert!(md.contains("Inline lone") && md.contains("After."), "{md}");
+    }
+
+    /// Regression for #58: typst's `:=` is `\coloneqq` in LaTeX, which the
+    /// preamble defines without mathtools for a document that uses it
+    /// (written in Markdown too). A formula that defines it itself keeps
+    /// its own definition, and the others the preamble's.
+    #[test]
+    fn colon_equals_is_defined_for_latex_beside_the_documents_own() {
+        let dir = tempfile::tempdir().unwrap();
+        let definition = COLONEQQ_FALLBACK;
+        let (tex, text) = converted(dir.path(), "colon.typ", "Colon $a := b$.\n", "tex");
+        assert!(text.contains("Colon \\(a \\coloneqq b\\)."), "{text}");
+        assert!(text.contains(definition), "{text}");
+        assert_tectonic_compiles(&tex);
+
+        let source = "Define $\\newcommand{\\coloneqq}{\\mathrel{:=}} a \\coloneqq b$, \
+                      then $c \\coloneqq d$ and $e ≔ f$.\n";
+        let (tex, text) = converted(dir.path(), "own.md", source, "tex");
+        assert!(text.contains(definition), "{text}");
+        assert!(text.contains("\\(\\renewcommand{\\coloneqq}"), "{text}");
+        assert_tectonic_compiles(&tex);
+
+        let (_, text) = converted(dir.path(), "none.md", "No colon $a = b$.\n", "tex");
+        assert!(!text.contains("coloneqq"), "{text}");
+    }
+
+    /// Regression for #65: math characters typed as Unicode keep their
+    /// glyphs wherever they're shown as typed. HTML draws `μ` (not the
+    /// micro sign pulldown-latex draws `\mu` as), `≇` (not `\ncong`'s `≆`),
+    /// a bold `Α`, a baseline `…` and a centred `∗`, and plain text keeps
+    /// them. LaTeX, whose fonts lack them, gets their names, for Markdown
+    /// input too.
+    #[test]
+    fn unicode_math_characters_keep_their_glyphs_and_get_latex_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = "Typed $α + β → γ$, $μ ≇ ν$, $bold(Α)$, $x_1 … x_n$ and $a ∗ b$.\n";
+        let (_, html) = converted(dir.path(), "chars.typ", source, "html");
+        for drawn in [
+            "<mi>μ</mi>",
+            "<mo>≇</mo>",
+            "<mi>𝚨</mi>",
+            "<mi>…</mi>",
+            "<mo>∗</mo>",
+        ] {
+            assert!(html.contains(drawn), "{drawn} in {html}");
+        }
+        let (_, txt) = converted(dir.path(), "chars.typ", source, "txt");
+        assert!(txt.contains("α + β → γ"), "{txt}");
+        let (_, tex) = converted(dir.path(), "chars.typ", source, "tex");
+        for named in [
+            "\\(\\alpha + \\beta \\to \\gamma\\)",
+            "\\(\\mu \\ncong \\nu\\)",
+            "\\(\\mathbf{\\Alpha}\\)",
+            "\\(x_{1} \\ldots x_{n}\\)",
+            "\\(a \\ast b\\)",
+        ] {
+            assert!(tex.contains(named), "{named} in {tex}");
+        }
+        let (_, tex) = converted(dir.path(), "chars.md", "Typed $α → ℝ$.\n", "tex");
+        assert!(tex.contains("\\(\\alpha \\to \\mathbb{R}\\)"), "{tex}");
+    }
+
+    /// Regression for #48 and #62: rows that typst stacks render as MathML
+    /// in HTML, not as the TeX code shown when pulldown-latex rejects it,
+    /// whatever the rows start with (a bracket, which `aligned` and `\\`
+    /// would read as an optional argument) and wherever they are (between
+    /// delimiters, or in an operator name).
+    #[test]
+    fn typst_math_rows_render_as_mathml() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = "$ [| a \\ b |] $\n\nInterval $[0, 1[ \\ x$, $a \\ [b \\ c]$ and \
+                      $op(a \\ b)$.\n";
+        let (_, html) = converted(dir.path(), "rows.typ", source, "html");
+        assert!(!html.contains("<code class=\"math\">"), "{html}");
+        assert_eq!(html.matches("<mtable").count(), 4, "{html}");
+    }
+
+    /// Regression for #65 and #49: typed large operators take typst's
+    /// limits in HTML and their names in LaTeX, and a string keeps the
+    /// space typst sets beside it in both.
+    #[test]
+    fn typst_operators_and_strings_are_spaced_as_typst_sets_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = "$ ∑_(i=1)^n i + ∫_0^1 f + ⋃_(k ∈ ℕ) A_k $\n\n\
+                      $ f(x) = cases(1 & \"if\" x > 0, 0 & \"otherwise\") $\n\n\
+                      $ a quad \"so\" b & \"if\" c \\ bold(\"or\") d & e $\n";
+        let (_, html) = converted(dir.path(), "ops.typ", source, "html");
+        for drawn in [
+            "<munderover><mo movablelimits=\"false\">∑</mo>",
+            "<msubsup><mo movablelimits=\"false\">∫</mo>",
+            "<munder><mo movablelimits=\"false\">⋃</mo>",
+            // The space before an alignment point is the item's before it.
+            "<mn>1</mn><mspace width=\"0.333em\" /></mtd><mtd><mtext>if&nbsp;</mtext>",
+            "<mtext>so&nbsp;</mtext>",
+        ] {
+            assert!(html.contains(drawn), "{drawn} in {html}");
+        }
+        let (tex, text) = converted(dir.path(), "ops.typ", source, "tex");
+        for named in [
+            "\\sum_{i=1}^{n}",
+            "\\int_{0}^{1}",
+            "\\bigcup_{k \\in \\mathbb{N}}",
+            "1\\hspace{0.333em} & \\text{if } x",
+            "a \\quad \\text{so } b\\hspace{0.333em} & \\text{if } c",
+            "\\mathbf{\\text{or }} d",
+        ] {
+            assert!(text.contains(named), "{named} in {text}");
+        }
+        assert_tectonic_compiles(&tex);
+    }
+
+    /// Regression for #65: degrees, primes and script characters with a
+    /// script after them compile in LaTeX, from typst and Markdown alike.
+    #[test]
+    fn script_characters_with_scripts_compile_in_latex() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = "Raised $x°^2$, $a²^3$, $x°_1$ and $y′^2$.\n";
+        let (tex, text) = converted(dir.path(), "deg.typ", source, "tex");
+        assert!(text.contains("\\(x{{}^{\\circ}}^{2}\\)"), "{text}");
+        assert_tectonic_compiles(&tex);
+        let source = "Raised $x°^2$ $a²^3$ $b³^2$ $c¹^2$ $d⁰^2$ $e⁴^2$ $f⁹^2$ $g⁺^2$ \
+                      $h⁻^2$ $i⁼^2$ $j⁽^2$ $k⁾^2$ $l ⁱ^2$ $m°'$ $n₁^2$.\n";
+        let (tex, _) = converted(dir.path(), "deg-md.md", source, "tex");
+        assert_tectonic_compiles(&tex);
+    }
+
+    /// Regression for #65: a text argument without braces and `\verb`'s
+    /// are text, kept as they are, and a name of several tokens is a whole
+    /// argument, which compiles.
+    #[test]
+    fn unbraced_and_verbatim_text_in_math_compiles_in_latex() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = "Text $\\text é$, $\\mbox é$, $\\text*é$, $\\text\u{A0}é$ and \
+                      $\\verb|α|$; $\\hat é + \\mathrm é + \\vec ℝ + \\frac 1 ℝ$.\n\n\
+                      $$x = 1 \\tag é$$\n";
+        let (tex, text) = converted(dir.path(), "text.md", source, "tex");
+        for written in [
+            "Text \\(\\text{é}\\), \\(\\mbox{é}\\), \\(\\text*\\text{é}\\)",
+            "\\(\\verb|α|\\)",
+            "\\hat {\\text{é}} + \\mathrm {\\text{é}} + \\vec {\\mathbb{R}} + \\frac 1 {\\mathbb{R}}",
+            "\\tag{é}",
+        ] {
+            assert!(text.contains(written), "{written} in {text}");
+        }
+        assert_tectonic_compiles(&tex);
+    }
+
+    /// Regression for #65: amssymb's negated relations, and symbols and
+    /// characters with a variation selector, get LaTeX names, from typst
+    /// and Markdown alike.
+    #[test]
+    fn negated_relations_and_variation_selectors_get_latex_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let negated = "Negated $≨ ⪇ ⋦ ⪉ ⪷ ⪹ ⪵ ⋨ ⋠ ≭ ⪕ ≂ ≴ ⋢ ≄$ and $a ↔\u{FE0E} b$";
+        for (name, source) in [
+            (
+                "negated.typ",
+                format!("{negated}, $arrow.r.hook arrow.tr union.serif$.\n"),
+            ),
+            ("negated.md", format!("{negated}, $↪\u{FE0E} ∪\u{FE00}$.\n")),
+        ] {
+            let (tex, text) = converted(dir.path(), name, &source, "tex");
+            let body = &text[text.find("\\begin{document}").unwrap()..];
+            assert!(body.is_ascii(), "{body}");
+            assert!(
+                body.contains("\\(a \\leftrightarrow b\\)")
+                    && body.contains("\\hookrightarrow")
+                    && !body.contains("\\text{")
+                    && !body.contains("\\operatorname"),
+                "{body}"
+            );
+            if let Some(log) = assert_tectonic_compiles(&tex) {
+                assert!(!log.contains("Missing character"), "{log}");
+            }
+        }
+    }
+
+    /// Regression for #58: the math inside a text argument gets the
+    /// fallbacks' definitions too, a formula's own `\providecommand` holds
+    /// in its formula, and pandoc, reading the LaTeX back, keeps the name.
+    #[test]
+    fn colon_equals_is_defined_for_nested_math_and_provided_commands() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = "$$a = b \\quad \\text{where $c \\coloneqq d$}$$\n\n\
+                      $$\\begin{align} a &= b \\intertext{where $c ≔ d$} e &= f \\end{align}$$\n";
+        let (tex, text) = converted(dir.path(), "nested.md", source, "tex");
+        assert!(text.contains(COLONEQQ_FALLBACK), "{text}");
+        assert!(
+            text.contains("\\intertext{where $c \\coloneqq d$}"),
+            "{text}"
+        );
+        assert_tectonic_compiles(&tex);
+
+        // The formula's own, and one it has made before, hold in it.
+        let source = "$\\providecommand{\\coloneqq}{\\mathrel{\\equiv}} a \\coloneqq b$, \
+                      $c \\coloneqq d$ and \
+                      $\\def\\coloneqq{\\mathrel{\\sim}}\\providecommand{\\coloneqq}{=} e \\coloneqq f$\n";
+        let (tex, text) = converted(dir.path(), "provided.md", source, "tex");
+        assert!(text.contains(COLONEQQ_FALLBACK), "{text}");
+        assert!(
+            text.contains("\\(\\renewcommand{\\coloneqq}{\\mathrel{\\equiv}}")
+                && text.contains("\\providecommand{\\coloneqq}{=}"),
+            "{text}"
+        );
+        assert_tectonic_compiles(&tex);
+        if let Some(shown) = pdf_text(&tex.with_extension("pdf")) {
+            let shown: String = shown.split_whitespace().collect();
+            assert!(shown.contains("a≡b,c:=dande∼f"), "{shown}");
+        }
+        if let Some(back) = pandoc_read_back(&tex, &["-t", "markdown", "--wrap=none"]) {
+            assert!(
+                back.contains("$\\renewcommand{\\coloneqq}{\\mathrel{\\equiv}} a \\coloneqq b$")
+                    && back.contains("$c \\coloneqq d$"),
+                "{back}"
+            );
+        }
+
+        // In a heading, whose short form LaTeX writes to the table of
+        // contents, the definition is written out as it is.
+        let source = "# New $\\newcommand{\\coloneqq}{\\mathrel{\\equiv}} a \\coloneqq b$\n\n\
+                      Body.\n\n# Plain $c \\coloneqq d$\n";
+        let (tex, text) = converted(dir.path(), "heading.md", source, "tex");
+        assert!(
+            text.contains(
+                "\\section[New \\texorpdfstring{\\(\\protect\\renewcommand\
+                 {\\protect\\coloneqq}{\\protect\\mathrel{\\protect\\equiv}} \
+                 a \\protect\\coloneqq b\\)}"
+            ) && text.contains("\\section[Plain \\texorpdfstring{\\(c \\coloneqq d\\)}"),
+            "{text}"
+        );
+        assert_tectonic_compiles(&tex);
+    }
+
+    /// The text of `pdf`, as pdftotext reads it. `None` where pdftotext
+    /// isn't installed, or there's no PDF (tectonic wasn't run).
+    fn pdf_text(pdf: &Path) -> Option<String> {
+        let pdftotext = which::which("pdftotext").ok()?;
+        if !pdf.is_file() {
+            return None;
+        }
+        let output = std::process::Command::new(pdftotext)
+            .arg(pdf)
+            .arg("-")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        Some(String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+
+    /// What pandoc writes when it reads `tex`, given the writer's
+    /// `options` (`-t markdown`). `None` where pandoc isn't installed.
+    fn pandoc_read_back(tex: &Path, options: &[&str]) -> Option<String> {
+        let pandoc = crate::converter::document::binaries::find_pandoc_binary()?;
+        let output = std::process::Command::new(pandoc)
+            .args(["-f", "latex"])
+            .args(options)
+            .arg(tex)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        Some(String::from_utf8_lossy(&output.stdout).into_owned())
+    }
+
+    /// How the LaTeX preamble defines `\coloneqq` where no package has.
+    const COLONEQQ_FALLBACK: &str = "\\ifdefined\\coloneqq\\else\\def\\coloneqq{\\mathrel{:=}}\\fi";
+
+    /// Converts `source`, written to `dir/name`, to `target` next to it:
+    /// the output's path and text.
+    fn converted(dir: &Path, name: &str, source: &str, target: &str) -> (PathBuf, String) {
+        let input = dir.join(name);
+        std::fs::write(&input, source).unwrap();
+        let ext = if target == "typst" { "typ" } else { target };
+        let output = input.with_extension(ext);
+        convert(&input, target, &output).unwrap();
+        let text = std::fs::read_to_string(&output).unwrap();
+        (output, text)
+    }
+
+    /// Asserts that tectonic (XeLaTeX) compiles `tex` to a PDF, and returns
+    /// what it printed. Skipped, returning `None`, where tectonic isn't
+    /// installed or can't download its bundle.
+    fn assert_tectonic_compiles(tex: &Path) -> Option<String> {
+        let Ok(tectonic) = which::which("tectonic") else {
+            eprintln!("skipping: tectonic not found");
+            return None;
+        };
         let output = std::process::Command::new(tectonic)
             .args(["-c", "minimal"])
-            .arg(&tex)
+            .arg(tex)
             .output()
             .unwrap();
         let stderr = String::from_utf8_lossy(&output.stderr).to_lowercase();
@@ -1244,15 +1853,20 @@ mod tests {
                 .any(|w| stderr.contains(w))
         {
             eprintln!("skipping: tectonic couldn't download its bundle");
-            return;
+            return None;
         }
         assert!(
             output.status.success(),
             "{}\n{}",
             String::from_utf8_lossy(&output.stderr),
-            std::fs::read_to_string(&tex).unwrap()
+            std::fs::read_to_string(tex).unwrap()
         );
         assert!(tex.with_extension("pdf").is_file());
+        Some(format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        ))
     }
 
     const TRICKY_MARKDOWN: &str = "---\ntitle: Tricky [test] & more\nauthor: [A_B, C#D]\n---\n\n\
@@ -1268,9 +1882,99 @@ $$\\begin{align}a &= b \\\\ c &= d\\end{align}$$\n\n$$\\frac{1}{2}$$\n\n\
 ![pic](pic.png) ![missing](missing.png) ![remote](https://e.org/x.png)\n\n\
 <p align=\"center\"><img src=\"pic.png\" alt=\"Logo\"></p>\n\n<img src=\"logo.svg\">\n\n\
 Logo: <img src=\"pic.png\" width=\"50\"> inline.\n\n> ## Only heading\n\n- ## Only in list\n\n---\n\n\
+> > > > > > > ## Deep\n> > > > > > >\n> > > > > > > Seven quotes, past the limit:\n> > > > > > >\n\
+> > > > > > > ```\n> > > > > > > code\n> > > > > > > ```\n> > > > > > >\n> > > > > > > - item\n> > > > > > >\n\
+> > > > > > > $$x$$\n> > > > > > >\n> > > > > > > ---\n\n\
 Ref[^code].\n\n\
 [^h]: Heading note.\n[^t]: Table note.\n[^t2]: Cell note.\n\
 [^code]: Code:\n\n    ```\n    let x = 1;\n\n    let y = 2;\n    ```\n\n    ![pic](pic.png)\n\n    | a | b |\n    |---|---|\n    | 1 | 2 |\n";
+
+    /// Regression for #44: the notes inside notes, which LaTeX would drop
+    /// inside another's `\footnote`, are in the PDF, numbered as typst
+    /// numbers them, in a longtable row too, where LaTeX sets a note's
+    /// text only after the row. Pandoc, reading the LaTeX back, keeps the
+    /// paragraph around them one paragraph, and the note inside a note.
+    #[test]
+    fn notes_inside_notes_are_typeset_in_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = "A[^1] B[^4].\n\n| x | y |\n|---|---|\n| c[^6] | d[^7] |\n\n\
+                      [^1]: Outer[^2] and[^3].\n[^2]: Inner note[^5].\n[^3]: Second.\n\
+                      [^4]: Next.\n[^5]: Level two.\n[^6]: Cell[^8].\n[^7]: Later cell.\n\
+                      [^8]: In cell.\n";
+        let (tex, text) = converted(dir.path(), "nested.md", source, "tex");
+        assert_tectonic_compiles(&tex);
+        if let Some(shown) = pdf_text(&tex.with_extension("pdf")) {
+            let shown: String = shown.split_whitespace().collect();
+            for note in [
+                "A1B5.",
+                "c6",
+                "d8",
+                "1Outer2and4.",
+                "2Innernote3.",
+                "3Leveltwo.",
+                "4Second.",
+                "5Next.",
+                "6Cell7.",
+                "7Incell.",
+                "8Latercell.",
+            ] {
+                assert!(shown.contains(note), "{note} in {shown}");
+            }
+        }
+        // Pandoc's own writers drop a note inside a note, so its AST shows
+        // it: the first of its top-level blocks holds A and B.
+        if let Some(back) = pandoc_read_back(&tex, &["-t", "native"]) {
+            let first = back.split("\n, ").next().unwrap();
+            assert!(first.contains("Str \"B\""), "{back}\n{text}");
+            assert!(back.contains("Str \"Inner\""), "{back}");
+        }
+    }
+
+    /// Regression for #44: a note in a place that can't hold its text, a
+    /// strikeout (which stops at a `\footnote`), a superscript (which
+    /// drops its text) or a longtable's head (which LaTeX sets once for
+    /// every page, without it), is marked there and set after it, numbered
+    /// in turn with the notes after it in the table's body.
+    #[test]
+    fn notes_where_latex_cant_set_them_are_set_after() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = "A ~~strike[^s]~~ b ^sup[^p]^ c.\n\n| H[^h] |\n|---|\n| body[^b] |\n\n\
+                      [^s]: In strike.\n[^p]: In sup.\n[^h]: In head.\n[^b]: In body.\n";
+        let (tex, text) = converted(dir.path(), "held.md", source, "tex");
+        assert!(
+            text.contains("\\sout{strike\\mbox{\\footnotemark[1]}}\\footnotetext[1]"),
+            "{text}"
+        );
+        assert_tectonic_compiles(&tex);
+        if let Some(shown) = pdf_text(&tex.with_extension("pdf")) {
+            let shown: String = shown.split_whitespace().collect();
+            // The texts in number order, the head's before the body's.
+            for expected in ["1Instrike.2Insup.3Inhead.4Inbody.", "H3", "body4"] {
+                assert!(shown.contains(expected), "{expected} in {shown}");
+            }
+        }
+    }
+
+    /// Regression for #53: in a document with CJK text, the spaces beside
+    /// the quotes and dashes of English sentences stay, those quoting CJK
+    /// words included, as typst keeps them, and CJK text keeps its own.
+    #[test]
+    fn cjk_documents_keep_the_spaces_beside_english_punctuation() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = "The “raw” data — and “draft” ones… it’s a ‘test’.\n\n\
+                      He said “你好” to me, and `say “hi” — now`.\n\n他说“你好”——“好”。\n";
+        let (tex, _) = converted(dir.path(), "mixed.md", source, "tex");
+        assert_tectonic_compiles(&tex);
+        if let Some(shown) = pdf_text(&tex.with_extension("pdf")) {
+            for line in [
+                "The “raw” data — and “draft” ones… it’s a ‘test’.",
+                "He said “你好” to me, and say “hi” — now.",
+                "他说“你好”——“好”。",
+            ] {
+                assert!(shown.contains(line), "{line} in {shown}");
+            }
+        }
+    }
 
     /// Our LaTeX, read back by pandoc's LaTeX reader, has the source's
     /// structure. Skipped where pandoc isn't installed.

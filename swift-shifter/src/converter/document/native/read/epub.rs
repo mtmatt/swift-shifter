@@ -14,10 +14,10 @@ use std::path::{Component, Path, PathBuf};
 use scraper::{ElementRef, Html};
 use tempfile::TempDir;
 
-use super::html;
-use crate::converter::document::native::ast::{Block, Document, Inline, List, Meta, inline_text};
-use crate::converter::document::native::write::HeadingIds;
+use super::{html, walk};
+use crate::converter::document::native::ast::{Block, Document, Inline, Meta, inline_text};
 use crate::converter::document::native::write::xhtml::{VOID, escape_attr, escape_text};
+use crate::converter::document::native::write::{self, HeadingIds};
 use crate::converter::document::native::{local_path, percent_decode};
 
 /// A book read into one document. Image URLs in `doc` are absolute paths
@@ -418,7 +418,7 @@ impl Resolver<'_> {
     /// text, when they point anywhere else); links into the book and
     /// footnote labels become `{page}#{id}`.
     fn localize(&self, blocks: &mut [Block]) {
-        for_each_inlines(blocks, &mut |inlines| {
+        walk::for_each_inlines(blocks, &mut |inlines| {
             for inline in inlines.iter_mut() {
                 match inline {
                     Inline::Image { url, alt, .. } if !is_web_image(url) => {
@@ -498,7 +498,13 @@ fn heading_targets(parts: &[Part]) -> HashMap<String, String> {
     let mut ids = HeadingIds::default();
     let mut targets: HashMap<String, String> = HashMap::new();
     for (chapter, part) in parts.iter().enumerate() {
-        let headings = headings_in_order(&part.blocks);
+        // Only the main text's headings: headings in notes get their ids
+        // after every chapter's (see `DocumentIds`), and in-book links
+        // don't target them.
+        let mut headings = Vec::new();
+        write::for_each_heading(&part.blocks, &[], &mut |_, content| {
+            headings.push(content.to_vec())
+        });
         let slugs: Vec<String> = headings.iter().map(|h| ids.next(h)).collect();
         if let Some(first) = slugs.first() {
             targets.insert(format!("{chapter}#"), first.clone());
@@ -533,29 +539,8 @@ fn heading_targets(parts: &[Part]) -> HashMap<String, String> {
 /// else in the book (a paragraph anchor, a page outside the reading order)
 /// keeps only its text.
 fn resolve_links(blocks: &mut [Block], targets: &HashMap<String, String>) {
-    for_each_inlines(blocks, &mut |inlines| {
-        let mut i = 0;
-        while i < inlines.len() {
-            let Inline::Link { url, .. } = &mut inlines[i] else {
-                i += 1;
-                continue;
-            };
-            let Some(target) = url.strip_prefix(INTERNAL) else {
-                i += 1;
-                continue;
-            };
-            if let Some(slug) = targets.get(target) {
-                *url = format!("#{slug}");
-                i += 1;
-                continue;
-            }
-            let Inline::Link { content, .. } = inlines.remove(i) else {
-                unreachable!("matched a link above");
-            };
-            let len = content.len();
-            inlines.splice(i..i, content);
-            i += len;
-        }
+    walk::resolve_links(blocks, INTERNAL, &mut |target, _| {
+        targets.get(target).cloned()
     });
 }
 
@@ -566,88 +551,18 @@ fn drop_undefined_refs(blocks: &mut [Block]) {
     for_each_definition(blocks, &mut |label| {
         defined.insert(label.clone());
     });
-    for_each_inlines(blocks, &mut |inlines| {
+    walk::for_each_inlines(blocks, &mut |inlines| {
         inlines.retain(|i| !matches!(i, Inline::FootnoteRef(label) if !defined.contains(label)));
     });
 }
 
-/// Heading contents in the order writers assign ids.
-fn headings_in_order(blocks: &[Block]) -> Vec<Vec<Inline>> {
-    let mut out = Vec::new();
-    for block in blocks {
-        match block {
-            Block::Heading { content, .. } => out.push(content.clone()),
-            Block::Quote(children) => out.extend(headings_in_order(children)),
-            Block::List(List { items, .. }) => {
-                for item in items {
-                    out.extend(headings_in_order(&item.content));
-                }
-            }
-            _ => {}
-        }
-    }
-    out
-}
-
-/// Calls `f` with every run of inlines in `blocks`, nested runs (inside
-/// emphasis, links, …) included.
-fn for_each_inlines(blocks: &mut [Block], f: &mut dyn FnMut(&mut Vec<Inline>)) {
-    fn inlines(run: &mut Vec<Inline>, f: &mut dyn FnMut(&mut Vec<Inline>)) {
-        f(run);
-        for inline in run.iter_mut() {
-            match inline {
-                Inline::Emph(c)
-                | Inline::Strong(c)
-                | Inline::Strikethrough(c)
-                | Inline::Superscript(c)
-                | Inline::Subscript(c)
-                | Inline::Link { content: c, .. } => inlines(c, f),
-                _ => {}
-            }
-        }
-    }
-    for block in blocks {
-        match block {
-            Block::Heading { content, .. } | Block::Paragraph(content) => inlines(content, f),
-            Block::Quote(children)
-            | Block::FootnoteDefinition {
-                content: children, ..
-            } => for_each_inlines(children, f),
-            Block::List(List { items, .. }) => {
-                for item in items {
-                    for_each_inlines(&mut item.content, f);
-                }
-            }
-            Block::Table(table) => {
-                for cell in table
-                    .header
-                    .iter_mut()
-                    .chain(table.rows.iter_mut().flatten())
-                {
-                    inlines(cell, f);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
+/// Calls `f` with every footnote label in `blocks`, in reading order.
 fn for_each_definition(blocks: &mut [Block], f: &mut dyn FnMut(&mut String)) {
-    for block in blocks {
-        match block {
-            Block::FootnoteDefinition { label, content } => {
-                f(label);
-                for_each_definition(content, f);
-            }
-            Block::Quote(children) => for_each_definition(children, f),
-            Block::List(List { items, .. }) => {
-                for item in items {
-                    for_each_definition(&mut item.content, f);
-                }
-            }
-            _ => {}
+    walk::for_each_block(blocks, &mut |block| {
+        if let Block::FootnoteDefinition { label, .. } = block {
+            f(label);
         }
-    }
+    });
 }
 
 #[cfg(test)]
@@ -873,6 +788,31 @@ mod tests {
         assert_eq!(
             md, "extra pic out note[^1] gone\n\n[^1]: Far note.\n",
             "{md}"
+        );
+    }
+
+    #[test]
+    fn links_inside_unresolved_links_still_resolve() {
+        // The outer link goes nowhere in the output and keeps only its text,
+        // which is itself a link to a heading: that link still resolves.
+        let link = |url: String, content| Inline::Link {
+            url,
+            title: None,
+            content,
+        };
+        let inner = link(format!("{INTERNAL}0#one"), vec![Inline::Text("x".into())]);
+        let mut blocks = vec![Block::Paragraph(vec![link(
+            format!("{INTERNAL}{UNRESOLVED}"),
+            vec![inner],
+        )])];
+        let targets = HashMap::from([("0#one".to_string(), "one".to_string())]);
+        resolve_links(&mut blocks, &targets);
+        assert_eq!(
+            blocks,
+            [Block::Paragraph(vec![link(
+                "#one".into(),
+                vec![Inline::Text("x".into())]
+            )])]
         );
     }
 

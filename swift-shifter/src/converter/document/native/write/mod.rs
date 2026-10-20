@@ -1,12 +1,13 @@
 pub mod epub;
 pub mod html;
 pub mod latex;
+mod latex_math;
 pub mod markdown;
 pub mod plain;
 pub mod typst;
 pub(crate) mod xhtml;
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::converter::document::native::ast::{Block, Document, Inline, inline_text};
 
@@ -109,7 +110,9 @@ fn for_each_inlines(block: &Block, f: &mut dyn FnMut(&[Inline])) {
     }
 }
 
-/// Calls `f` with each list of child blocks held by `block`.
+/// Calls `f` with each list of child blocks held by `block`. Every kind of
+/// block is listed, so a new kind of container doesn't compile until it's
+/// entered here too.
 fn for_each_child_blocks(block: &Block, mut f: impl FnMut(&[Block])) {
     match block {
         Block::Quote(children)
@@ -117,7 +120,13 @@ fn for_each_child_blocks(block: &Block, mut f: impl FnMut(&[Block])) {
             content: children, ..
         } => f(children),
         Block::List(list) => list.items.iter().for_each(|item| f(&item.content)),
-        _ => {}
+        Block::Heading { .. }
+        | Block::Paragraph(_)
+        | Block::Code { .. }
+        | Block::Math(_)
+        | Block::Table(_)
+        | Block::ThematicBreak
+        | Block::Raw { .. } => {}
     }
 }
 
@@ -184,9 +193,80 @@ impl HeadingIds {
     }
 }
 
+/// Every heading's id, given out in one order whichever writer writes it
+/// and wherever that writer puts the notes: the main text's headings in
+/// reading order, then each numbered note's (see [`Footnotes`]), note by
+/// note. That's the order a Markdown renderer meets them in, since notes
+/// come last there, so links a reader points at these ids (see
+/// [`for_each_heading`]) reach their heading in every output.
+pub(crate) struct DocumentIds {
+    /// Ids not handed out yet, in order, by part: index 0 is the main
+    /// text, `n` note `n`.
+    parts: Vec<VecDeque<String>>,
+    /// Gives ids to headings outside every part (those a writer makes from
+    /// raw HTML), unique among all.
+    slugs: HeadingIds,
+}
+
+impl DocumentIds {
+    /// The ids for the main text `blocks` and the numbered `note_bodies`.
+    pub fn new(blocks: &[Block], note_bodies: &[Vec<Block>]) -> Self {
+        let mut slugs = HeadingIds::default();
+        let mut parts = vec![VecDeque::new(); note_bodies.len() + 1];
+        for_each_heading(blocks, note_bodies, &mut |part, content| {
+            parts[part].push_back(slugs.next(content));
+        });
+        DocumentIds { parts, slugs }
+    }
+
+    /// The id of the next heading in `part` (0 for the main text, `n` for
+    /// note `n`). Headings must be asked for in their part's reading order,
+    /// as [`for_each_heading`] meets them: the ids were made from their
+    /// content beforehand, and are handed out in turn. `content` makes one
+    /// only for a heading past those, which a writer walking that way
+    /// never asks for.
+    pub fn next(&mut self, part: usize, content: &[Inline]) -> String {
+        match self.parts.get_mut(part).and_then(VecDeque::pop_front) {
+            Some(id) => id,
+            None => self.slugs.next(content),
+        }
+    }
+
+    /// An id for a heading that's in no part, such as one a writer reads
+    /// out of raw HTML.
+    pub fn extra(&mut self, content: &[Inline]) -> String {
+        self.slugs.next(content)
+    }
+}
+
+/// Calls `f` with each heading's part (see [`DocumentIds::next`]) and
+/// content, in the order [`DocumentIds`] gives out ids: the main text
+/// `blocks`, outside their footnote definitions, then each of the
+/// `note_bodies` from [`Footnotes::collect`].
+pub(crate) fn for_each_heading(
+    blocks: &[Block],
+    note_bodies: &[Vec<Block>],
+    f: &mut dyn FnMut(usize, &[Inline]),
+) {
+    fn walk(blocks: &[Block], part: usize, f: &mut dyn FnMut(usize, &[Inline])) {
+        for block in blocks {
+            match block {
+                Block::Heading { content, .. } => f(part, content),
+                Block::FootnoteDefinition { .. } => {}
+                other => for_each_child_blocks(other, |children| walk(children, part, f)),
+            }
+        }
+    }
+    walk(blocks, 0, f);
+    for (i, body) in note_bodies.iter().enumerate() {
+        walk(body, i + 1, f);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::converter::document::native::ast::RawFormat;
     use crate::converter::document::native::read::markdown;
 
     #[test]
@@ -214,6 +294,70 @@ mod tests {
             .collect();
         assert_eq!(order, [Some(1), Some(2), Some(3), Some(4)]);
         assert_eq!(bodies.len(), 4);
+    }
+
+    #[test]
+    fn every_writer_gives_heading_ids_in_one_order() {
+        let text = |s: &str| Inline::Text(s.into());
+        let same = || Block::Heading {
+            level: 1,
+            content: vec![text("Same")],
+        };
+        let note = |label: &str, content: Vec<Block>| Block::FootnoteDefinition {
+            label: label.into(),
+            content,
+        };
+        // Note a holds note c; LaTeX writes c's heading and a raw HTML one
+        // before the text's, but the text's heading still gets `same`.
+        let doc = Document {
+            meta: Default::default(),
+            blocks: vec![
+                Block::Paragraph(vec![
+                    text("A"),
+                    Inline::FootnoteRef("a".into()),
+                    text(" B"),
+                    Inline::FootnoteRef("b".into()),
+                ]),
+                Block::Raw {
+                    format: RawFormat::Html,
+                    text: "<h2>Same</h2>".into(),
+                },
+                same(),
+                note("b", vec![same()]),
+                note(
+                    "a",
+                    vec![Block::Paragraph(vec![Inline::FootnoteRef("c".into())])],
+                ),
+                note("c", vec![same()]),
+                note("unreferenced", vec![same()]),
+            ],
+        };
+        let (_, bodies) = Footnotes::collect(&doc);
+        let mut parts = Vec::new();
+        for_each_heading(&doc.blocks, &bodies, &mut |part, _| parts.push(part));
+        assert_eq!(parts, [0, 2, 3], "notes a, b, c are 1, 2, 3");
+
+        let html = html::write(&doc);
+        for expected in [
+            "<h1 id=\"same\">Same</h1>",
+            "<li id=\"fn-2\">\n<h1 id=\"same-1\">",
+            "<li id=\"fn-3\">\n<h1 id=\"same-2\">",
+        ] {
+            assert!(html.contains(expected), "missing {expected:?} in\n{html}");
+        }
+        let tex = latex::write(&doc);
+        let section = "\\section[Same]{\\texorpdfstring{Same}{Same}}";
+        for expected in [
+            format!("\\footnote{{\\label{{fn:2}}{section}\\label{{same-1}}}}"),
+            // Note c is inside note a, whose text LaTeX sets it after.
+            format!(
+                "\\footnotetext[2]{{\\phantomsection\\label{{fn:3}}{section}\\label{{same-2}}}}"
+            ),
+            "\\subsection[Same]{\\texorpdfstring{Same}{Same}}\\label{same-3}".to_string(),
+            format!("\n{section}\\label{{same}}\n"),
+        ] {
+            assert!(tex.contains(&expected), "missing {expected:?} in\n{tex}");
+        }
     }
 
     #[test]

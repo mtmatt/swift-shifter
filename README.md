@@ -35,7 +35,7 @@ A featherweight, always-on file converter that lives in your menu bar. Press a h
 | Backend logic          | Rust                                                                                                                         |
 | Image processing       | [`image`](https://crates.io/crates/image) crate + [`ravif`](https://crates.io/crates/ravif) for AVIF + macOS `sips` for HEIC |
 | Video / audio          | System `ffmpeg` (auto-installed via Homebrew if missing)                                                                     |
-| Document conversion    | Native Rust engine for Markdown / plain text / HTML / EPUB; `pandoc` for LaTeX and Typst input (auto-installed if missing)   |
+| Document conversion    | Native Rust engine for Markdown / plain text / HTML / EPUB / Typst; `pandoc` for LaTeX input (auto-installed if missing)     |
 | PDF output             | [typst](https://typst.app) compiler linked in (no install, CJK font selection, TeX math via `mitex`)                         |
 | PDF ↔ EPUB / HTML / MD | `pymupdf4llm` (auto-installed via pipx); optional ML engine via `marker-pdf`                                                 |
 | MOBI conversion        | System `ebook-convert` / Calibre (auto-installed via Homebrew cask / winget / apt)                                           |
