@@ -1074,6 +1074,23 @@ mod tests {
         assert!(fallback.is_empty());
     }
 
+    #[test]
+    fn mathscr_is_typeset_as_scr_not_tex() {
+        let doc = read::markdown::read("A sheaf $\\mathscr{F}$ on $X$.\n");
+        let options = write::typst::Options {
+            target: write::typst::Target::Pdf,
+            fonts: typst::text_fonts(None),
+            paper: typst::default_paper(),
+            base_dir: std::env::temp_dir(),
+            tex_fallback: &HashSet::new(),
+        };
+        let source = write::typst::write(&doc, &options).source;
+        assert!(source.contains("scr(F"), "{source}");
+        assert!(!source.contains("#raw("), "{source}");
+        let (_, fallback) = typeset_with_fallback(&doc, &std::env::temp_dir()).unwrap();
+        assert!(fallback.is_empty(), "{fallback:?}");
+    }
+
     fn media_box_size(pdf: &[u8]) -> (f32, f32) {
         let doc = lopdf::Document::load_mem(pdf).unwrap();
         let (_, page_id) = doc.get_pages().into_iter().next().unwrap();
