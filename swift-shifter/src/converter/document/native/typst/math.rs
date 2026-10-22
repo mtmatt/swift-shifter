@@ -28,11 +28,25 @@ const RENAMES: &[(&str, &str)] = &[
     ("times.circle.big", "times.o.big"),
 ];
 
+/// mitex 0.2.4 doesn't know `\mathscr`, and converts with its built-in
+/// command spec whatever spec it's given, so `\mathscr` is defined as a
+/// macro instead: `\mathcal` of its argument behind a private-use marker,
+/// which [`tex_to_typst`] turns into typst's `scr`.
+const MATHSCR: &str = "\\newcommand{\\mathscr}[1]{\\mathcal{\u{E000}#1}}";
+const MARKED_CAL: &str = "cal(\u{E000} ";
+
 /// Typst math code for a TeX formula, to be evaluated with mitex's scope
 /// (`eval(…, mode: "math", scope: mitex-scope)`).
 pub fn tex_to_typst(tex: &str) -> Result<String, String> {
-    let converted = mitex::convert_math(tex, None)?;
-    Ok(rename_symbols(&converted))
+    // `\mathscr` is only defined once the formula fails without it, so a
+    // formula's own definition (`\newcommand`, `\providecommand`) wins.
+    let converted = mitex::convert_math(tex, None).or_else(|err| {
+        if !tex.contains(r"\mathscr") {
+            return Err(err);
+        }
+        mitex::convert_math(&format!("{MATHSCR}{tex}"), None).map_err(|_| err)
+    })?;
+    Ok(rename_symbols(&converted).replace(MARKED_CAL, "scr("))
 }
 
 /// Replace whole dotted identifiers (`plus.circle`, never the `plus.circle`
@@ -124,6 +138,26 @@ fn rename_symbols(code: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mathscr_becomes_scr() {
+        let code = |tex: &str| tex_to_typst(tex).unwrap().replace(' ', "");
+        assert_eq!(code(r"\mathscr{F}"), "scr(F)");
+        assert_eq!(code(r"\mathscr F + \mathcal{F}"), "scr(F)+cal(F)");
+        assert_eq!(code(r"x_\mathscr{F}"), "x_(scr(F))");
+        assert_eq!(code(r"\frac{\mathscr{AB}}{2}"), "frac(scr(AB),2)");
+        assert!(!code(r"\mathscr{\mathscr{F}}").contains('\u{E000}'));
+        // A formula's own definition wins.
+        for define in [r"\newcommand", r"\providecommand"] {
+            assert_eq!(
+                code(&format!(
+                    r"{define}{{\mathscr}}[1]{{\mathbf{{#1}}}} \mathscr{{F}}"
+                )),
+                code(r"\mathbf{F}"),
+                "{define}"
+            );
+        }
+    }
 
     #[test]
     fn renames_whole_identifiers_only() {

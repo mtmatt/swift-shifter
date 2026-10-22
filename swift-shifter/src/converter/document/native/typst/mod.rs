@@ -160,7 +160,7 @@ mod tests {
             r"\frac{a}{b} \dfrac{a}{b} \tfrac{a}{b} \binom{n}{k} \sqrt{x} \sqrt[3]{x}",
             r"\sum_{i=1}^{n} i \prod_{k} k \int_a^b f \iint g \oint h \lim_{x \to 0} \sup \inf \max \min",
             r"\hat{a} \bar{b} \tilde{c} \vec{v} \dot{x} \ddot{y} \overline{xy} \underline{z} \widehat{abc}",
-            r"\mathbb{R} \mathbf{v} \mathrm{d} \mathit{x} \mathcal{L} \mathfrak{g} \mathsf{s} \mathtt{t} \boldsymbol{\alpha}",
+            r"\mathbb{R} \mathbf{v} \mathrm{d} \mathit{x} \mathcal{L} \mathscr{F} \mathfrak{g} \mathsf{s} \mathtt{t} \boldsymbol{\alpha}",
             r"\text{if } x > 0 \operatorname{tr}(A) \sin x \cos y \tan z \log n \ln e \exp t \det A",
             r"\left( \frac{a}{b} \right) \left[ x \right] \left\{ y \right\} \left| z \right| \langle u \rangle",
             r"\begin{matrix} a & b \\ c & d \end{matrix}",
