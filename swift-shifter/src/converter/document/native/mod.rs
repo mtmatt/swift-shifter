@@ -1358,9 +1358,12 @@ mod tests {
         assert!(fallback.is_empty());
     }
 
-    #[test]
-    fn mathscr_is_typeset_as_scr_not_tex() {
-        let doc = read::markdown::read("A sheaf $\\mathscr{F}$ on $X$.\n");
+    /// The typst source for `markdown`, after checking that each of its
+    /// formulas is typeset rather than shown as TeX: none fails mitex's
+    /// conversion (the writer puts those in `#raw(…)`) and none is rejected
+    /// by the compiler (those fall back).
+    fn typeset_not_tex(markdown: &str) -> String {
+        let doc = read::markdown::read(markdown);
         let options = write::typst::Options {
             target: write::typst::Target::Pdf,
             fonts: typst::text_fonts(None),
@@ -1369,53 +1372,44 @@ mod tests {
             tex_fallback: &HashSet::new(),
         };
         let source = write::typst::write(&doc, &options).source;
-        assert!(source.contains("scr(F"), "{source}");
         assert!(!source.contains("#raw("), "{source}");
         let (_, fallback) = typeset_with_fallback(&doc, &std::env::temp_dir()).unwrap();
         assert!(fallback.is_empty(), "{fallback:?}");
+        source
+    }
+
+    #[test]
+    fn mathscr_is_typeset_as_scr_not_tex() {
+        let source = typeset_not_tex("A sheaf $\\mathscr{F}$ on $X$.\n");
+        assert!(source.contains("scr(F"), "{source}");
     }
 
     #[test]
     fn every_delimited_matrix_is_typeset_not_tex() {
-        let doc = read::markdown::read(
+        typeset_not_tex(
             "$$\\begin{Bmatrix}a&b\\\\c&d\\end{Bmatrix}$$\n\n\
              $$\\begin{Vmatrix}a&b\\\\c&d\\end{Vmatrix}$$\n\n\
              $$\\begin{pmatrix}a\\end{pmatrix} \\begin{bmatrix}a\\end{bmatrix} \
              \\begin{vmatrix}a\\end{vmatrix}$$\n",
         );
-        let (_, fallback) = typeset_with_fallback(&doc, &std::env::temp_dir()).unwrap();
-        assert!(fallback.is_empty(), "{fallback:?}");
     }
 
     #[test]
     fn laps_are_typeset_not_tex() {
-        let doc = read::markdown::read(
+        typeset_not_tex(
             "$a\\mathrlap{x}b$ $a\\mathllap{x}b$ $a\\mathclap{x}b$ \
              $\\rlap{y}$ $\\llap{y}$ $\\clap{y}$\n\n\
              $$\\sum_{\\mathclap{1 \\le i \\le n}} i$$\n",
         );
-        let (_, fallback) = typeset_with_fallback(&doc, &std::env::temp_dir()).unwrap();
-        assert!(fallback.is_empty(), "{fallback:?}");
     }
 
     #[test]
     fn sideset_is_typeset_not_tex() {
-        let doc = read::markdown::read(
+        let source = typeset_not_tex(
             "$\\sideset{_a^b}{_c^d}\\sum$\n\n\
              $$\\sideset{}{'}\\sum_{n<k,\\,n\\text{ odd}} n e_n$$\n",
         );
-        let options = write::typst::Options {
-            target: write::typst::Target::Pdf,
-            fonts: typst::text_fonts(None),
-            paper: typst::default_paper(),
-            base_dir: std::env::temp_dir(),
-            tex_fallback: &HashSet::new(),
-        };
-        let source = write::typst::write(&doc, &options).source;
         assert_eq!(source.matches("sideset(").count(), 2, "{source}");
-        assert!(!source.contains("#raw("), "{source}");
-        let (_, fallback) = typeset_with_fallback(&doc, &std::env::temp_dir()).unwrap();
-        assert!(fallback.is_empty(), "{fallback:?}");
     }
 
     fn media_box_size(pdf: &[u8]) -> (f32, f32) {
