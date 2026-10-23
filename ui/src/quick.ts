@@ -16,6 +16,11 @@ interface ProgressPayload {
   percent: number;
 }
 
+interface Converted {
+  output: string;
+  warnings: { message: string; count: number; line: number | null }[];
+}
+
 // ─── Layout ───────────────────────────────────────────────────────────────
 
 // Each must match the CSS rule (or quick.rs constant) named beside it.
@@ -156,7 +161,10 @@ async function convertSelected(): Promise<void> {
   job = { kind: "converting", path: file.path, percent: 0 };
   render();
   try {
-    const output = await invoke<string>("convert", { path: file.path, targetFormat: format });
+    const { output } = await invoke<Converted>("convert", {
+      path: file.path,
+      targetFormat: format,
+    });
     job = { kind: "done", output };
     void refreshRecentFiles(); // the output is now a recent file too
   } catch (e) {

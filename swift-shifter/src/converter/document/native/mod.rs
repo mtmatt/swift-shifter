@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 
 use tauri::Emitter;
 
+use crate::converter::Converted;
 use crate::converter::document::ProgressPayload;
 use crate::converter::document::utils::{output_path, target_to_ext};
 use ast::{Block, Document, Inline, List};
@@ -36,16 +37,30 @@ pub struct Warning {
 
 impl Warning {
     /// "2 SVG images became their alt text", "1 … at line 12".
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "shown once the command layer passes warnings on")
-    )]
     pub fn message(&self) -> String {
         let what = if self.count == 1 { self.one } else { self.many };
         match self.line {
             Some(line) => format!("{} {what} at line {line}", self.count),
             None => format!("{} {what}", self.count),
         }
+    }
+}
+
+/// For the UI: the message, with the count and line it's made of.
+impl serde::Serialize for Warning {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        #[derive(serde::Serialize)]
+        struct Shown {
+            message: String,
+            count: usize,
+            line: Option<usize>,
+        }
+        Shown {
+            message: self.message(),
+            count: self.count,
+            line: self.line,
+        }
+        .serialize(serializer)
     }
 }
 
@@ -61,7 +76,7 @@ pub async fn convert_document(
     path: &str,
     target: &str,
     output_dir: Option<&str>,
-) -> Result<String, String> {
+) -> Result<Converted, String> {
     let progress = |percent: f32| {
         app.emit(
             "convert:progress",
@@ -78,12 +93,14 @@ pub async fn convert_document(
     let input = PathBuf::from(path);
     let out_for_task = out.clone();
     let target = target.to_string();
-    // The command layer doesn't pass warnings on yet.
-    let _warnings = tokio::task::spawn_blocking(move || convert(&input, &target, &out_for_task))
+    let warnings = tokio::task::spawn_blocking(move || convert(&input, &target, &out_for_task))
         .await
         .map_err(|e| format!("task panicked: {e}"))??;
     progress(100.0);
-    Ok(out.to_string_lossy().into_owned())
+    Ok(Converted {
+        output: out.to_string_lossy().into_owned(),
+        warnings,
+    })
 }
 
 /// Synchronous core of [`convert_document`]: also returns what the

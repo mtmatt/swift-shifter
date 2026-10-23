@@ -62,19 +62,23 @@ struct BatchResult {
     path: String,
     output_path: Option<String>,
     error: Option<String>,
+    /// What the conversion left out of its output.
+    warnings: Vec<converter::document::native::Warning>,
 }
 
 impl BatchResult {
-    /// What became of `path`: the file it made, or why it failed.
-    fn new(path: String, result: Result<String, String>) -> Self {
-        let (output_path, error) = match result {
-            Ok(out) => (Some(out), None),
-            Err(e) => (None, Some(e)),
+    /// What became of `path`: the file it made and what that left out, or
+    /// why it failed.
+    fn new(path: String, result: Result<converter::Converted, String>) -> Self {
+        let (output_path, error, warnings) = match result {
+            Ok(done) => (Some(done.output), None, done.warnings),
+            Err(e) => (None, Some(e), Vec::new()),
         };
         BatchResult {
             path,
             output_path,
             error,
+            warnings,
         }
     }
 }
@@ -351,7 +355,7 @@ async fn convert(
     state: tauri::State<'_, AppState>,
     path: String,
     target_format: String,
-) -> Result<String, String> {
+) -> Result<converter::Converted, String> {
     // Clone releases the lock before the await — never hold std::sync::Mutex across await
     let cfg = state.config.lock().unwrap().clone();
     converter::convert_file(&app_handle, &path, &target_format, &cfg).await
@@ -442,7 +446,7 @@ async fn trim_batch(
                     cfg.output_dir.as_deref(),
                 )
                 .await;
-                BatchResult::new(item.path, result)
+                BatchResult::new(item.path, result.map(converter::Converted::whole))
             })
         })
         .collect();
@@ -689,20 +693,37 @@ mod window_config_tests {
 #[cfg(test)]
 mod batch_tests {
     use super::BatchResult;
+    use crate::converter::Converted;
+    use crate::converter::document::native::Warning;
     use serde_json::json;
 
-    /// The UI gets the same fields it always has.
+    /// The UI gets each file's output and what it left out, or its error.
     #[test]
     fn batch_results_say_what_became_of_each_file() {
-        let done = BatchResult::new("/in/a.md".into(), Ok("/out/a.html".into()));
+        let lost = Warning {
+            one: "thing was lost",
+            many: "things were lost",
+            count: 1,
+            line: None,
+        };
+        let converted = Converted {
+            output: "/out/a.html".into(),
+            warnings: vec![lost],
+        };
+        let done = BatchResult::new("/in/a.md".into(), Ok(converted));
         assert_eq!(
             serde_json::to_value(done).unwrap(),
-            json!({ "path": "/in/a.md", "output_path": "/out/a.html", "error": null })
+            json!({
+                "path": "/in/a.md",
+                "output_path": "/out/a.html",
+                "error": null,
+                "warnings": [{ "message": "1 thing was lost", "count": 1, "line": null }],
+            })
         );
         let failed = BatchResult::new("/in/b.md".into(), Err("no".into()));
         assert_eq!(
             serde_json::to_value(failed).unwrap(),
-            json!({ "path": "/in/b.md", "output_path": null, "error": "no" })
+            json!({ "path": "/in/b.md", "output_path": null, "error": "no", "warnings": [] })
         );
     }
 }

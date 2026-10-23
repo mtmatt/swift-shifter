@@ -1,3 +1,4 @@
+use crate::converter::Converted;
 use crate::converter::document::binaries::*;
 use crate::converter::document::llm::*;
 use crate::converter::document::pdf;
@@ -741,12 +742,12 @@ pub async fn convert_mobi(
     path: &str,
     target_format: &str,
     output_dir: Option<&str>,
-) -> Result<String, String> {
+) -> Result<Converted, String> {
     match target_format {
         "pdf" | "epub" | "html" => {
             let out = output_path(path, target_format, output_dir)?;
             run_ebook_convert(app, path, &out).await?;
-            Ok(out.to_string_lossy().to_string())
+            Ok(Converted::whole(out.to_string_lossy().to_string()))
         }
         "md" => {
             let out = output_path(path, "md", output_dir)?;
@@ -772,7 +773,7 @@ pub async fn convert_mobi(
                     .await
                     .map_err(|e| format!("task panicked: {e}"));
             let _ = std::fs::remove_file(&tmp_epub);
-            result??;
+            let warnings = result??;
 
             app.emit(
                 "convert:progress",
@@ -782,7 +783,10 @@ pub async fn convert_mobi(
                 },
             )
             .ok();
-            Ok(out.to_string_lossy().to_string())
+            Ok(Converted {
+                output: out.to_string_lossy().to_string(),
+                warnings,
+            })
         }
         _ => Err(format!("Unsupported MOBI target format: {target_format}")),
     }
