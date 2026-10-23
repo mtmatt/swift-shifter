@@ -102,7 +102,7 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<(), String> {
     }
     let base_dir = match &book_dir {
         Some(dir) => dir.path().to_path_buf(),
-        None => input.parent().unwrap_or(Path::new(".")).to_path_buf(),
+        None => input_dir(input),
     };
     let elsewhere = out
         .parent()
@@ -419,8 +419,26 @@ fn fill_title(doc: &mut Document, input: &Path) {
         first_heading.or_else(|| input.file_stem().map(|s| s.to_string_lossy().into_owned()));
 }
 
+/// The folder `input` is in, absolute, as the `file://` URLs that rebased
+/// targets become must be.
+fn input_dir(input: &Path) -> PathBuf {
+    let dir = input
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    std::path::absolute(dir).unwrap_or_else(|_| dir.to_path_buf())
+}
+
 fn same_dir(a: &Path, b: &Path) -> bool {
-    match (a.canonicalize(), b.canonicalize()) {
+    // A bare file name's parent is empty: the current folder.
+    let dir = |p: &Path| {
+        if p.as_os_str().is_empty() {
+            Path::new(".").canonicalize()
+        } else {
+            p.canonicalize()
+        }
+    };
+    match (dir(a), dir(b)) {
         (Ok(a), Ok(b)) => a == b,
         _ => a == b,
     }
@@ -893,6 +911,30 @@ mod tests {
             "missing targets are left alone"
         );
         assert!(html.contains("href=\"https://x.org\""));
+    }
+
+    #[test]
+    fn relative_input_paths_are_rebased() {
+        // Tests run from the crate's folder, so a path below it is relative.
+        let target = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+        std::fs::create_dir_all(&target).unwrap();
+        let src = tempfile::tempdir_in(&target).unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("pic.png"), b"png").unwrap();
+        std::fs::write(src.path().join("doc.md"), "![pic](pic.png)\n").unwrap();
+        let relative = Path::new("target")
+            .join(src.path().file_name().unwrap())
+            .join("doc.md");
+        let out = dst.path().join("doc.html");
+        convert(&relative, "html", &out).unwrap();
+        let pic = url::Url::from_file_path(src.path().join("pic.png")).unwrap();
+        let html = std::fs::read_to_string(&out).unwrap();
+        assert!(html.contains(&format!("src=\"{pic}\"")), "{html}");
+
+        // A bare file name is in the current folder.
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(input_dir(Path::new("doc.md")), cwd);
+        assert!(same_dir(Path::new(""), &cwd));
     }
 
     fn fixture(name: &str) -> String {
