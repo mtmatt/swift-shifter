@@ -1989,6 +1989,44 @@ mod tests {
         assert!(typ.contains("#mi(") && !typ.contains("[b"), "{typ}");
     }
 
+    /// Regression for #75: typst numbers a note inside a note right after
+    /// it, so B, C and E are notes 1, 2 and 3, in every output.
+    #[test]
+    fn typst_notes_inside_notes_number_as_typst_numbers_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = "A#footnote[B#footnote[C]] D#footnote[E]\n";
+        let (_, markdown) = converted(dir.path(), "notes.typ", source, "md");
+        for written in ["A[^1] D[^3]", "[^1]: B[^2]", "[^2]: C", "[^3]: E"] {
+            assert!(markdown.contains(written), "{written} in {markdown}");
+        }
+        // Note `n`'s text in HTML or XHTML, up to its first tag.
+        let note = |page: &str, n: usize| -> String {
+            let start = page
+                .find(&format!(" id=\"fn-{n}\""))
+                .unwrap_or_else(|| panic!("no note {n} in {page}"));
+            let text = page[start..].split_once("<p>").unwrap().1;
+            text[..text.find('<').unwrap()].to_string()
+        };
+        let (_, html) = converted(dir.path(), "notes.typ", source, "html");
+        let input = dir.path().join("notes.typ");
+        let epub = input.with_extension("epub");
+        convert(&input, "epub", &epub).unwrap();
+        let mut book = zip::ZipArchive::new(std::fs::File::open(&epub).unwrap()).unwrap();
+        let mut chapter = String::new();
+        std::io::Read::read_to_string(
+            &mut book.by_name("OEBPS/text/ch001.xhtml").unwrap(),
+            &mut chapter,
+        )
+        .unwrap();
+        for page in [html, chapter] {
+            let notes: Vec<_> = (1..=3).map(|n| note(&page, n)).collect();
+            assert_eq!(notes, ["B", "C", "E"], "{page}");
+            // D's reference, the second in the text, is to note 3.
+            let after_d = &page[page.find(" D").unwrap()..];
+            assert_eq!(after_d.find("#fn-"), after_d.find("#fn-3"), "{page}");
+        }
+    }
+
     /// Regression for #65 and #49: typed large operators take typst's
     /// limits in HTML and their names in LaTeX, and a string keeps the
     /// space typst sets beside it in both.

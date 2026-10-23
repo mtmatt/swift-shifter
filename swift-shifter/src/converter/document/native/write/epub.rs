@@ -854,16 +854,16 @@ mod tests {
             ch1.contains("<aside epub:type=\"footnote\" id=\"fn-1\""),
             "{ch1}"
         );
-        // Notes cited in the main text are numbered first (x 1, y 2), then
-        // the note cited inside x (z 3), which goes with x.
+        // The note cited inside x is numbered right after it (z 2), as
+        // typst numbers it, and goes with x; y comes next (3).
         assert!(
-            ch1.contains("id=\"fn-3\"") && ch1.contains("Z note"),
+            ch1.contains("id=\"fn-2\"") && ch1.contains("Z note"),
             "nested note: {ch1}"
         );
         let ch2 = book.text("OEBPS/text/ch002.xhtml");
         assert!(ch2.contains("href=\"ch001.xhtml#fn-1\""), "{ch2}");
         assert!(
-            ch2.contains("id=\"fn-2\"") && !ch2.contains("id=\"fn-1\""),
+            ch2.contains("id=\"fn-3\"") && !ch2.contains("id=\"fn-1\""),
             "{ch2}"
         );
     }
