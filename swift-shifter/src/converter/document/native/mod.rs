@@ -2760,14 +2760,27 @@ mod tests {
                 "{broken}"
             );
         }
+        // FATAL, ERROR and WARNING count; USAGE and INFO don't.
         let report = r#"{"checker": {}, "messages": [
+            {"ID": "PKG-008", "severity": "FATAL", "message": "Unreadable",
+             "locations": [{"path": "b.epub", "line": -1}]},
             {"ID": "RSC-005", "severity": "ERROR", "message": "Bad",
              "locations": [{"path": "a.xhtml", "line": 3}]},
+            {"ID": "OPF-085", "severity": "WARNING", "message": "Odd",
+             "locations": [{"path": "content.opf", "line": 2}]},
+            {"ID": "ACC-007", "severity": "USAGE", "message": "Hint", "locations": []},
             {"ID": "INF-001", "severity": "INFO", "message": "Fine", "locations": []}
         ]}"#;
         assert_eq!(
             epubcheck_findings("b", report.as_bytes()).unwrap(),
-            (2, vec!["b: ERROR RSC-005 Bad (a.xhtml:3)".to_string()])
+            (
+                5,
+                vec![
+                    "b: FATAL PKG-008 Unreadable (b.epub:-1)".to_string(),
+                    "b: ERROR RSC-005 Bad (a.xhtml:3)".to_string(),
+                    "b: WARNING OPF-085 Odd (content.opf:2)".to_string(),
+                ]
+            )
         );
     }
 
