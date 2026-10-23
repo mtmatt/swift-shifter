@@ -1464,6 +1464,66 @@ mod tests {
         );
     }
 
+    /// The `/URI` of each link annotation in `pdf`, `None` for a link
+    /// within the document.
+    fn pdf_links(pdf: &[u8]) -> Vec<Option<String>> {
+        let doc = lopdf::Document::load_mem(pdf).unwrap();
+        doc.objects
+            .values()
+            .filter_map(|o| o.as_dict().ok())
+            .filter(|d| d.get(b"Subtype").and_then(|s| s.as_name()).ok() == Some(&b"Link"[..]))
+            .map(|d| {
+                let action = d.get(b"A").and_then(|a| doc.dereference(a)).ok()?.1;
+                let uri = action.as_dict().ok()?.get(b"URI").ok()?.as_str().ok()?;
+                Some(String::from_utf8_lossy(uri).into_owned())
+            })
+            .collect()
+    }
+
+    #[test]
+    fn markdown_anchors_stay_link_destinations_in_typst() {
+        // Anchors in text, one quoted otherwise and with an entity, then as
+        // an HTML block named like the writer's label for a note cited twice.
+        let doc = read::markdown::read(
+            "See [the note](#note-1), [again](#note%2D1), [this](#a%26b), \
+             [the end](#fn-1) and [elsewhere](#gone).\n\n\
+             <a id=\"note-1\"></a>The note.\n\n<a id=\"note-1\"></a>\n\n\
+             <a id='a&amp;b'></a>This.\n\nCited[^n] twice[^n].\n\n\
+             [^n]: A note.\n\n<a id=\"fn-1\">\n</a>\n",
+        );
+        let dir = tempfile::tempdir().unwrap();
+        let source = typst_file_source(&doc, dir.path());
+        for link in [
+            "(\"anchor:note-1\"))[the note]",
+            "(\"anchor:note-1\"))[again]",
+            "(\"anchor:a&b\"))[this]",
+            "(\"anchor:fn-1\"))[the end]",
+        ] {
+            assert!(source.contains(&format!("#link(label{link}")), "{source}");
+        }
+        // Each id is labelled once, since typst won't link to a label used
+        // twice; a link to no anchor keeps its URL.
+        assert_eq!(
+            source.matches("#metadata(none)#label(").count(),
+            3,
+            "{source}"
+        );
+        assert!(source.contains("#link(\"#gone\")"), "{source}");
+        // Typst rejects a link to a label that isn't in the document.
+        let main = dir.path().join("main.typ");
+        std::fs::write(&main, &source).unwrap();
+        let typst_file_pdf = typst_file_to_pdf(&main).unwrap();
+        let (pdf, _) = typeset_with_fallback(&doc, dir.path()).unwrap();
+        for pdf in [typst_file_pdf, pdf] {
+            let mut links = pdf_links(&pdf);
+            links.sort();
+            // The four links, the note's two marks and its way back.
+            let mut expected = vec![None; 7];
+            expected.push(Some("#gone".to_string()));
+            assert_eq!(links, expected);
+        }
+    }
+
     #[test]
     fn typst_errors_name_the_users_file() {
         let dir = tempfile::tempdir().unwrap();

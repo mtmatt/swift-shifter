@@ -9,7 +9,8 @@ pub(crate) mod xhtml;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::converter::document::native::ast::{Block, Document, Inline, inline_text};
+use crate::converter::document::native::ast::{Block, Document, Inline, RawFormat, inline_text};
+use crate::converter::document::native::read;
 
 /// Footnote numbers, 1, 2, … as typst numbers them: each note where its
 /// first reference is met, and the notes referenced inside it right after
@@ -156,6 +157,72 @@ pub(crate) trait BlockWriter {
 /// text; it's left out.
 pub(crate) fn renderable_tex(tex: &str) -> String {
     tex.replace("\\begin{aligned}[b]", "\\begin{aligned}")
+}
+
+/// The id of raw HTML that's nothing but an empty anchor (see
+/// [`read::html::empty_anchor_id`]).
+pub(crate) fn lone_anchor(html: &str) -> Option<String> {
+    read::html::empty_anchor_id(html)
+}
+
+/// The id of the empty anchor `inlines` start with: Markdown gives one as
+/// two raw tags, `<a id="…">` then `</a>`.
+pub(crate) fn inline_anchor(inlines: &[Inline]) -> Option<String> {
+    match inlines {
+        [
+            Inline::Raw {
+                format: RawFormat::Html,
+                text: open,
+            },
+            Inline::Raw {
+                format: RawFormat::Html,
+                text: close,
+            },
+            ..,
+        ] if close.trim().eq_ignore_ascii_case("</a>") => lone_anchor(&format!("{open}</a>")),
+        _ => None,
+    }
+}
+
+/// Calls `f` with the id of each empty anchor (see [`lone_anchor`] and
+/// [`inline_anchor`]) in the main text `blocks`, outside their footnote
+/// definitions, and in the `note_bodies` from [`Footnotes::collect`]: those
+/// a writer writes.
+pub(crate) fn for_each_anchor(
+    blocks: &[Block],
+    note_bodies: &[Vec<Block>],
+    f: &mut dyn FnMut(String),
+) {
+    fn walk_inlines(inlines: &[Inline], f: &mut dyn FnMut(String)) {
+        for (i, inline) in inlines.iter().enumerate() {
+            match inline {
+                Inline::Emph(c)
+                | Inline::Strong(c)
+                | Inline::Strikethrough(c)
+                | Inline::Superscript(c)
+                | Inline::Subscript(c)
+                | Inline::Link { content: c, .. } => walk_inlines(c, f),
+                _ => inline_anchor(&inlines[i..]).into_iter().for_each(&mut *f),
+            }
+        }
+    }
+    fn walk(blocks: &[Block], f: &mut dyn FnMut(String)) {
+        for block in blocks {
+            match block {
+                Block::Raw {
+                    format: RawFormat::Html,
+                    text,
+                } => lone_anchor(text).into_iter().for_each(&mut *f),
+                Block::FootnoteDefinition { .. } => {}
+                other => {
+                    for_each_inlines(other, &mut |inlines| walk_inlines(inlines, f));
+                    for_each_child_blocks(other, |children| walk(children, f));
+                }
+            }
+        }
+    }
+    walk(blocks, f);
+    note_bodies.iter().for_each(|body| walk(body, f));
 }
 
 /// Indent every line after the first (list items, footnote bodies).

@@ -5,7 +5,10 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::PathBuf;
 
-use super::{BlockWriter, Footnotes, indent_rest, renderable_tex};
+use super::{
+    BlockWriter, Footnotes, for_each_anchor, indent_rest, inline_anchor, lone_anchor,
+    renderable_tex,
+};
 use crate::converter::document::native::ast::{
     Align, Block, Document, Inline, List, Meta, RawFormat, Table, inline_text,
 };
@@ -49,10 +52,16 @@ const MITEX_PACKAGE: &str = "@preview/mitex:0.2.7";
 
 pub fn write(doc: &Document, options: &Options) -> Output {
     let (notes, note_bodies) = Footnotes::collect(doc);
+    let mut anchors = HashSet::new();
+    for_each_anchor(&doc.blocks, &note_bodies, &mut |id| {
+        anchors.insert(id);
+    });
     let w = Writer {
         options,
         notes,
         note_bodies,
+        anchors,
+        labelled: HashSet::new().into(),
         notes_written: HashSet::new().into(),
         formulas: Vec::new().into(),
         images: HashMap::new().into(),
@@ -200,6 +209,11 @@ struct Writer<'a> {
     note_bodies: Vec<Vec<Block>>,
     /// Notes whose body has been written once; later references point to it.
     notes_written: std::cell::RefCell<HashSet<usize>>,
+    /// The ids of the lone anchors written (see [`lone_anchor`]), which
+    /// `#id` links point to as labels.
+    anchors: HashSet<String>,
+    /// Anchors labelled so far: a label used twice can't be linked to.
+    labelled: std::cell::RefCell<HashSet<String>>,
     /// Each formula's emitted expression, in order (unique by its marker).
     formulas: std::cell::RefCell<Vec<String>>,
     images: std::cell::RefCell<HashMap<String, PathBuf>>,
@@ -230,6 +244,10 @@ impl BlockWriter for Writer<'_> {
             Block::Table(table) => self.table(table),
             Block::ThematicBreak => "#horizontalrule".to_string(),
             Block::FootnoteDefinition { .. } => return None,
+            Block::Raw {
+                format: RawFormat::Html,
+                text,
+            } if let Some(id) = lone_anchor(text) => return self.anchor(id),
             // Raw HTML contributes its text (see the plain writer).
             Block::Raw {
                 format: RawFormat::Html,
@@ -402,11 +420,29 @@ impl Writer<'_> {
         expr
     }
 
+    /// An empty anchor: invisible, but locatable, so links can point to its
+    /// label. `None` past the first with its id, since typst won't link to
+    /// a label used twice.
+    fn anchor(&self, id: String) -> Option<String> {
+        let label = format!("#metadata(none)#{}", anchor_label(&id));
+        self.labelled.borrow_mut().insert(id).then_some(label)
+    }
+
     fn inlines(&self, inlines: &[Inline], ctx: Ctx) -> String {
         let mut out = String::new();
         let mut after_expr = false;
-        for inline in inlines {
+        let mut i = 0;
+        while let Some(inline) = inlines.get(i) {
+            if let Some(id) = inline_anchor(&inlines[i..]) {
+                if let Some(label) = self.anchor(id) {
+                    out.push_str(&label);
+                    after_expr = true;
+                }
+                i += 2;
+                continue;
+            }
             after_expr = self.inline(&mut out, inline, ctx, after_expr);
+            i += 1;
         }
         out
     }
@@ -443,7 +479,17 @@ impl Writer<'_> {
                 true
             }
             Inline::Link { url, content, .. } => {
-                if content.as_slice() == [Inline::Text(url.clone())] {
+                let anchor = url
+                    .strip_prefix('#')
+                    .map(percent_decode)
+                    .filter(|id| self.anchors.contains(id));
+                if let Some(id) = anchor {
+                    out.push_str(&format!(
+                        "#link({})[{}]",
+                        anchor_label(&id),
+                        self.inlines(content, ctx)
+                    ));
+                } else if content.as_slice() == [Inline::Text(url.clone())] {
                     out.push_str(&format!("#link({})", typst_str(url)));
                 } else {
                     out.push_str(&format!(
@@ -496,6 +542,12 @@ impl Writer<'_> {
             .unwrap_or_default();
         format!("#footnote[{body}] <fn-{n}>")
     }
+}
+
+/// The label for the anchor `id`, apart from the writer's own labels
+/// (`fn-1` and the like) whatever the id.
+fn anchor_label(id: &str) -> String {
+    format!("label({})", typst_str(&format!("anchor:{id}")))
 }
 
 /// A typst string literal.
