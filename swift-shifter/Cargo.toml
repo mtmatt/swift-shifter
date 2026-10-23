@@ -50,6 +50,7 @@ unicode-math-class = "0.1"
 typst-kit = { version = "0.15", default-features = false, features = ["embedded-fonts", "scan-fonts", "system-files"] }
 chrono = "0.4"
 sys-locale = "0.3"
+lol_html = "3.0.1"
 
 [dev-dependencies]
 

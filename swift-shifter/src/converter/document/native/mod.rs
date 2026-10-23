@@ -495,9 +495,118 @@ fn for_each_inline_url(inlines: &mut [Inline], f: &mut dyn FnMut(UrlKind, &mut S
 
 /// Make relative image and link targets absolute against `base`, so they
 /// still resolve when the output is written to a different folder (an
-/// output directory, or a temp dir between conversion hops).
+/// output directory, or a temp dir between conversion hops). Raw HTML is
+/// included.
 fn rebase_relative_urls(blocks: &mut [Block], base: &Path) {
     for_each_url(blocks, &mut |_, url| rebase_url(url, base));
+
+    // The raw HTML is rewritten as one piece, joined in document order, so
+    // a `<textarea>` or `<script>` opened in one raw block or tag (the
+    // Markdown reader gives inline HTML tag by tag) keeps what follows it as
+    // text. The separator, a private-use character the HTML doesn't hold,
+    // is text wherever it falls.
+    let mut pieces = Vec::new();
+    for_each_raw(blocks, &mut |html| pieces.push(html.clone()));
+    let Some(sep) = ('\u{E000}'..='\u{F8FF}').find(|&c| !pieces.iter().any(|p| p.contains(c)))
+    else {
+        return;
+    };
+    let joined = pieces.join(&sep.to_string());
+    let rewritten = rebase_raw_html_urls(&joined, base);
+    let rewritten: Vec<&str> = rewritten.split(sep).collect();
+    // Never short of pieces, unless a rebased URL held the separator.
+    if rewritten.len() != pieces.len() {
+        return;
+    }
+    let mut rewritten = rewritten.into_iter();
+    for_each_raw(blocks, &mut |html| {
+        if let Some(new) = rewritten.next() {
+            *html = new.to_string();
+        }
+    });
+}
+
+/// Calls `f` with every raw HTML block and raw inline tag in `blocks`, in
+/// document order.
+fn for_each_raw(blocks: &mut [Block], f: &mut dyn FnMut(&mut String)) {
+    fn walk(inlines: &mut [Inline], f: &mut dyn FnMut(&mut String)) {
+        for inline in inlines {
+            match inline {
+                Inline::Raw { text, .. } => f(text),
+                Inline::Emph(c)
+                | Inline::Strong(c)
+                | Inline::Strikethrough(c)
+                | Inline::Superscript(c)
+                | Inline::Subscript(c)
+                | Inline::Link { content: c, .. } => walk(c, f),
+                _ => {}
+            }
+        }
+    }
+    for block in blocks {
+        match block {
+            Block::Raw { text, .. } => f(text),
+            Block::Heading { content, .. } | Block::Paragraph(content) => walk(content, f),
+            Block::Quote(children)
+            | Block::FootnoteDefinition {
+                content: children, ..
+            } => for_each_raw(children, f),
+            Block::List(List { items, .. }) => items
+                .iter_mut()
+                .for_each(|item| for_each_raw(&mut item.content, f)),
+            Block::Table(table) => table
+                .header
+                .iter_mut()
+                .chain(table.rows.iter_mut().flatten())
+                .for_each(|cell| walk(cell, f)),
+            _ => {}
+        }
+    }
+}
+
+/// `html` with the `src` and `href` values of its start tags rebased (see
+/// [`rebase_url`]). lol_html tokenizes it as a browser would (comments,
+/// scripts and `<textarea>` text are left alone) and writes back every byte
+/// it isn't asked to change; parsing and serializing the HTML instead would
+/// close a tag that a later block ends (`<details>` around Markdown) and
+/// drop comments. A rebased value is written double-quoted and its tag
+/// loses any space before the `>`. As in browsers, only the first of a
+/// repeated attribute counts. `srcset` and `poster` aren't rebased.
+fn rebase_raw_html_urls(html: &str, base: &Path) -> String {
+    let rebase = lol_html::element!("[src], [href]", |el| {
+        for name in ["src", "href"] {
+            let Some(written) = el.get_attribute(name) else {
+                continue;
+            };
+            let value = decode_attr_value(&written);
+            let mut url = value.clone();
+            rebase_url(&mut url, base);
+            if url != value {
+                // lol_html escapes only the `"`.
+                el.set_attribute(name, &url.replace('&', "&amp;"))?;
+            }
+        }
+        Ok(())
+    });
+    let settings = lol_html::RewriteStrSettings::new().append_element_content_handler(rebase);
+    lol_html::rewrite_str(html, settings).unwrap_or_else(|_| html.to_string())
+}
+
+/// An attribute value as lol_html gives it (character references still in
+/// it), decoded as HTML reads it: `&amp;`, `&copy;`, `&#38;`, and the
+/// attribute rules for a reference without its `;`.
+fn decode_attr_value(written: &str) -> String {
+    if !written.contains('&') {
+        return written.to_string();
+    }
+    let attr = written.replace('"', "&quot;");
+    let html = scraper::Html::parse_fragment(&format!("<a href=\"{attr}\">"));
+    html.root_element()
+        .descendants()
+        .filter_map(scraper::ElementRef::wrap)
+        .find_map(|a| a.value().attr("href"))
+        .unwrap_or(written)
+        .to_string()
 }
 
 /// For `.typ` output in another folder: copy local images into a
@@ -911,6 +1020,139 @@ mod tests {
             "missing targets are left alone"
         );
         assert!(html.contains("href=\"https://x.org\""));
+    }
+
+    #[test]
+    fn raw_html_urls_are_rebased_when_output_moves() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("pic.png"), b"png").unwrap();
+        let input = src.path().join("raw.md");
+        std::fs::write(
+            &input,
+            "<figure><img src=\"pic.png\" alt=\"raw\"></figure>\n\n![md](pic.png)\n\n\
+             <details>\n<!-- keep <img src=\"pic.png\"> -->\n<summary>S</summary>\n\n\
+             *md* and <a href='pic.png#p'>raw</a>\n\n</details>\n\n\
+             <p><a href=\"https://x.org/pic.png\">web</a> <a href=\"#top\">top</a></p>\n",
+        )
+        .unwrap();
+        let pic = url::Url::from_file_path(src.path().join("pic.png")).unwrap();
+        for target in ["html", "md"] {
+            let out = dst.path().join(format!("raw.{target}"));
+            convert(&input, target, &out).unwrap();
+            let written = std::fs::read_to_string(&out).unwrap();
+            let markdown_image = match target {
+                "md" => format!("![md]({pic})"),
+                _ => format!("<img src=\"{pic}\" alt=\"md\""),
+            };
+            for expected in [
+                format!("<img src=\"{pic}\" alt=\"raw\">"),
+                markdown_image,
+                // Inline raw HTML.
+                format!("<a href=\"{pic}#p\">"),
+                // Split across blocks, with a comment: kept as written.
+                "<details>\n<!-- keep <img src=\"pic.png\"> -->\n<summary>S</summary>".into(),
+                "</details>".into(),
+                "<a href=\"https://x.org/pic.png\">web</a> <a href=\"#top\">top</a>".into(),
+            ] {
+                assert!(
+                    written.contains(&expected),
+                    "{expected} in {target}:\n{written}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn raw_text_elements_keep_their_text_across_raw_pieces() {
+        let src = tempfile::tempdir().unwrap();
+        let dst = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("pic.png"), b"png").unwrap();
+        let pic = url::Url::from_file_path(src.path().join("pic.png")).unwrap();
+        let input = src.path().join("raw.md");
+        let out = dst.path().join("raw.html");
+        let convert_md = |md: &str| {
+            std::fs::write(&input, md).unwrap();
+            convert(&input, "html", &out).unwrap();
+            std::fs::read_to_string(&out).unwrap()
+        };
+
+        // Inline HTML comes tag by tag: the text of a textarea or a script
+        // runs to its own end tag, out of an emphasis and into later blocks.
+        let kept = "<textarea title=\"</textarea>\"><img src=\"pic.png\"></textarea-x>\
+                    <img src=\"pic.png\"></TEXTAREA> \
+                    <script>s = '<img src=\"pic.png\">'</script>";
+        let html = convert_md(&format!(
+            "a {kept} *b <textarea>* <img src=\"pic.png\"></textarea> <img src=\"pic.png\">\n\n\
+             c <textarea>\n\n<img src=\"pic.png\">\n\n</textarea>\n\n<img src=\"pic.png\">\n"
+        ));
+        for expected in [
+            kept.to_string(),
+            "<textarea></em> <img src=\"pic.png\"></textarea>".into(),
+            format!("</textarea> <img src=\"{pic}\">"),
+            "<textarea></p>\n<img src=\"pic.png\">\n</textarea>".into(),
+            format!("</textarea>\n<img src=\"{pic}\">"),
+        ] {
+            assert!(html.contains(&expected), "{expected} in:\n{html}");
+        }
+
+        // With the first separator taken by the document, another is used.
+        let html = convert_md(
+            "a <textarea><img src=\"pic.png\"></textarea>\n\n\
+             <p title=\"\u{E000}\">marker</p>\n\n<img src=\"pic.png\">\n",
+        );
+        for expected in [
+            "<textarea><img src=\"pic.png\"></textarea>".to_string(),
+            "<p title=\"\u{E000}\">marker</p>".into(),
+            format!("<img src=\"{pic}\">"),
+        ] {
+            assert!(html.contains(&expected), "{expected} in:\n{html}");
+        }
+    }
+
+    #[test]
+    fn raw_html_urls_are_decoded_and_escaped() {
+        let src = tempfile::tempdir().unwrap();
+        for name in ["pic.png", "a&b.png", "\u{a9}.png"] {
+            std::fs::write(src.path().join(name), b"png").unwrap();
+        }
+        let url = |name: &str| url::Url::from_file_path(src.path().join(name)).unwrap();
+        let (pic, amp, copy) = (url("pic.png"), url("a&b.png"), url("\u{a9}.png"));
+        let amp = amp.as_str().replace('&', "&amp;");
+        assert_eq!(
+            rebase_raw_html_urls(
+                "<IMG SRC=pic.png alt=x ><img src='a&amp;b.png'><img src=\"&copy;.png\">",
+                src.path()
+            ),
+            format!("<IMG SRC=\"{pic}\" alt=x><img src=\"{amp}\"><img src=\"{copy}\">")
+        );
+        // `&copy;.png` names `©.png`, never a file of that literal name.
+        let other = tempfile::tempdir().unwrap();
+        std::fs::write(other.path().join("&copy;.png"), b"png").unwrap();
+        let html = "<img src=\"&copy;.png\">";
+        assert_eq!(rebase_raw_html_urls(html, other.path()), html);
+    }
+
+    #[test]
+    fn raw_html_text_and_end_tags_are_left_alone() {
+        let src = tempfile::tempdir().unwrap();
+        std::fs::write(src.path().join("pic.png"), b"png").unwrap();
+        for html in [
+            "<textarea><img src=\"pic.png\"></textarea-x><img src=\"pic.png\"></textarea>",
+            "<script><!--<script></script><img src=\"pic.png\">--></script>",
+            "<plaintext><img src=\"pic.png\">",
+            "<?x <img src=\"pic.png\"> ?>",
+            "</a title=\"<img src=pic.png>\">",
+            "<img src=\"pic.png\"",
+        ] {
+            assert_eq!(rebase_raw_html_urls(html, src.path()), html);
+        }
+        // A custom element named like `<title>` is markup.
+        let pic = url::Url::from_file_path(src.path().join("pic.png")).unwrap();
+        assert_eq!(
+            rebase_raw_html_urls("<title-card><img src=\"pic.png\"></title-card>", src.path()),
+            format!("<title-card><img src=\"{pic}\"></title-card>")
+        );
     }
 
     #[test]
