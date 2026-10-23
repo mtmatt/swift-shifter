@@ -4,6 +4,7 @@
 //! XHTML (see `xhtml.rs`), so the output is well-formed whatever raw HTML the
 //! source contains.
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::io::{Cursor, Write};
 use std::path::{Path, PathBuf};
@@ -30,6 +31,11 @@ pub struct Dropped {
     /// Scripts and what plays or embeds something, which EPUB content
     /// leaves out (see [`xhtml::serialize`]).
     pub elements: usize,
+    /// Images shown as their alt text: remote, missing or unreadable.
+    pub images: usize,
+    /// Links shown as their text: their targets can't work in a book (see
+    /// [`book_link`]).
+    pub links: usize,
 }
 
 /// Write `doc` as an EPUB 3 file.
@@ -79,14 +85,30 @@ pub fn write_reporting(doc: &Document, options: &Options) -> Result<(Vec<u8>, Dr
     let chapters: Vec<Chapter> = rendered
         .into_iter()
         .map(|chapter| {
-            let link = |href: &str| book_link(href, &chapter.file, &id_files);
-            let mut image = |src: &str| images.add(src).map(|href| format!("../{href}"));
+            let links_dropped = Cell::new(0);
+            let link = |href: &str| {
+                let target = book_link(href, &chapter.file, &id_files);
+                if target.is_none() {
+                    links_dropped.set(links_dropped.get() + 1);
+                }
+                target
+            };
+            let mut images_dropped = 0;
+            let mut image = |src: &str| {
+                let href = images.add(src).map(|href| format!("../{href}"));
+                if href.is_none() {
+                    images_dropped += 1;
+                }
+                href
+            };
             let mut hooks = Hooks {
                 image: &mut image,
                 link: &link,
             };
             let (body, features, elements_dropped) = xhtml::serialize(&chapter.html, &mut hooks);
             dropped.elements += elements_dropped;
+            dropped.images += images_dropped;
+            dropped.links += links_dropped.get();
             Chapter {
                 file: chapter.file,
                 headings: chapter.headings,

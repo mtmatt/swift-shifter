@@ -228,13 +228,32 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
                 base_dir: base_dir.clone(),
             };
             let (epub, dropped) = write::epub::write_reporting(&doc, &options)?;
-            if dropped.elements > 0 {
-                warnings.push(Warning {
-                    one: "script or embed was left out of the book",
-                    many: "scripts and embeds were left out of the book",
-                    count: dropped.elements,
-                    line: None,
-                });
+            let lost = [
+                (
+                    dropped.elements,
+                    "script or embed was left out of the book",
+                    "scripts and embeds were left out of the book",
+                ),
+                (
+                    dropped.images,
+                    "image couldn't be packaged and became its alt text",
+                    "images couldn't be packaged and became their alt text",
+                ),
+                (
+                    dropped.links,
+                    "link that can't work in a book kept only its text",
+                    "links that can't work in a book kept only their text",
+                ),
+            ];
+            for (count, one, many) in lost {
+                if count > 0 {
+                    warnings.push(Warning {
+                        one,
+                        many,
+                        count,
+                        line: None,
+                    });
+                }
             }
             epub
         }
@@ -1907,6 +1926,34 @@ mod tests {
             "{written}"
         );
         assert_tectonic_compiles(&tex);
+    }
+
+    /// Images a book can't package and links that can't work in it count;
+    /// those it keeps don't.
+    #[test]
+    fn images_and_links_a_book_shows_as_text_are_counted() {
+        let dir = tempfile::tempdir().unwrap();
+        image::RgbImage::new(4, 4)
+            .save(dir.path().join("ok.png"))
+            .unwrap();
+        let input = dir.path().join("links.md");
+        std::fs::write(
+            &input,
+            "# Start\n\n\
+             ![remote](https://e.org/r.png) ![missing](missing.png) ![ok](ok.png)\n\n\
+             [js](javascript:x()) [gone](#nope) [other](other.md) \
+             [web](https://e.org) [mail](mailto:a@e.org) [start](#start)\n",
+        )
+        .unwrap();
+        let warnings = convert(&input, "epub", &input.with_extension("epub")).unwrap();
+        let messages: Vec<String> = warnings.iter().map(Warning::message).collect();
+        assert_eq!(
+            messages,
+            [
+                "2 images couldn't be packaged and became their alt text",
+                "3 links that can't work in a book kept only their text",
+            ]
+        );
     }
 
     /// Scripts and embeds a book leaves out count, one each; what only
