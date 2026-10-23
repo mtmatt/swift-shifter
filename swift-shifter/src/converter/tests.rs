@@ -314,6 +314,45 @@ fn test_chain_output_dir_bare_filename_uses_cwd() {
     assert_eq!(dir, ".");
 }
 
+/// A made-up warning, `count` of them.
+fn lost(count: usize) -> crate::converter::Warning {
+    crate::converter::Warning {
+        one: "thing was lost",
+        many: "things were lost",
+        count,
+        line: None,
+    }
+}
+
+#[test]
+fn test_chains_keep_what_every_hop_left_out() {
+    use crate::converter::Converted;
+    let hop = |output: &str, warnings| Converted {
+        output: output.into(),
+        warnings,
+    };
+    let done = Converted::whole("/in/doc.typ".into())
+        .then(hop("/tmp/doc.md", vec![lost(1)]))
+        .then(hop("/tmp/doc.epub", Vec::new()))
+        .then(hop("/out/doc.mobi", vec![lost(2)]));
+    assert_eq!(done, hop("/out/doc.mobi", vec![lost(1), lost(2)]));
+}
+
+#[test]
+fn test_converted_reaches_the_ui_with_its_messages() {
+    let converted = crate::converter::Converted {
+        output: "/out/doc.tex".into(),
+        warnings: vec![lost(2)],
+    };
+    assert_eq!(
+        serde_json::to_value(&converted).unwrap(),
+        serde_json::json!({
+            "output": "/out/doc.tex",
+            "warnings": [{ "message": "2 things were lost", "count": 2, "line": null }],
+        })
+    );
+}
+
 #[test]
 fn test_detect_with_chains_unknown_errors() {
     assert!(crate::converter::graph::detect_with_chains("/x.xyz").is_err());

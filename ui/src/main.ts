@@ -36,10 +36,21 @@ interface BatchItem {
   path: string;
   targetFormat: string;
 }
+/** Something of the input a conversion left out of its output. */
+interface ConversionWarning {
+  message: string;
+  count: number;
+  line: number | null;
+}
+interface Converted {
+  output: string;
+  warnings: ConversionWarning[];
+}
 interface BatchResult {
   path: string;
   output_path: string | null;
   error: string | null;
+  warnings: ConversionWarning[];
 }
 
 interface TrimItem {
@@ -957,7 +968,7 @@ async function startConversion(
   progressUnlisteners.set(path, unlisten);
 
   try {
-    const outputPath = await invoke<string>("convert", { path, targetFormat });
+    const { output: outputPath } = await invoke<Converted>("convert", { path, targetFormat });
     progressFill.style.width = "100%";
     progressLabel.textContent = "100%";
 

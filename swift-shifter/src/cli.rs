@@ -257,7 +257,7 @@ pub fn run_convert(
             let mut failed = false;
             for input in &inputs {
                 match converter::convert_file(&app, input, &format, &cfg).await {
-                    Ok(out) => println!("{out}"),
+                    Ok(converted) => println!("{}", converted.output),
                     Err(e) => {
                         eprintln!("{input}: {e}");
                         failed = true;

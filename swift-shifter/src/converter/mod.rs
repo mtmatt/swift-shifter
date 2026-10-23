@@ -8,7 +8,37 @@ pub use document::merge_pdfs;
 
 use std::path::Path;
 
+use serde::Serialize;
+
 use crate::config::Config;
+use document::native::Warning;
+
+/// A conversion's output file, and what it left out of it.
+#[derive(Debug, PartialEq, Serialize)]
+pub struct Converted {
+    pub output: String,
+    pub warnings: Vec<Warning>,
+}
+
+impl Converted {
+    /// `output`, of a converter that doesn't say what it leaves out.
+    pub fn whole(output: String) -> Self {
+        Converted {
+            output,
+            warnings: Vec::new(),
+        }
+    }
+
+    /// This hop followed by `next`, which converted its output: the last
+    /// output, and what either left out.
+    fn then(mut self, next: Converted) -> Self {
+        self.warnings.extend(next.warnings);
+        Converted {
+            output: next.output,
+            warnings: self.warnings,
+        }
+    }
+}
 
 /// Return the list of valid DIRECT output format strings for a given input path.
 /// Derived from the edge table in `graph.rs` (single source of truth).
@@ -48,12 +78,12 @@ async fn run_single_hop(
     to: &str,
     out_dir: Option<&str>,
     config: &Config,
-) -> Result<String, String> {
+) -> Result<Converted, String> {
     use graph::Hop;
     let hop =
         graph::route_hop(from, to).ok_or_else(|| format!("No converter handles .{from} → {to}"))?;
 
-    match hop {
+    let output = match hop {
         Hop::ImageRaster => document::convert_image_to_pdf(app, path, out_dir).await,
         Hop::ImageToAvif => image::convert_to_avif(path, config.avif_quality, out_dir),
         Hop::ImageToHeic => image::convert_to_heic(path, out_dir),
@@ -63,9 +93,11 @@ async fn run_single_hop(
         Hop::Media => media::convert_media(app, path, to, out_dir).await,
         Hop::Data => data::convert_data(path, to, out_dir),
         Hop::EpubToMobi => document::convert_epub_to_mobi(app, path, out_dir).await,
-        Hop::MobiInput => document::convert_mobi(app, path, to, out_dir).await,
+        Hop::MobiInput => return document::convert_mobi(app, path, to, out_dir).await,
         Hop::DocumentPandoc => document::convert_document(app, path, to, out_dir).await,
-        Hop::DocumentNative => document::native::convert_document(app, path, to, out_dir).await,
+        Hop::DocumentNative => {
+            return document::native::convert_document(app, path, to, out_dir).await;
+        }
         Hop::PdfToMobi => {
             let llm = pdf_llm_cfg(config);
             document::convert_pdf_to_mobi(app, path, out_dir, config.use_marker_pdf, llm).await
@@ -83,7 +115,8 @@ async fn run_single_hop(
                 document::convert_pdf_to_epub(app, path, out_dir, llm).await
             }
         }
-    }
+    }?;
+    Ok(Converted::whole(output))
 }
 
 fn pdf_llm_cfg(config: &Config) -> document::LlmCfg {
@@ -96,13 +129,14 @@ fn pdf_llm_cfg(config: &Config) -> document::LlmCfg {
 
 /// Convert `path` to `target_format`, chaining hops through a temp dir when no
 /// direct conversion exists. Only the final artifact lands in the output dir
-/// (`config.output_dir`, or the input's own directory when unset).
+/// (`config.output_dir`, or the input's own directory when unset). What
+/// every hop left out comes with it.
 pub async fn convert_file(
     app: &tauri::AppHandle,
     path: &str,
     target_format: &str,
     config: &Config,
-) -> Result<String, String> {
+) -> Result<Converted, String> {
     use tauri::Emitter;
 
     let ext = Path::new(path)
@@ -136,7 +170,7 @@ pub async fn convert_file(
     let final_dir = chain_output_dir(path, config.output_dir.as_deref());
 
     let total = seq.len() - 1;
-    let mut current = path.to_string();
+    let mut done = Converted::whole(path.to_string());
     for (i, win) in seq.windows(2).enumerate() {
         // Overall progress keyed to the ORIGINAL path (UI ignores temp-path emits).
         let pct = (i as f64 / total as f64) * 100.0;
@@ -148,7 +182,9 @@ pub async fn convert_file(
 
         let is_last = i == total - 1;
         let out_dir = if is_last { final_dir.as_str() } else { tmp_str };
-        current = run_single_hop(app, &current, &win[0], &win[1], Some(out_dir), config).await?;
+        let next =
+            run_single_hop(app, &done.output, &win[0], &win[1], Some(out_dir), config).await?;
+        done = done.then(next);
     }
 
     app.emit(
@@ -158,7 +194,7 @@ pub async fn convert_file(
     .ok();
 
     // `tmp` drops here, removing all intermediates; the final file is in `final_dir`.
-    Ok(current)
+    Ok(done)
 }
 
 #[cfg(test)]
