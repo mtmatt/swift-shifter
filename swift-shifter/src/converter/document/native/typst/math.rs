@@ -52,6 +52,11 @@ const MACROS: &[(&str, &str)] = &[
     (r"\rlap", r"\newcommand{\rlap}[1]{\mathrlap{\text{#1}}}"),
     (r"\llap", r"\newcommand{\llap}[1]{\mathllap{\text{#1}}}"),
     (r"\clap", r"\newcommand{\clap}[1]{\mathclap{\text{#1}}}"),
+    // `sideset` is in our scope too; its scripts go on empty bases.
+    (
+        r"\sideset",
+        "\\newcommand{\\sideset}[3]{\\mathclap{\u{E003}{}#1\u{E004}{}#2\u{E004}#3}}",
+    ),
 ];
 
 /// The marked calls [`MACROS`] leave in mitex's output, and what they become.
@@ -59,6 +64,10 @@ const MARKED: &[(&str, &str)] = &[
     ("cal(\u{E000} ", "scr("),
     ("mathclap(\u{E001} ", "mathrlap("),
     ("mathclap(\u{E002} ", "mathllap("),
+    // mitex escapes the commas in arguments (`\,`), so these are the only
+    // ones between `sideset`'s.
+    ("mathclap(\u{E003} ", "sideset("),
+    ("\u{E004}", ","),
 ];
 
 /// Typst math code for a TeX formula, to be evaluated with mitex's scope
@@ -70,7 +79,7 @@ pub fn tex_to_typst(tex: &str) -> Result<String, String> {
     }
     // A marker left over (the formula redefines `\mathclap`, say) would
     // show as a stray glyph, and the call it marks would be wrong.
-    if code.contains(['\u{E000}', '\u{E001}', '\u{E002}']) {
+    if code.contains(['\u{E000}', '\u{E001}', '\u{E002}', '\u{E003}']) {
         return Err("error: the formula redefines a command its conversion uses".into());
     }
     Ok(code)
@@ -296,6 +305,26 @@ mod tests {
             code(r"\newcommand{\mathrlap}[1]{\mathbf{#1}} \rlap{y}"),
             code(r"\mathbf{\text{y}}")
         );
+    }
+
+    #[test]
+    fn sideset_becomes_our_sideset_function() {
+        let code = |tex: &str| tex_to_typst(tex).unwrap().replace(' ', "");
+        assert_eq!(
+            code(r"\sideset{_a^b}{_c^d}\sum"),
+            "sideset(zws_(a)^(b),zws_(c)^(d),sum)"
+        );
+        assert_eq!(
+            code(r"\sideset{}{'}\prod_{i,j}"),
+            r"sideset(zws,zws',product)_(i\,j)"
+        );
+        // A formula's own definition wins.
+        assert_eq!(
+            code(r"\newcommand{\sideset}[3]{#3} \sideset{_a}{_b}\sum"),
+            "sum"
+        );
+        // With `\mathclap` redefined the macro can't mark its call.
+        assert!(tex_to_typst(r"\providecommand{\mathclap}[1]{#1} \sideset{_a}{_b}\sum").is_err());
     }
 
     #[test]

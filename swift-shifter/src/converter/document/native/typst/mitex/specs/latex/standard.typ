@@ -54,6 +54,30 @@
   let width = measure(body).width
   box(width: 0pt, move(dx: shift * width, box(width: width, body)))
 })
+// `\sideset{_a^b}{_c^d}\sum`: `left` and `right` are scripts on an empty
+// base (`zws_a^b`), set at `op`'s left and right corners. Primes are
+// superscripts wherever they are: mitex writes `\sideset{}{'_a}` as
+// `zws '_(a)`, the prime the base of `_(a)` and not on `zws`.
+#let _scripts(it) = {
+  // An empty side is `zws` alone, a symbol.
+  if type(it) != content { return (t: none, b: none) }
+  let field(..keys) = keys.pos().map(key => it.at(key, default: none)).find(x => x != none)
+  let parts = if it.func() == [].func() {
+    it.children.map(_scripts)
+  } else if it.func() == math.primes {
+    ((t: it, b: none),)
+  } else if it.func() == math.attach {
+    (_scripts(it.base), (t: field("t", "tr"), b: field("b", "br")))
+  } else {
+    ()
+  }
+  let join(key) = parts.map(part => part.at(key)).filter(x => x != none).join()
+  (t: join("t"), b: join("b"))
+}
+#let sideset-handle = define-cmd(3, handle: (left, right, op) => {
+  let (left, right) = (_scripts(left), _scripts(right))
+  math.attach(op, tl: left.t, bl: left.b, tr: right.t, br: right.b)
+})
 #let matrix-handle(delim: none, handle: none) = define-env(
   none,
   kind: "is-matrix",
@@ -935,6 +959,7 @@
   mathclap: lap-handle(-0.5),
   mathllap: lap-handle(-1),
   mathrlap: lap-handle(0),
+  sideset: sideset-handle,
   mathring: define-cmd(1, handle: it => math.circle(it)),
   nobreak: ignore-sym,
   noexpand: ignore-sym,

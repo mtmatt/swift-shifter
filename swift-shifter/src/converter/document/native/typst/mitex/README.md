@@ -20,6 +20,9 @@ Local changes:
   (the original set it to the right). All three take no width and keep
   their content on one line. `typst/math.rs` turns `\mathrlap`,
   `\mathllap`, `\rlap`, `\llap` and `\clap` into these.
+- `sideset` is added: it sets the scripts of its first two arguments at
+  the left and right corners of its third. `typst/math.rs` turns
+  `\sideset` into it.
 
 When upgrading the `mitex` crate, re-copy `specs/` from the commit the new
 version was published from (see its `.cargo_vcs_info.json`) and reapply the
