@@ -210,17 +210,18 @@ impl Writer {
 
     fn inlines(&self, inlines: &[Inline], ctx: Ctx) -> String {
         let mut out = String::new();
-        for inline in inlines {
-            self.inline(&mut out, inline, ctx);
+        for (i, inline) in inlines.iter().enumerate() {
+            self.inline(&mut out, inline, ctx, &inlines[i + 1..]);
         }
         out
     }
 
-    fn inline(&self, out: &mut String, inline: &Inline, ctx: Ctx) {
+    /// Write `inline`; `rest` is what follows it in the same run of inlines.
+    fn inline(&self, out: &mut String, inline: &Inline, ctx: Ctx, rest: &[Inline]) {
         match inline {
             Inline::Text(t) => escape_into(out, t, ctx),
-            Inline::Emph(c) => wrap(out, "*", &self.inlines(c, ctx)),
-            Inline::Strong(c) => wrap(out, "**", &self.inlines(c, ctx)),
+            Inline::Emph(c) => self.emphasis(out, "*", "em", c, ctx, rest),
+            Inline::Strong(c) => self.emphasis(out, "**", "strong", c, ctx, rest),
             Inline::Strikethrough(c) => wrap(out, "~~", &self.inlines(c, ctx)),
             Inline::Superscript(c) => wrap(out, "^", &self.inlines(c, ctx)),
             Inline::Subscript(c) => wrap(out, "~", &self.inlines(c, ctx)),
@@ -268,6 +269,78 @@ impl Writer {
             Inline::Raw { text, .. } => out.push_str(text),
         }
     }
+
+    /// Emphasis or strong text, as `delim` runs where CommonMark would read
+    /// them, otherwise as the HTML `tag` (`x<em>(y)</em>`), which our reader
+    /// folds back into the same node.
+    fn emphasis(
+        &self,
+        out: &mut String,
+        delim: &str,
+        tag: &str,
+        content: &[Inline],
+        ctx: Ctx,
+        rest: &[Inline],
+    ) {
+        let inner = self.inlines(content, ctx);
+        let (Some(first), Some(last)) = (inner.chars().next(), inner.chars().last()) else {
+            return;
+        };
+        // Content always ends inside a delimiter or a tag, both punctuation,
+        // which flanks like the end of the text: only what follows here in
+        // the same run of inlines can stop a closing run.
+        let before = out.chars().last();
+        let after = self.first_char(rest);
+        if left_flanking(before, first) && right_flanking(last, after) {
+            wrap(out, delim, &inner);
+        } else {
+            out.push_str(&format!("<{tag}>{inner}</{tag}>"));
+        }
+    }
+
+    /// The first character `inlines` would write, or one of the same
+    /// flanking kind, without writing them.
+    fn first_char(&self, inlines: &[Inline]) -> Option<char> {
+        inlines.iter().find_map(|inline| match inline {
+            // Escapes only add a backslash before punctuation; a leading
+            // space is only rewritten at the start of a line.
+            Inline::Text(t) | Inline::Raw { text: t, .. } => t.chars().next(),
+            Inline::Emph(c)
+            | Inline::Strong(c)
+            | Inline::Strikethrough(c)
+            | Inline::Superscript(c)
+            | Inline::Subscript(c) => self.first_char(c).map(|_| '*'),
+            Inline::Math(tex) if tex.trim().is_empty() => None,
+            Inline::Code(_)
+            | Inline::Math(_)
+            | Inline::Link { .. }
+            | Inline::Image { .. }
+            | Inline::FootnoteRef(_) => Some('['),
+            Inline::LineBreak | Inline::SoftBreak => Some(' '),
+        })
+    }
+}
+
+/// Whether a delimiter run between `before` and `next` is left-flanking,
+/// so it can open emphasis (CommonMark, "Emphasis and strong emphasis").
+fn left_flanking(before: Option<char>, next: char) -> bool {
+    !next.is_whitespace() && (!is_punctuation(next) || before.is_none_or(space_or_punctuation))
+}
+
+/// Whether a delimiter run between `prev` and `after` is right-flanking,
+/// so it can close emphasis.
+fn right_flanking(prev: char, after: Option<char>) -> bool {
+    !prev.is_whitespace() && (!is_punctuation(prev) || after.is_none_or(space_or_punctuation))
+}
+
+fn space_or_punctuation(c: char) -> bool {
+    c.is_whitespace() || is_punctuation(c)
+}
+
+/// CommonMark's Unicode punctuation (categories P and S), approximated
+/// outside ASCII as anything that's neither alphanumeric nor whitespace.
+fn is_punctuation(c: char) -> bool {
+    c.is_ascii_punctuation() || (!c.is_ascii() && !c.is_alphanumeric() && !c.is_whitespace())
 }
 
 /// Where inline content is written. Table cells and headings must stay on
@@ -562,6 +635,55 @@ mod tests {
             write(&doc),
             "See <https://a.org>, [docs](<my file.md> \"Title\"), ![alt](i.png)[^1] and $e=mc^2$.\n\n[^1]: Note\n    more.\n"
         );
+    }
+
+    #[test]
+    fn emphasis_that_would_not_flank_is_written_as_html() {
+        let doc = doc_of(html::read_fragment(
+            "<p>x<em>(y)</em> and a<strong>[b]</strong>c</p>",
+        ));
+        assert_eq!(
+            write(&doc),
+            "x<em>(y)</em> and a<strong>\\[b\\]</strong>c\n"
+        );
+        assert_round_trips(&doc);
+    }
+
+    #[test]
+    fn emphasis_keeps_delimiters_where_they_flank() {
+        let doc = doc_of(html::read_fragment(
+            "<p>a<em>b</em>c, (<em>(y)</em>), <strong>x</strong>! and <em>y.</em></p>",
+        ));
+        assert_eq!(write(&doc), "a*b*c, (*(y)*), **x**! and *y.*\n");
+        assert_round_trips(&doc);
+    }
+
+    #[test]
+    fn emphasis_next_to_punctuation_round_trips() {
+        let edges = ["", " ", "a", "(", ")", ".", "\u{00e9}", "\u{2014}"];
+        let insides = ["y", "(y)", "y.", ".y", "[y]", "y\u{2014}"];
+        for tag in ["em", "strong"] {
+            for before in edges {
+                for after in edges {
+                    for inside in insides {
+                        let html = format!("<p>z{before}<{tag}>{inside}</{tag}>{after}z</p>");
+                        assert_round_trips(&doc_of(html::read_fragment(&html)));
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn nested_emphasis_next_to_punctuation_round_trips() {
+        for html in [
+            "<p>a<strong><em>(b)</em></strong>c</p>",
+            "<p>a<em>x <strong>(b)</strong></em>c</p>",
+            "<p>a<em>(b)</em><strong>(c)</strong>d</p>",
+            "<p>a<em><code>b</code></em>c</p>",
+        ] {
+            assert_round_trips(&doc_of(html::read_fragment(html)));
+        }
     }
 
     #[test]
