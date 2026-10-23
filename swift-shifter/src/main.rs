@@ -64,6 +64,21 @@ struct BatchResult {
     error: Option<String>,
 }
 
+impl BatchResult {
+    /// What became of `path`: the file it made, or why it failed.
+    fn new(path: String, result: Result<String, String>) -> Self {
+        let (output_path, error) = match result {
+            Ok(out) => (Some(out), None),
+            Err(e) => (None, Some(e)),
+        };
+        BatchResult {
+            path,
+            output_path,
+            error,
+        }
+    }
+}
+
 fn main() {
     let context = tauri::generate_context!();
     if cli::is_cli_invocation() {
@@ -363,19 +378,9 @@ async fn convert_batch(
             let handle = app_handle.clone();
             tokio::spawn(async move {
                 let _permit = sem.acquire().await.unwrap();
-                match converter::convert_file(&handle, &item.path, &item.target_format, &cfg).await
-                {
-                    Ok(out) => BatchResult {
-                        path: item.path,
-                        output_path: Some(out),
-                        error: None,
-                    },
-                    Err(e) => BatchResult {
-                        path: item.path,
-                        output_path: None,
-                        error: Some(e),
-                    },
-                }
+                let result =
+                    converter::convert_file(&handle, &item.path, &item.target_format, &cfg).await;
+                BatchResult::new(item.path, result)
             })
         })
         .collect();
@@ -384,11 +389,10 @@ async fn convert_batch(
     for h in handles {
         match h.await {
             Ok(r) => results.push(r),
-            Err(e) => results.push(BatchResult {
-                path: String::new(),
-                output_path: None,
-                error: Some(format!("task panicked: {e}")),
-            }),
+            Err(e) => results.push(BatchResult::new(
+                String::new(),
+                Err(format!("task panicked: {e}")),
+            )),
         }
     }
     Ok(results)
@@ -430,26 +434,15 @@ async fn trim_batch(
             let handle = app_handle.clone();
             tokio::spawn(async move {
                 let _permit = sem.acquire().await.unwrap();
-                match converter::media::trim_media(
+                let result = converter::media::trim_media(
                     &handle,
                     &item.path,
                     &item.start,
                     &item.end,
                     cfg.output_dir.as_deref(),
                 )
-                .await
-                {
-                    Ok(out) => BatchResult {
-                        path: item.path,
-                        output_path: Some(out),
-                        error: None,
-                    },
-                    Err(e) => BatchResult {
-                        path: item.path,
-                        output_path: None,
-                        error: Some(e),
-                    },
-                }
+                .await;
+                BatchResult::new(item.path, result)
             })
         })
         .collect();
@@ -458,11 +451,10 @@ async fn trim_batch(
     for h in handles {
         match h.await {
             Ok(r) => results.push(r),
-            Err(e) => results.push(BatchResult {
-                path: String::new(),
-                output_path: None,
-                error: Some(format!("task panicked: {e}")),
-            }),
+            Err(e) => results.push(BatchResult::new(
+                String::new(),
+                Err(format!("task panicked: {e}")),
+            )),
         }
     }
     Ok(results)
@@ -691,5 +683,26 @@ mod window_config_tests {
         let base: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
         assert_eq!(base["app"]["trayIcon"]["iconPath"], "icons/icon.png");
         assert_eq!(base["app"]["trayIcon"]["iconAsTemplate"], false);
+    }
+}
+
+#[cfg(test)]
+mod batch_tests {
+    use super::BatchResult;
+    use serde_json::json;
+
+    /// The UI gets the same fields it always has.
+    #[test]
+    fn batch_results_say_what_became_of_each_file() {
+        let done = BatchResult::new("/in/a.md".into(), Ok("/out/a.html".into()));
+        assert_eq!(
+            serde_json::to_value(done).unwrap(),
+            json!({ "path": "/in/a.md", "output_path": "/out/a.html", "error": null })
+        );
+        let failed = BatchResult::new("/in/b.md".into(), Err("no".into()));
+        assert_eq!(
+            serde_json::to_value(failed).unwrap(),
+            json!({ "path": "/in/b.md", "output_path": null, "error": "no" })
+        );
     }
 }
