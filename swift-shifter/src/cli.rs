@@ -256,17 +256,43 @@ pub fn run_convert(
             let cfg = state.config.lock().unwrap().clone();
             let mut failed = false;
             for input in &inputs {
-                match converter::convert_file(&app, input, &format, &cfg).await {
-                    Ok(converted) => println!("{}", converted.output),
-                    Err(e) => {
-                        eprintln!("{input}: {e}");
-                        failed = true;
-                    }
-                }
+                let result = converter::convert_file(&app, input, &format, &cfg).await;
+                let reported = report(
+                    input,
+                    result,
+                    &mut std::io::stdout(),
+                    &mut std::io::stderr(),
+                );
+                // An output path that couldn't be printed wasn't delivered.
+                failed |= !reported.unwrap_or(false);
             }
             if failed { 1 } else { 0 }
         })
     })
+}
+
+/// Prints how converting `input` went: the output's path to `out`, and
+/// what it left out, a line each, or why it failed, to `err`. Returns
+/// whether it succeeded; what it left out doesn't make it fail.
+fn report(
+    input: &str,
+    result: Result<converter::Converted, String>,
+    out: &mut impl std::io::Write,
+    err: &mut impl std::io::Write,
+) -> std::io::Result<bool> {
+    match result {
+        Ok(converted) => {
+            writeln!(out, "{}", converted.output)?;
+            for warning in &converted.warnings {
+                writeln!(err, "{input}: warning: {}", warning.message())?;
+            }
+            Ok(true)
+        }
+        Err(e) => {
+            writeln!(err, "{input}: {e}")?;
+            Ok(false)
+        }
+    }
 }
 
 pub fn run_trim(
@@ -425,5 +451,67 @@ mod tests {
             }
             _ => panic!("expected Convert"),
         }
+    }
+
+    /// What [`report`] prints to stdout and stderr, and whether it
+    /// succeeded.
+    fn reported(result: Result<converter::Converted, String>) -> (String, String, bool) {
+        let (mut out, mut err) = (Vec::new(), Vec::new());
+        let ok = report("in/doc.md", result, &mut out, &mut err).unwrap();
+        let text = |bytes| String::from_utf8(bytes).unwrap();
+        (text(out), text(err), ok)
+    }
+
+    /// A pipe its reader has closed.
+    struct Closed;
+
+    impl std::io::Write for Closed {
+        fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+            Err(std::io::ErrorKind::BrokenPipe.into())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn an_output_path_that_cant_be_printed_is_an_error() {
+        let converted = converter::Converted::whole("out/doc.tex".into());
+        let reported = report("in/doc.md", Ok(converted), &mut Closed, &mut Vec::new());
+        assert!(reported.is_err());
+    }
+
+    #[test]
+    fn warnings_go_to_stderr_without_failing() {
+        let lost = |count| converter::document::native::Warning {
+            one: "SVG image became its alt text",
+            many: "SVG images became their alt text",
+            count,
+            line: None,
+        };
+        let converted = |warnings| {
+            Ok(converter::Converted {
+                output: "out/doc.tex".into(),
+                warnings,
+            })
+        };
+        assert_eq!(
+            reported(converted(vec![lost(1), lost(2)])),
+            (
+                "out/doc.tex\n".into(),
+                "in/doc.md: warning: 1 SVG image became its alt text\n\
+                 in/doc.md: warning: 2 SVG images became their alt text\n"
+                    .into(),
+                true
+            )
+        );
+        assert_eq!(
+            reported(converted(Vec::new())),
+            ("out/doc.tex\n".into(), String::new(), true)
+        );
+        assert_eq!(
+            reported(Err("no".into())),
+            (String::new(), "in/doc.md: no\n".into(), false)
+        );
     }
 }
