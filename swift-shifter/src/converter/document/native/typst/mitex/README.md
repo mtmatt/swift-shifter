@@ -14,6 +14,8 @@ Local changes:
 - `xarrow.typ` is our own implementation of the one function used.
 - `\KaTeX` renders as `K A T E X`: the original used `kai`, a symbol typst
   0.15 removed.
+- `Vmatrix` uses the delimiter `"‖"`: typst 0.15 takes one character, not
+  the original `"||"`.
 
 When upgrading the `mitex` crate, re-copy `specs/` from the commit the new
 version was published from (see its `.cargo_vcs_info.json`) and reapply the

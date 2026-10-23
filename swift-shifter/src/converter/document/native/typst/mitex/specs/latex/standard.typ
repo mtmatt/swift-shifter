@@ -991,7 +991,7 @@
   bmatrix: matrix-handle(delim: "["),
   Bmatrix: matrix-handle(delim: "{"),
   vmatrix: matrix-handle(delim: "|"),
-  Vmatrix: matrix-handle(delim: "||"),
+  Vmatrix: matrix-handle(delim: "‖"),
   smallmatrix: matrix-handle(handle: (..args) => math.inline(math.mat.with(delim: none, ..args))),
   array: define-env(1, kind: "is-matrix", alias: "mitexarray", handle: (arg0: ("l",), ..args) => {
     if args.pos().len() == 0 {
