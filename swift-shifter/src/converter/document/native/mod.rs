@@ -154,8 +154,10 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
     let elsewhere = out
         .parent()
         .is_some_and(|out_dir| !same_dir(&base_dir, out_dir));
+    // Raw HTML elements shown as text alone.
+    let mut raw_html_lost = 0;
     if target == "tex" {
-        read_raw_inline_html(&mut doc.blocks);
+        raw_html_lost += read_raw_inline_html(&mut doc.blocks);
         copy_images_for_latex(
             &mut doc.blocks,
             &base_dir,
@@ -179,6 +181,21 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
         }
     }
 
+    // Markdown, HTML and EPUB keep raw HTML; the other writers show the
+    // text of what they can't read.
+    if !matches!(target, "md" | "html" | "epub") {
+        raw_html_lost += write::raw_html_elements(&doc);
+    }
+    let mut warnings = Vec::new();
+    if raw_html_lost > 0 {
+        warnings.push(Warning {
+            one: "raw HTML element kept only its text",
+            many: "raw HTML elements kept only their text",
+            count: raw_html_lost,
+            line: None,
+        });
+    }
+
     let rendered = match target {
         "md" => write::markdown::write(&doc).into_bytes(),
         "txt" => write::plain::write(&doc).into_bytes(),
@@ -195,7 +212,7 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
         other => return Err(format!("The native converter can't write {other}")),
     };
     std::fs::write(out, rendered).map_err(|e| format!("Failed to write {}: {e}", out.display()))?;
-    Ok(Vec::new())
+    Ok(warnings)
 }
 
 /// A standalone `.typ` file for the user's own typst.
@@ -851,10 +868,12 @@ fn for_each_raw_html(blocks: &mut [Block], f: &mut dyn FnMut(&mut String)) {
 /// `<img>`) read into the AST, so their images are copied and converted
 /// like any other. What the HTML reader keeps raw (MathML without TeX)
 /// stays raw, and so do raw HTML blocks, which the writer reads (see
-/// [`copy_images_for_latex`]).
-fn read_raw_inline_html(blocks: &mut [Block]) {
+/// [`copy_images_for_latex`]). Returns how many tags read as no more than
+/// text: what they marked up shows as plain text.
+fn read_raw_inline_html(blocks: &mut [Block]) -> usize {
+    let mut lost = 0;
     for block in blocks {
-        match block {
+        lost += match block {
             Block::Heading { content, .. } | Block::Paragraph(content) => read_raw_inlines(content),
             Block::Quote(children)
             | Block::FootnoteDefinition {
@@ -862,23 +881,29 @@ fn read_raw_inline_html(blocks: &mut [Block]) {
             } => read_raw_inline_html(children),
             Block::List(List { items, .. }) => items
                 .iter_mut()
-                .for_each(|item| read_raw_inline_html(&mut item.content)),
+                .map(|item| read_raw_inline_html(&mut item.content))
+                .sum(),
             Block::Table(table) => table
                 .header
                 .iter_mut()
                 .chain(table.rows.iter_mut().flatten())
-                .for_each(read_raw_inlines),
-            _ => {}
-        }
+                .map(read_raw_inlines)
+                .sum(),
+            _ => 0,
+        };
     }
+    lost
 }
 
 /// [`read_raw_inline_html`] for a run of inlines: each raw tag becomes the inlines
 /// it reads as (an `<img>` an image; a lone `<span>` nothing).
-fn read_raw_inlines(inlines: &mut Vec<Inline>) {
-    for inline in std::mem::take(inlines) {
-        match inline {
-            Inline::Raw { ref text, .. } => {
+fn read_raw_inlines(inlines: &mut Vec<Inline>) -> usize {
+    let raw = std::mem::take(inlines);
+    let mut lost = 0;
+    for (i, inline) in raw.iter().enumerate() {
+        let mut inline = inline.clone();
+        match &mut inline {
+            Inline::Raw { text, .. } => {
                 let blocks = read::html::read_fragment(text);
                 // Anything that isn't inline (MathML kept raw): leave the tag
                 // to the writer.
@@ -886,26 +911,34 @@ fn read_raw_inlines(inlines: &mut Vec<Inline>) {
                     inlines.push(inline);
                     continue;
                 }
-                for block in blocks {
-                    if let Block::Paragraph(content) = block {
-                        inlines.extend(content);
-                    }
+                let content: Vec<Inline> = blocks
+                    .into_iter()
+                    .flat_map(|block| match block {
+                        Block::Paragraph(content) => content,
+                        _ => Vec::new(),
+                    })
+                    .collect();
+                // Closing tags and empty anchors mark nothing up.
+                if content.iter().all(|c| matches!(c, Inline::Text(_)))
+                    && !text.trim_start().starts_with("</")
+                    && write::inline_anchor(&raw[i..]).is_none()
+                {
+                    lost += 1;
                 }
+                inlines.extend(content);
+                continue;
             }
-            mut inline => {
-                match &mut inline {
-                    Inline::Emph(c)
-                    | Inline::Strong(c)
-                    | Inline::Strikethrough(c)
-                    | Inline::Superscript(c)
-                    | Inline::Subscript(c)
-                    | Inline::Link { content: c, .. } => read_raw_inlines(c),
-                    _ => {}
-                }
-                inlines.push(inline);
-            }
+            Inline::Emph(c)
+            | Inline::Strong(c)
+            | Inline::Strikethrough(c)
+            | Inline::Superscript(c)
+            | Inline::Subscript(c)
+            | Inline::Link { content: c, .. } => lost += read_raw_inlines(c),
+            _ => {}
         }
+        inlines.push(inline);
     }
+    lost
 }
 
 /// `name` as ASCII letters, digits and `-`, for paths LaTeX reads. When
@@ -2350,6 +2383,53 @@ mod tests {
         let input = dir.path().join("clean.md");
         std::fs::write(&input, "# Title\n\nPlain *text* and $x^2$.\n").unwrap();
         for target in ["md", "txt", "html", "typst", "tex", "epub", "pdf"] {
+            let output = input.with_extension(target);
+            assert_eq!(convert(&input, target, &output).unwrap(), [], "{target}");
+        }
+    }
+
+    #[test]
+    fn raw_html_shown_as_text_is_counted() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("raw.md");
+        // In text, in bold, a block read as MathML kept raw, in a note; not
+        // an anchor or a note nothing cites (not written).
+        std::fs::write(
+            &input,
+            "Some <span style=\"color:red\">red</span> and **<kbd>Ctrl</kbd>**.[^n]\n\n\
+             <math>\n<mi>x</mi>\n</math>\n\n<a id=\"here\"></a>Here.\n\n\
+             [^n]: Press <kbd>N</kbd>.\n\n[^u]: <kbd>U</kbd>\n",
+        )
+        .unwrap();
+        for target in ["txt", "typst", "pdf", "tex"] {
+            let output = input.with_extension(target);
+            let warnings = convert(&input, target, &output).unwrap();
+            let messages: Vec<String> = warnings.iter().map(Warning::message).collect();
+            assert_eq!(
+                messages,
+                ["4 raw HTML elements kept only their text"],
+                "{target}"
+            );
+        }
+        for target in ["md", "html", "epub"] {
+            let output = dir.path().join(format!("out.{target}"));
+            assert_eq!(convert(&input, target, &output).unwrap(), [], "{target}");
+        }
+    }
+
+    /// Raw blocks the writers read as a heading, a table or a paragraph
+    /// keep their structure: nothing to warn of.
+    #[test]
+    fn raw_html_read_as_structure_is_not_counted() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("structure.md");
+        std::fs::write(
+            &input,
+            "<h2>Title</h2>\n\n<table><tr><td>a</td><td>b</td></tr></table>\n\n\
+             <div>Boxed <b>bold</b></div>\n",
+        )
+        .unwrap();
+        for target in ["txt", "typst", "pdf", "tex"] {
             let output = input.with_extension(target);
             assert_eq!(convert(&input, target, &output).unwrap(), [], "{target}");
         }
