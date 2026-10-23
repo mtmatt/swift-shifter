@@ -2684,6 +2684,11 @@ mod tests {
             })
             .collect();
         let Ok(epubcheck) = which::which("epubcheck") else {
+            // CI installs it, so there a pass means the books were checked.
+            assert!(
+                std::env::var("CI").as_deref() != Ok("true"),
+                "epubcheck isn't installed, and CI checks the books with it"
+            );
             eprintln!("epubcheck isn't installed: skipped");
             return;
         };
@@ -2697,30 +2702,73 @@ mod tests {
                 .arg(&json)
                 .output()
                 .unwrap();
-            let report: serde_json::Value = std::fs::read(&json)
-                .ok()
-                .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-                .unwrap_or_else(|| panic!("{name}: {}", String::from_utf8_lossy(&run.stderr)));
-            for message in report["messages"].as_array().into_iter().flatten() {
+            let json = std::fs::read(&json)
+                .unwrap_or_else(|_| panic!("{name}: {}", String::from_utf8_lossy(&run.stderr)));
+            let (messages, findings) =
+                epubcheck_findings(name, &json).unwrap_or_else(|e| panic!("{e}"));
+            println!("epubcheck: {name}: {messages} messages");
+            reported.extend(findings);
+        }
+        println!("epubcheck checked {} books", books.len());
+        assert!(reported.is_empty(), "{}", reported.join("\n"));
+    }
+
+    /// What epubcheck's JSON report on the book `name` says: how many
+    /// messages it holds, and its FATAL, ERROR and WARNING ones not
+    /// [`EPUBCHECK_ACCEPTED`]. A report with no checker or messages is no
+    /// report (epubcheck failed, or its format changed): an error, so a
+    /// check that read nothing can't pass.
+    fn epubcheck_findings(name: &str, json: &[u8]) -> Result<(usize, Vec<String>), String> {
+        let report: serde_json::Value =
+            serde_json::from_slice(json).map_err(|e| format!("{name}: not JSON: {e}"))?;
+        if report.get("checker").is_none() {
+            return Err(format!("{name}: the report names no checker"));
+        }
+        let messages = report["messages"]
+            .as_array()
+            .ok_or_else(|| format!("{name}: the report holds no messages"))?;
+        let findings = messages
+            .iter()
+            .filter(|message| {
                 let id = message["ID"].as_str().unwrap_or("");
                 let severity = message["severity"].as_str().unwrap_or("");
-                if !matches!(severity, "FATAL" | "ERROR" | "WARNING")
-                    || EPUBCHECK_ACCEPTED
+                matches!(severity, "FATAL" | "ERROR" | "WARNING")
+                    && !EPUBCHECK_ACCEPTED
                         .iter()
                         .any(|(accepted, _)| *accepted == id)
-                {
-                    continue;
-                }
+            })
+            .map(|message| {
                 let at = &message["locations"][0];
-                reported.push(format!(
-                    "{name}: {severity} {id} {} ({}:{})",
+                format!(
+                    "{name}: {} {} {} ({}:{})",
+                    message["severity"].as_str().unwrap_or(""),
+                    message["ID"].as_str().unwrap_or(""),
                     message["message"].as_str().unwrap_or(""),
                     at["path"].as_str().unwrap_or("?"),
                     at["line"]
-                ));
-            }
+                )
+            })
+            .collect();
+        Ok((messages.len(), findings))
+    }
+
+    #[test]
+    fn epubcheck_reports_must_name_their_checker_and_messages() {
+        for broken in ["not JSON", r#"{"messages": []}"#, r#"{"checker": {}}"#] {
+            assert!(
+                epubcheck_findings("b", broken.as_bytes()).is_err(),
+                "{broken}"
+            );
         }
-        assert!(reported.is_empty(), "{}", reported.join("\n"));
+        let report = r#"{"checker": {}, "messages": [
+            {"ID": "RSC-005", "severity": "ERROR", "message": "Bad",
+             "locations": [{"path": "a.xhtml", "line": 3}]},
+            {"ID": "INF-001", "severity": "INFO", "message": "Fine", "locations": []}
+        ]}"#;
+        assert_eq!(
+            epubcheck_findings("b", report.as_bytes()).unwrap(),
+            (2, vec!["b: ERROR RSC-005 Bad (a.xhtml:3)".to_string()])
+        );
     }
 
     /// Asserts that tectonic (XeLaTeX) compiles `tex` to a PDF, and returns
