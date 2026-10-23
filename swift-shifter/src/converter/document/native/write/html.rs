@@ -416,9 +416,88 @@ fn math(tex: &str, display: DisplayMode) -> String {
     };
     let mut mathml = String::new();
     match pulldown_latex::push_mathml(&mut mathml, events.into_iter(), config) {
+        Ok(())
+            if matches!(display, DisplayMode::Inline) && tex.starts_with("\\begin{aligned}[b]") =>
+        {
+            last_row_on_baseline(&mathml).unwrap_or(mathml)
+        }
         Ok(()) => mathml,
         Err(_) => format!("<code class=\"math\">{}</code>", escape(tex)),
     }
+}
+
+/// The table pulldown-latex writes for `aligned`.
+const ALIGNED: &str = "<mtable class=\"menv-alignlike menv-align\">";
+
+/// Inline math that is nothing but the start-aligned rows the Typst reader
+/// writes for a multi-row equation in text (`aligned[b]` with each row
+/// after an `&`), set with its last row on the text's baseline, as typst
+/// and `[b]` set them. Browsers centre a table on the math axis, so the
+/// rows above the last become an accent over it, which keeps their size,
+/// with a padding in `MATH_STYLE` for the row gap the table had. Neither
+/// takes any width to speak of (WebKit doesn't draw what takes none), so
+/// both start at the same place, and a phantom of the whole table, of no
+/// height, gives the formula its width. `None` for any other math.
+fn last_row_on_baseline(mathml: &str) -> Option<String> {
+    let start = mathml.find(ALIGNED)?;
+    let end = mathml.find("</mtable></mrow><annotation")? + "</mtable>".len();
+    if !mathml[..start].ends_with("<semantics><mrow>") {
+        return None;
+    }
+    let table = &mathml[start..end];
+    let rows = elements(
+        &table[ALIGNED.len()..table.len() - "</mtable>".len()],
+        "mtr",
+    )?;
+    let mut cells = rows
+        .iter()
+        .map(
+            |row| match elements(row.strip_prefix("<mtr>")?.strip_suffix("</mtr>")?, "mtd")?[..] {
+                ["<mtd></mtd>", cell] => Some(cell),
+                _ => None,
+            },
+        )
+        .collect::<Option<Vec<_>>>()?;
+    let last = cells.pop()?.strip_prefix("<mtd>")?.strip_suffix("</mtd>")?;
+    if cells.is_empty() {
+        return None;
+    }
+    let above = &rows[..cells.len()];
+    Some(format!(
+        "{}<mover accent=\"true\" class=\"last-row-on-baseline\">\
+         <mpadded width=\"0.001em\"><mrow>{last}</mrow></mpadded>\
+         <mpadded width=\"0.001em\">{ALIGNED}{}</mtable></mpadded></mover>\
+         <mphantom><mpadded height=\"0\" depth=\"0\">{table}</mpadded></mphantom>{}",
+        &mathml[..start],
+        above.concat(),
+        &mathml[end..],
+    ))
+}
+
+/// The `<tag>` elements `mathml` is a sequence of, or `None` if it has
+/// anything else outside them.
+fn elements<'a>(mathml: &'a str, tag: &str) -> Option<Vec<&'a str>> {
+    let close = format!("</{tag}>");
+    let (mut elements, mut depth, mut start) = (Vec::new(), 0, 0);
+    for (i, _) in mathml.match_indices('<') {
+        let rest = &mathml[i..];
+        if rest.starts_with(&close) {
+            if depth == 0 {
+                return None;
+            }
+            depth -= 1;
+            if depth == 0 {
+                elements.push(&mathml[start..i + close.len()]);
+                start = i + close.len();
+            }
+        } else if rest[1..].starts_with(tag) && rest[1 + tag.len()..].starts_with(['>', ' ']) {
+            if depth == 0 && i != start {
+                return None;
+            }
+            depth += 1;
+        }
+    }
+    (depth == 0 && start == mathml.len()).then_some(elements)
 }
 
 /// Turns typed large operators (`∑`, `∫`), which pulldown-latex takes for
@@ -528,6 +607,7 @@ mtable.menv-alignlike > mtr > mtd, mtable.menv-cases > mtr > mtd { padding-left:
 mtable.menv-align > mtr > mtd:nth-child(2n+3) { padding-left: 1em; }
 mtable.menv-cases > mtr > mtd:first-child { padding-right: 1em; }
 mtr:last-child > mtd:empty:only-child { display: none; }
+mover.last-row-on-baseline > mpadded > mtable > mtr:last-child > mtd { padding-bottom: 1ex; }
 "#;
 
 #[cfg(test)]
@@ -690,7 +770,8 @@ mod tests {
 
     /// `MATH_STYLE` aligns columns by the classes pulldown-latex gives the
     /// tables of `aligned`, `cases` and arrays, so a pulldown-latex upgrade
-    /// that renames them fails here rather than in a browser.
+    /// that renames them fails here rather than in a browser. Inline rows
+    /// with their last on the baseline keep those of `aligned` above it.
     #[test]
     fn math_style_targets_classes_pulldown_latex_writes() {
         let mathml: String = [
@@ -701,6 +782,10 @@ mod tests {
         ]
         .into_iter()
         .map(|tex| math(tex, DisplayMode::Block))
+        .chain([math(
+            r"\begin{aligned}[b]&{a } \\ &{ b}\end{aligned}",
+            DisplayMode::Inline,
+        )])
         .collect();
         let written: HashSet<&str> = mathml
             .split("class=\"")
@@ -728,6 +813,7 @@ mod tests {
             "menv-cells-right",
             "cell-left",
             "cell-right",
+            "last-row-on-baseline",
         ] {
             assert!(styled.contains(class), "{class} isn't styled");
         }
@@ -740,6 +826,77 @@ mod tests {
             trailing.contains("<mtr><mtd></mtd></mtr></mtable>"),
             "{trailing}"
         );
+    }
+
+    /// typst sets the rows of a multi-row equation in text with the last
+    /// on the baseline, where a table would be centred on the math axis.
+    #[test]
+    fn inline_rows_end_on_the_baseline() {
+        let doc = crate::converter::document::native::read::typst::read("x $a \\ -b \\ = c$ y\n");
+        let html = write(&doc);
+        let rows = |cells: &[&str]| -> String {
+            cells
+                .iter()
+                .map(|cell| format!("<mtr><mtd></mtd><mtd><mrow>{cell}</mrow></mtd></mtr>"))
+                .collect()
+        };
+        let (a, b, c) = ("<mi>a</mi>", "<mi>−</mi><mi>b</mi>", "<mo>=</mo><mi>c</mi>");
+        let expected = format!(
+            "<semantics><mrow><mover accent=\"true\" class=\"last-row-on-baseline\">\
+             <mpadded width=\"0.001em\"><mrow><mrow>{c}</mrow></mrow></mpadded>\
+             <mpadded width=\"0.001em\">{ALIGNED}{}</mtable></mpadded></mover>\
+             <mphantom><mpadded height=\"0\" depth=\"0\">{ALIGNED}{}</mtable></mpadded></mphantom>\
+             </mrow><annotation",
+            rows(&[a, b]),
+            rows(&[a, b, c]),
+        );
+        assert!(html.contains(&expected), "{html}");
+        // The rows above keep the table's gap to the last.
+        assert!(
+            MATH_STYLE.contains("mover.last-row-on-baseline > mpadded > mtable > mtr:last-child > mtd { padding-bottom: 1ex; }"),
+            "{MATH_STYLE}"
+        );
+        // A table inside the last row stays in it.
+        let nested = math(
+            r"\begin{aligned}[b]&{a} \\ &{\begin{matrix} 1 \\ 2 \end{matrix}}\end{aligned}",
+            DisplayMode::Inline,
+        );
+        let base = nested.split("<mpadded width=\"0.001em\">").nth(1).unwrap();
+        assert!(
+            base.contains("<mn>1</mn>") && base.contains("<mn>2</mn>"),
+            "{nested}"
+        );
+        // Rows without `[b]`, as a Markdown author writes `aligned`, stay
+        // centred, as LaTeX sets them.
+        let markdown = body("Rows $\\begin{aligned}&{a } \\\\ &{ b}\\end{aligned}$ here.\n");
+        assert!(
+            markdown.contains("<mtable") && !markdown.contains("<mover"),
+            "{markdown}"
+        );
+        // So do display math, rows with columns, a single row and rows
+        // inside other math.
+        for (tex, display) in [
+            (
+                r"\begin{aligned}[b]&{a } \\ &{ b}\end{aligned}",
+                DisplayMode::Block,
+            ),
+            (
+                r"\begin{aligned}[b]a &= b \\  c &= d\end{aligned}",
+                DisplayMode::Inline,
+            ),
+            (r"\begin{aligned}[b]&{a }\end{aligned}", DisplayMode::Inline),
+            (
+                r"\sqrt{\begin{aligned}[b]&{a } \\ &{ b}\end{aligned}}",
+                DisplayMode::Inline,
+            ),
+            (
+                r"x \begin{aligned}[b]&{a } \\ &{ b}\end{aligned}",
+                DisplayMode::Inline,
+            ),
+        ] {
+            let mathml = math(tex, display);
+            assert!(!mathml.contains("<mover"), "{tex}: {mathml}");
+        }
     }
 
     #[test]
