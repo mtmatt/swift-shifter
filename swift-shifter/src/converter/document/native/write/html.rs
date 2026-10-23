@@ -10,7 +10,7 @@ use unicode_math_class::MathClass;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
-use super::{DocumentIds, Footnotes};
+use super::{DocumentIds, Footnotes, renderable_tex};
 use crate::converter::document::native::ast::{
     Align, Block, Document, Inline, List, RawFormat, Table, inline_text,
 };
@@ -400,7 +400,8 @@ fn wrap(out: &mut String, tag: &str, inner: &str) {
 /// the renderer can't parse is shown as code instead of an error box.
 fn math(tex: &str, display: DisplayMode) -> String {
     let storage = Storage::new();
-    let mut events: Vec<_> = Parser::new(tex, &storage).collect();
+    let renderable = renderable_tex(tex);
+    let mut events: Vec<_> = Parser::new(&renderable, &storage).collect();
     if events.iter().any(Result::is_err) {
         return format!("<code class=\"math\">{}</code>", escape(tex));
     }

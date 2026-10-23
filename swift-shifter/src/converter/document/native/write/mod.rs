@@ -150,6 +150,14 @@ pub(crate) trait BlockWriter {
     }
 }
 
+/// TeX `tex` as pulldown-latex and mitex can render it. Neither takes
+/// `aligned`'s optional position, so the `[b]` the Typst reader gives rows
+/// in text, which LaTeX sets with their last on the baseline, would show as
+/// text; it's left out.
+pub(crate) fn renderable_tex(tex: &str) -> String {
+    tex.replace("\\begin{aligned}[b]", "\\begin{aligned}")
+}
+
 /// Indent every line after the first (list items, footnote bodies).
 pub(crate) fn indent_rest(text: &str, indent: &str) -> String {
     let mut lines = text.lines();
