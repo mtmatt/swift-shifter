@@ -1387,6 +1387,17 @@ mod tests {
         assert!(fallback.is_empty(), "{fallback:?}");
     }
 
+    #[test]
+    fn laps_are_typeset_not_tex() {
+        let doc = read::markdown::read(
+            "$a\\mathrlap{x}b$ $a\\mathllap{x}b$ $a\\mathclap{x}b$ \
+             $\\rlap{y}$ $\\llap{y}$ $\\clap{y}$\n\n\
+             $$\\sum_{\\mathclap{1 \\le i \\le n}} i$$\n",
+        );
+        let (_, fallback) = typeset_with_fallback(&doc, &std::env::temp_dir()).unwrap();
+        assert!(fallback.is_empty(), "{fallback:?}");
+    }
+
     fn media_box_size(pdf: &[u8]) -> (f32, f32) {
         let doc = lopdf::Document::load_mem(pdf).unwrap();
         let (_, page_id) = doc.get_pages().into_iter().next().unwrap();

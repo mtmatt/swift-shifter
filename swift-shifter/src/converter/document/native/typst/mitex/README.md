@@ -16,6 +16,10 @@ Local changes:
   0.15 removed.
 - `Vmatrix` uses the delimiter `"‖"`: typst 0.15 takes one character, not
   the original `"||"`.
+- `mathrlap` and `mathllap` are added, and `mathclap` centres its content
+  (the original set it to the right). All three take no width and keep
+  their content on one line. `typst/math.rs` turns `\mathrlap`,
+  `\mathllap`, `\rlap`, `\llap` and `\clap` into these.
 
 When upgrading the `mitex` crate, re-copy `specs/` from the commit the new
 version was published from (see its `.cargo_vcs_info.json`) and reapply the

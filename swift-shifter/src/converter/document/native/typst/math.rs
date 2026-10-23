@@ -28,25 +28,78 @@ const RENAMES: &[(&str, &str)] = &[
     ("times.circle.big", "times.o.big"),
 ];
 
-/// mitex 0.2.4 doesn't know `\mathscr`, and converts with its built-in
-/// command spec whatever spec it's given, so `\mathscr` is defined as a
-/// macro instead: `\mathcal` of its argument behind a private-use marker,
-/// which [`tex_to_typst`] turns into typst's `scr`.
-const MATHSCR: &str = "\\newcommand{\\mathscr}[1]{\\mathcal{\u{E000}#1}}";
-const MARKED_CAL: &str = "cal(\u{E000} ";
+/// Commands mitex 0.2.4 doesn't know. It converts with its built-in command
+/// spec whatever spec it's given, so each is defined as a macro instead:
+/// (command, its definition). Where typst needs a function mitex never
+/// writes, the macro wraps its argument in one mitex knows, behind a
+/// private-use marker that [`MARKED`] turns into the right call. A
+/// definition may use the macros listed before it.
+const MACROS: &[(&str, &str)] = &[
+    (
+        r"\mathscr",
+        "\\newcommand{\\mathscr}[1]{\\mathcal{\u{E000}#1}}",
+    ),
+    // `mathrlap` and `mathllap` are in our scope (`mitex/`).
+    (
+        r"\mathrlap",
+        "\\newcommand{\\mathrlap}[1]{\\mathclap{\u{E001}#1}}",
+    ),
+    (
+        r"\mathllap",
+        "\\newcommand{\\mathllap}[1]{\\mathclap{\u{E002}#1}}",
+    ),
+    // TeX's `\rlap` and the like hold text.
+    (r"\rlap", r"\newcommand{\rlap}[1]{\mathrlap{\text{#1}}}"),
+    (r"\llap", r"\newcommand{\llap}[1]{\mathllap{\text{#1}}}"),
+    (r"\clap", r"\newcommand{\clap}[1]{\mathclap{\text{#1}}}"),
+];
+
+/// The marked calls [`MACROS`] leave in mitex's output, and what they become.
+const MARKED: &[(&str, &str)] = &[
+    ("cal(\u{E000} ", "scr("),
+    ("mathclap(\u{E001} ", "mathrlap("),
+    ("mathclap(\u{E002} ", "mathllap("),
+];
 
 /// Typst math code for a TeX formula, to be evaluated with mitex's scope
 /// (`eval(…, mode: "math", scope: mitex-scope)`).
 pub fn tex_to_typst(tex: &str) -> Result<String, String> {
-    // `\mathscr` is only defined once the formula fails without it, so a
-    // formula's own definition (`\newcommand`, `\providecommand`) wins.
-    let converted = mitex::convert_math(tex, None).or_else(|err| {
-        if !tex.contains(r"\mathscr") {
-            return Err(err);
+    let mut code = rename_symbols(&with_macros(tex)?);
+    for (marked, call) in MARKED {
+        code = code.replace(marked, call);
+    }
+    // A marker left over (the formula redefines `\mathclap`, say) would
+    // show as a stray glyph, and the call it marks would be wrong.
+    if code.contains(['\u{E000}', '\u{E001}', '\u{E002}']) {
+        return Err("error: the formula redefines a command its conversion uses".into());
+    }
+    Ok(code)
+}
+
+/// mitex's conversion of `tex`, defining each of the [`MACROS`] only once
+/// mitex says it doesn't know the command, so a formula's own definition
+/// (`\newcommand`, `\providecommand`) of it wins wherever mitex reads it.
+fn with_macros(tex: &str) -> Result<String, String> {
+    let mut defined = vec![false; MACROS.len()];
+    loop {
+        let defines: String = MACROS
+            .iter()
+            .zip(&defined)
+            .filter_map(|((_, define), &defined)| defined.then_some(*define))
+            .collect();
+        let err = match mitex::convert_math(&format!("{defines}{tex}"), None) {
+            Ok(converted) => return Ok(converted),
+            Err(err) => err,
+        };
+        let unknown = err.strip_prefix("error: unknown command: ");
+        let missing = MACROS
+            .iter()
+            .position(|(command, _)| Some(*command) == unknown);
+        match missing {
+            Some(i) if !defined[i] => defined[i] = true,
+            _ => return Err(err),
         }
-        mitex::convert_math(&format!("{MATHSCR}{tex}"), None).map_err(|_| err)
-    })?;
-    Ok(rename_symbols(&converted).replace(MARKED_CAL, "scr("))
+    }
 }
 
 /// Replace whole dotted identifiers (`plus.circle`, never the `plus.circle`
@@ -157,6 +210,92 @@ mod tests {
                 "{define}"
             );
         }
+    }
+
+    #[test]
+    fn laps_become_our_lap_functions() {
+        let code = |tex: &str| tex_to_typst(tex).unwrap().replace(' ', "");
+        assert_eq!(code(r"a\mathrlap{x}b"), "amathrlap(x)b");
+        assert_eq!(code(r"\mathllap{x+1}"), "mathllap(x+1)");
+        assert_eq!(code(r"\mathclap{x}"), "mathclap(x)");
+        assert_eq!(code(r"\rlap{y}"), "mathrlap(#textmath[y];)");
+        assert_eq!(code(r"\llap{y}"), "mathllap(#textmath[y];)");
+        assert_eq!(
+            code(r"\clap{y} \mathscr{F}"),
+            "mathclap(#textmath[y];)scr(F)"
+        );
+        assert_eq!(code(r"\mathrlap{\mathllap{x}}"), "mathrlap(mathllap(x))");
+        assert!(code(r"\rlap{$\mathllap{x}$}").contains("$mathllap(x)$"));
+        // A formula's own definition wins, beside the macros it still needs.
+        assert_eq!(
+            code(r"\newcommand{\rlap}[1]{\mathbf{#1}} \rlap{y}+\mathllap{x}"),
+            code(r"\mathbf{y}") + "+mathllap(x)"
+        );
+        for name in [
+            "{\\mathscr}",
+            "*{\\mathscr}",
+            " {\\mathscr}",
+            "* { \\mathscr }",
+        ] {
+            assert_eq!(
+                code(&format!(
+                    r"\providecommand{name}[1]{{\mathbf{{#1}}}} \mathscr{{F}}+\mathrlap{{x}}"
+                )),
+                code(r"\mathbf{F}") + "+mathrlap(x)",
+                "{name}"
+            );
+        }
+        assert_eq!(
+            code("\\newcommand % note\n{\\rlap}[1]{\\mathbf{#1}} \\rlap{y}"),
+            code(r"\mathbf{y}")
+        );
+        assert_eq!(
+            code(r"\newcommand{\rlapx}[1]{#1} \rlapx{y}+\rlap{y}"),
+            "y+mathrlap(#textmath[y];)"
+        );
+        // A definition in a comment defines nothing.
+        assert_eq!(
+            code("% \\newcommand{\\mathscr}[1]{#1}\n\\mathscr{F}").trim(),
+            "scr(F)"
+        );
+        assert_eq!(
+            code("% \\providecommand{\\rlap}[1]{#1}\n\\rlap{y}").trim(),
+            "mathrlap(#textmath[y];)"
+        );
+        // A definition inside another's body defines nothing yet.
+        assert_eq!(
+            code(r"\newcommand{\foo}{\newcommand{\mathscr}[1]{#1}} \mathscr{F}"),
+            "scr(F)"
+        );
+        // ... and doesn't cost the formula its other, real definitions.
+        assert_eq!(
+            code(
+                r"\providecommand{\rlap}[1]{\mathbf{#1}} \newcommand{\foo}{\newcommand{\mathscr}[1]{#1}} \rlap{y}+\mathscr{F}"
+            ),
+            code(r"\mathbf{y}") + "+scr(F)"
+        );
+        // A definition in a group counts too.
+        assert_eq!(
+            code(
+                r"\newcommand{\unused}{\newcommand{\mathscr}[1]{#1}} {\providecommand{\rlap}[1]{\mathbf{#1}} \rlap{y}}+\mathscr{F}"
+            ),
+            code(r"{\mathbf{y}}") + "+scr(F)"
+        );
+        // With `\mathclap` redefined the macros can't mark their calls.
+        for lap in [r"\mathllap", r"\mathrlap"] {
+            assert!(
+                tex_to_typst(&format!(
+                    r"\providecommand{{\mathclap}}[1]{{\mathbf{{#1}}}} {lap}{{x}}"
+                ))
+                .is_err(),
+                "{lap}"
+            );
+        }
+        // `\rlap` uses the formula's `\mathrlap`.
+        assert_eq!(
+            code(r"\newcommand{\mathrlap}[1]{\mathbf{#1}} \rlap{y}"),
+            code(r"\mathbf{\text{y}}")
+        );
     }
 
     #[test]
