@@ -1398,6 +1398,26 @@ mod tests {
         assert!(fallback.is_empty(), "{fallback:?}");
     }
 
+    #[test]
+    fn sideset_is_typeset_not_tex() {
+        let doc = read::markdown::read(
+            "$\\sideset{_a^b}{_c^d}\\sum$\n\n\
+             $$\\sideset{}{'}\\sum_{n<k,\\,n\\text{ odd}} n e_n$$\n",
+        );
+        let options = write::typst::Options {
+            target: write::typst::Target::Pdf,
+            fonts: typst::text_fonts(None),
+            paper: typst::default_paper(),
+            base_dir: std::env::temp_dir(),
+            tex_fallback: &HashSet::new(),
+        };
+        let source = write::typst::write(&doc, &options).source;
+        assert_eq!(source.matches("sideset(").count(), 2, "{source}");
+        assert!(!source.contains("#raw("), "{source}");
+        let (_, fallback) = typeset_with_fallback(&doc, &std::env::temp_dir()).unwrap();
+        assert!(fallback.is_empty(), "{fallback:?}");
+    }
+
     fn media_box_size(pdf: &[u8]) -> (f32, f32) {
         let doc = lopdf::Document::load_mem(pdf).unwrap();
         let (_, page_id) = doc.get_pages().into_iter().next().unwrap();

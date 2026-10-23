@@ -173,6 +173,7 @@ mod tests {
             r"\rlap{y}",
             r"\llap{y}",
             r"\clap{y}",
+            r"\sideset{_a^b}{_c^d}\sum \sideset{}{'}\prod_{i,j}",
             r"f(x) = \begin{cases} 1 & x > 0 \\ 0 & \text{otherwise} \end{cases}",
             r"\begin{aligned} a &= b + c \\ d &= e \end{aligned}",
             r"\begin{array}{cc} 1 & 2 \\ 3 & 4 \end{array}",
@@ -242,6 +243,44 @@ mod tests {
         );
         if let Err(e) = compile_pdf(project(&source)) {
             panic!("{}", e.message);
+        }
+    }
+
+    /// `\sideset{_a^b}{_c^d}` sets `a` and `b` at the left corners of what
+    /// follows, `c` and `d` at its right ones: checked by typst, from where
+    /// markers standing in for the scripts and the operator's ends are laid
+    /// out.
+    #[test]
+    fn sideset_puts_scripts_at_the_corners() {
+        let converted = tex_to_typst(r"\sideset{_\alpha^\beta}{_\gamma^\delta}\sum").unwrap();
+        let primed = tex_to_typst(r"\sideset{}{'}\sum").unwrap();
+        let primed_sub = tex_to_typst(r"\sideset{}{'_a}\sum").unwrap();
+        let source = format!(
+            r#"#import "{VIRTUAL_DIR}/mitex/specs/mod.typ": mitex-scope
+#let m(name) = [#metadata(none)#label(name)]
+#let script(name) = [#m(name)x]
+#let scope = mitex-scope + (
+  alpha: script("bl"), beta: script("tl"), gamma: script("br"), delta: script("tr"),
+  sum: [#m("start")#sym.sum#m("end")],
+)
+#math.equation(block: true, eval({converted:?}, mode: "math", scope: scope))
+#context {{
+  let at(name) = locate(label(name)).position()
+  let (bl, tl, br, tr, start, end) = ("bl", "tl", "br", "tr", "start", "end").map(at)
+  assert(tl.x < start.x and bl.x < start.x, message: "left scripts aren't left")
+  assert(tr.x >= end.x and br.x >= end.x, message: "right scripts aren't right")
+  assert(tl.y < bl.y, message: "left scripts are upside down")
+  assert(tr.y < br.y, message: "right scripts are upside down")
+}}
+#let primed = eval({primed:?}, mode: "math", scope: mitex-scope)
+#assert(primed.body.at("tr", default: none) != none, message: "the prime is lost")
+#let primed-sub = eval({primed_sub:?}, mode: "math", scope: mitex-scope).body
+#assert(primed-sub.at("tr", default: none) != none, message: "the prime beside `_a` is lost")
+#assert(primed-sub.at("br", default: none) != none, message: "`_a` beside the prime is lost")
+"#
+        );
+        if let Err(e) = compile_pdf(project(&source)) {
+            panic!("{converted}\n{}", e.message);
         }
     }
 
