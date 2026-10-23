@@ -11,9 +11,10 @@ use std::collections::{HashMap, HashSet, VecDeque};
 
 use crate::converter::document::native::ast::{Block, Document, Inline, inline_text};
 
-/// Footnote numbers, 1, 2, … in reading order: notes referenced from the main
-/// text first, then notes referenced only from inside earlier notes, each in
-/// the order its reference is met.
+/// Footnote numbers, 1, 2, … as typst numbers them: each note where its
+/// first reference is met, and the notes referenced inside it right after
+/// it, before the next reference outside (`A#footnote[B#footnote[C]]
+/// D#footnote[E]` numbers B, C, E 1, 2, 3).
 pub(crate) struct Footnotes {
     numbers: HashMap<String, usize>,
 }
@@ -27,29 +28,28 @@ impl Footnotes {
 
         let mut numbers = HashMap::new();
         let mut bodies: Vec<Vec<Block>> = Vec::new();
-        let mut number_refs = |refs: Vec<String>, bodies: &mut Vec<Vec<Block>>| {
-            for label in refs {
-                if numbers.contains_key(&label) {
-                    continue;
-                }
-                if let Some(body) = definitions.remove(&label) {
-                    numbers.insert(label, bodies.len() + 1);
-                    bodies.push(body);
-                }
-            }
-        };
-
         let mut refs = Vec::new();
         collect_refs(&doc.blocks, &mut refs);
-        number_refs(refs, &mut bodies);
-        // Worklist: each numbered note's body can number further notes,
-        // which are appended and visited in turn.
-        let mut next = 0;
-        while next < bodies.len() {
-            let mut refs = Vec::new();
-            collect_refs(&bodies[next], &mut refs);
-            number_refs(refs, &mut bodies);
-            next += 1;
+        // The references still to number, by the text they're in: the main
+        // text's, then each note's being numbered, inside the one before.
+        // A stack rather than recursion, so a long chain of notes inside
+        // notes can't run out of it.
+        let mut pending = vec![refs.into_iter()];
+        while let Some(refs) = pending.last_mut() {
+            let Some(label) = refs.next() else {
+                pending.pop();
+                continue;
+            };
+            if numbers.contains_key(&label) {
+                continue;
+            }
+            if let Some(body) = definitions.remove(&label) {
+                numbers.insert(label, bodies.len() + 1);
+                let mut inside = Vec::new();
+                collect_refs(&body, &mut inside);
+                bodies.push(body);
+                pending.push(inside.into_iter());
+            }
         }
         (Footnotes { numbers }, bodies)
     }
@@ -289,14 +289,16 @@ mod tests {
         assert_eq!(bodies.len(), 2);
     }
 
+    /// Regression for #75: typst numbers the notes inside a note right
+    /// after it.
     #[test]
-    fn notes_referenced_inside_notes_number_in_reading_order() {
+    fn notes_referenced_inside_notes_number_right_after_them() {
         // a's body refers to c, b's to d; definitions appear as b, a, c, d.
         let doc = markdown::read(
             "Refs[^a][^b].\n\n[^b]: B[^d].\n\n[^a]: A[^c].\n\n[^c]: C.\n\n[^d]: D.\n",
         );
         let (notes, bodies) = Footnotes::collect(&doc);
-        let order: Vec<_> = ["a", "b", "c", "d"]
+        let order: Vec<_> = ["a", "c", "b", "d"]
             .iter()
             .map(|l| notes.number(l))
             .collect();
@@ -343,7 +345,7 @@ mod tests {
         let (_, bodies) = Footnotes::collect(&doc);
         let mut parts = Vec::new();
         for_each_heading(&doc.blocks, &bodies, &mut |part, _| parts.push(part));
-        assert_eq!(parts, [0, 2, 3], "notes a, b, c are 1, 2, 3");
+        assert_eq!(parts, [0, 2, 3], "notes a, c, b are 1, 2, 3");
 
         let html = html::write(&doc);
         for expected in [
@@ -356,11 +358,11 @@ mod tests {
         let tex = latex::write(&doc);
         let section = "\\section[Same]{\\texorpdfstring{Same}{Same}}";
         for expected in [
-            format!("\\footnote{{\\label{{fn:2}}{section}\\label{{same-1}}}}"),
             // Note c is inside note a, whose text LaTeX sets it after.
             format!(
-                "\\footnotetext[2]{{\\phantomsection\\label{{fn:3}}{section}\\label{{same-2}}}}"
+                "\\footnotetext[2]{{\\phantomsection\\label{{fn:2}}{section}\\label{{same-1}}}}"
             ),
+            format!("\\footnote{{\\label{{fn:3}}{section}\\label{{same-2}}}}"),
             "\\subsection[Same]{\\texorpdfstring{Same}{Same}}\\label{same-3}".to_string(),
             format!("\n{section}\\label{{same}}\n"),
         ] {

@@ -1559,10 +1559,10 @@ mod tests {
         assert_eq!(
             tex,
             "A\\footnote{\\label{fn:1}Outer\\mbox{\\footnotemark[2]} and\\mbox{\\footnotemark[4]}.}\
-             \\footnotetext[2]{\\phantomsection\\label{fn:3}Inner note\\mbox{\\footnotemark[3]}.}\
-             \\footnotetext[3]{\\phantomsection\\label{fn:5}Level two.}\
+             \\footnotetext[2]{\\phantomsection\\label{fn:2}Inner note\\mbox{\\footnotemark[3]}.}\
+             \\footnotetext[3]{\\phantomsection\\label{fn:3}Level two.}\
              \\footnotetext[4]{\\phantomsection\\label{fn:4}Second.}\
-             \\setcounter{footnote}{4} B\\footnote{\\label{fn:2}Next.}."
+             \\setcounter{footnote}{4} B\\footnote{\\label{fn:5}Next.}."
         );
     }
 
@@ -1651,16 +1651,17 @@ mod tests {
         }
         md.push_str(&format!("[^c{last}]: Chain end.\n"));
         let tex = body(&md);
-        // The writer's own numbers follow reading order: the sibling's is
-        // 3, and chain note `i`'s is `i + 1` from the third on.
+        // The labels' numbers, from [`Footnotes`], put the whole chain
+        // right after the first note: chain note `i`'s is `i`, and the
+        // sibling's comes after the chain's end.
         let (deferred, sibling, end) = (last - 1, last, last + 1);
         for written in [
             format!("First\\mbox{{\\footnotemark[2]}} and\\mbox{{\\footnotemark[{sibling}]}}."),
             format!(
-                "\\footnotetext[{deferred}]{{\\phantomsection\\label{{fn:{last}}}Chain {deferred}\
+                "\\footnotetext[{deferred}]{{\\phantomsection\\label{{fn:{deferred}}}Chain {deferred}\
                  \\mbox{{\\footnotemark[{end}]}}.}}\
-                 \\footnotetext[{sibling}]{{\\phantomsection\\label{{fn:3}}Sibling.}}\
-                 \\footnotetext[{end}]{{\\phantomsection\\label{{fn:{end}}}Chain end.}}\
+                 \\footnotetext[{sibling}]{{\\phantomsection\\label{{fn:{end}}}Sibling.}}\
+                 \\footnotetext[{end}]{{\\phantomsection\\label{{fn:{last}}}Chain end.}}\
                  \\setcounter{{footnote}}{{{end}}}."
             ),
         ] {
