@@ -62,7 +62,7 @@ fn page(doc: &Document, body: &str) -> String {
     format!(
         "<!DOCTYPE html>\n<html{lang}>\n<head>\n<meta charset=\"utf-8\">\n\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
-         <title>{title}</title>\n{head}<style>\n{STYLE}</style>\n</head>\n<body>\n<main>\n{body}</main>\n</body>\n</html>\n"
+         <title>{title}</title>\n{head}<style>\n{STYLE}{MATH_STYLE}</style>\n</head>\n<body>\n<main>\n{body}</main>\n</body>\n</html>\n"
     )
 }
 
@@ -470,13 +470,14 @@ fn escape_attr(text: &str) -> String {
 }
 
 /// Readable defaults in both colour schemes; CJK text gets fonts and line
-/// breaking suited to it via the `lang` attribute.
+/// breaking suited to it via the `lang` attribute, and is justified, except
+/// in MathML's table cells, which keep their own alignment.
 const STYLE: &str = r#":root { color-scheme: light dark; --fg: #1d1d1f; --bg: #ffffff; --muted: #6e6e73; --rule: #d2d2d7; --code-bg: #f5f5f7; --link: #0a66c2; }
 @media (prefers-color-scheme: dark) { :root { --fg: #f5f5f7; --bg: #161618; --muted: #a1a1a6; --rule: #3a3a3c; --code-bg: #232326; --link: #6cb4ff; } }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--fg); font: 17px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", "Helvetica Neue", Arial, "PingFang SC", "Hiragino Sans", "Microsoft YaHei", "Noto Sans CJK SC", sans-serif; }
 main { max-width: 46rem; margin: 0 auto; padding: 3rem 1.25rem 4rem; }
-:lang(zh), :lang(ja), :lang(ko) { line-break: strict; text-align: justify; }
+:lang(zh):not(mtd), :lang(ja):not(mtd), :lang(ko):not(mtd) { line-break: strict; text-align: justify; }
 h1, h2, h3, h4, h5, h6 { line-height: 1.25; margin: 2em 0 0.6em; }
 h1 { font-size: 2em; margin-top: 0; }
 p, ul, ol, blockquote, pre, table, .math-display { margin: 0 0 1.1em; }
@@ -497,6 +498,35 @@ li.task input { margin: 0 0.4em 0 -1.3em; }
 .math-display { overflow-x: auto; overflow-y: hidden; padding: 0.2em 0; }
 .footnotes { font-size: 0.9em; color: var(--muted); }
 .footnote-back { text-decoration: none; }
+"#;
+
+/// Column alignment for the MathML of TeX environments, by the classes
+/// pulldown-latex gives their tables (adapted from its `styles.css`).
+/// MathML centres table cells, so without these rules `aligned` loses its
+/// right- and left-aligned columns at `&`, and `cases` and arrays their
+/// left or right ones. Shared by the HTML page and the EPUB stylesheet.
+///
+/// Right alignment takes `-webkit-right` (and Firefox's `-moz-right`):
+/// Chrome lays a cell's content out as blocks, which plain `right` doesn't
+/// move. Only the tables of `aligned` (and `align`, `split`, …) and `cases`
+/// lose MathML's cell padding, and get amsmath's 1em between `aligned`'s
+/// column pairs and before `cases`' conditions instead. pulldown-latex
+/// takes the padding off every cell, which would also close up the columns
+/// of MathML passed through from the source. The empty row a trailing `\\`
+/// leaves is hidden, as LaTeX ignores it.
+///
+/// Unlike pulldown-latex's, the selectors have no `m|` prefix: these rules
+/// follow others, where an `@namespace` declaring it would be ignored, and
+/// unprefixed selectors match MathML in HTML and XHTML alike. Left out:
+/// its fonts, equation numbers and array borders, its `multline` rules
+/// (which left-align every row), and its negation slash, which is drawn in
+/// black and would vanish in dark mode.
+pub(crate) const MATH_STYLE: &str = r#"mtable.menv-alignlike > mtr > mtd:nth-child(odd), mtable.menv-cells-right > mtr > mtd, mtd.cell-right { text-align: right; text-align: -webkit-right; text-align: -moz-right; }
+mtable.menv-alignlike > mtr > mtd:nth-child(even), mtable.menv-cells-left > mtr > mtd, mtd.cell-left { text-align: left; }
+mtable.menv-alignlike > mtr > mtd, mtable.menv-cases > mtr > mtd { padding-left: 0; padding-right: 0; }
+mtable.menv-align > mtr > mtd:nth-child(2n+3) { padding-left: 1em; }
+mtable.menv-cases > mtr > mtd:first-child { padding-right: 1em; }
+mtr:last-child > mtd:empty:only-child { display: none; }
 "#;
 
 #[cfg(test)]
@@ -654,6 +684,83 @@ mod tests {
         assert_eq!(
             body("```html\n<b>\n```\n"),
             "<pre><code class=\"language-html\">&lt;b&gt;</code></pre>\n"
+        );
+    }
+
+    /// `MATH_STYLE` aligns columns by the classes pulldown-latex gives the
+    /// tables of `aligned`, `cases` and arrays, so a pulldown-latex upgrade
+    /// that renames them fails here rather than in a browser.
+    #[test]
+    fn math_style_targets_classes_pulldown_latex_writes() {
+        let mathml: String = [
+            r"\begin{aligned} a &= b & c &= d \end{aligned}",
+            r"\begin{cases} a & b \end{cases}",
+            r"\begin{array}{lr} a & b \end{array}",
+            r"\begin{subarray}{r} a \end{subarray}",
+        ]
+        .into_iter()
+        .map(|tex| math(tex, DisplayMode::Block))
+        .collect();
+        let written: HashSet<&str> = mathml
+            .split("class=\"")
+            .skip(1)
+            .filter_map(|rest| rest.split_once('"'))
+            .flat_map(|(classes, _)| classes.split_whitespace())
+            .collect();
+        // The class names in `MATH_STYLE`'s selectors, one rule per line.
+        let styled: HashSet<&str> = MATH_STYLE
+            .lines()
+            .filter_map(|rule| rule.split_once('{'))
+            .flat_map(|(selectors, _)| selectors.split('.').skip(1))
+            .map(|rest| {
+                let end = rest
+                    .find(|c: char| c != '-' && !c.is_alphanumeric())
+                    .unwrap_or(rest.len());
+                &rest[..end]
+            })
+            .collect();
+        for class in [
+            "menv-alignlike",
+            "menv-align",
+            "menv-cases",
+            "menv-cells-left",
+            "menv-cells-right",
+            "cell-left",
+            "cell-right",
+        ] {
+            assert!(styled.contains(class), "{class} isn't styled");
+        }
+        for class in &styled {
+            assert!(written.contains(class), "{class} isn't in {mathml}");
+        }
+        // A trailing `\\` leaves an empty last row, which `MATH_STYLE` hides.
+        let trailing = math(r"\begin{pmatrix} a \\ \end{pmatrix}", DisplayMode::Block);
+        assert!(
+            trailing.contains("<mtr><mtd></mtd></mtr></mtable>"),
+            "{trailing}"
+        );
+    }
+
+    #[test]
+    fn pages_carry_the_math_style() {
+        let html = write(&markdown::read("Text.\n"));
+        assert!(html.contains(&format!("{MATH_STYLE}</style>")), "{html}");
+    }
+
+    /// CJK text is justified, but not in MathML's cells, where it would
+    /// override the centring of matrices, `gathered` and `\substack`.
+    #[test]
+    fn cjk_justification_skips_math_cells() {
+        let justify = STYLE
+            .lines()
+            .find(|rule| rule.contains("text-align: justify"))
+            .unwrap();
+        let (selectors, _) = justify.split_once('{').unwrap();
+        assert!(
+            selectors
+                .split(',')
+                .all(|s| s.trim().ends_with(":not(mtd)")),
+            "{justify}"
         );
     }
 }

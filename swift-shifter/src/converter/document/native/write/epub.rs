@@ -12,7 +12,7 @@ use base64::Engine;
 use sha2::{Digest, Sha256};
 use zip::write::SimpleFileOptions;
 
-use super::html::{NoteStyle, Writer, WrittenHeading};
+use super::html::{MATH_STYLE, NoteStyle, Writer, WrittenHeading};
 use super::xhtml::{self, Features, Hooks, escape_attr, escape_text};
 use crate::converter::document::native::ast::{Block, Document};
 use crate::converter::document::native::local_path;
@@ -114,7 +114,10 @@ pub fn write(doc: &Document, options: &Options) -> Result<Vec<u8>, String> {
     };
     files.push(("nav.xhtml".into(), nav_page(&book, &toc).into_bytes()));
     files.push(("toc.ncx".into(), ncx(&book, &toc).into_bytes()));
-    files.push(("style.css".into(), STYLE.as_bytes().to_vec()));
+    files.push((
+        "style.css".into(),
+        [STYLE, MATH_STYLE].concat().into_bytes(),
+    ));
     let opf = package(doc, &book, &chapters, &images, cover.as_deref());
     files.push(("content.opf".into(), opf.into_bytes()));
     for image in &images.files {
@@ -649,7 +652,8 @@ const CONTAINER: &str = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
 </container>\n";
 
 /// For e-readers: no colours or backgrounds (readers apply their own themes),
-/// sizes relative to the reader's font size, code that wraps.
+/// sizes relative to the reader's font size, code that wraps. `style.css`
+/// ends with the HTML writer's [`MATH_STYLE`], which aligns math columns.
 const STYLE: &str = r#"@namespace epub "http://www.idpf.org/2007/ops";
 body { margin: 0 4%; line-height: 1.5; text-align: justify; hyphens: auto; -webkit-hyphens: auto; }
 :lang(zh), :lang(ja), :lang(ko) { line-break: strict; hyphens: none; -webkit-hyphens: none; }
@@ -1025,5 +1029,16 @@ mod tests {
             assert!(!is_w3c_date(date), "{date}");
         }
         assert!(!is_w3c_date("May 2024") && !is_w3c_date("24-05-01"));
+    }
+
+    #[test]
+    fn math_keeps_the_classes_the_stylesheet_aligns_it_by() {
+        let book = book("$$\\begin{cases} a & b \\end{cases}$$\n", tmp().path());
+        assert!(book.text("OEBPS/style.css").ends_with(MATH_STYLE));
+        let ch1 = book.text("OEBPS/text/ch001.xhtml");
+        assert!(
+            ch1.contains("class=\"menv-cells-left menv-cases\""),
+            "{ch1}"
+        );
     }
 }
