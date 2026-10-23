@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::PathBuf;
 
-use super::{BlockWriter, Footnotes, indent_rest};
+use super::{BlockWriter, Footnotes, indent_rest, renderable_tex};
 use crate::converter::document::native::ast::{
     Align, Block, Document, Inline, List, Meta, RawFormat, Table, inline_text,
 };
@@ -386,7 +386,7 @@ impl Writer<'_> {
         };
         let expr = match self.options.target {
             _ if self.options.tex_fallback.contains(&index) => tex_code(),
-            Target::Pdf => match tex_to_typst(tex) {
+            Target::Pdf => match tex_to_typst(&renderable_tex(tex)) {
                 Ok(code) => format!(
                     "#math.equation(block: {block}, eval({marker}{}, mode: \"math\", scope: mitex-scope))",
                     typst_str(&code)
@@ -395,7 +395,7 @@ impl Writer<'_> {
             },
             Target::TypstFile => {
                 let func = if block { "mitex" } else { "mi" };
-                format!("#{func}({marker}{})", typst_str(tex))
+                format!("#{func}({marker}{})", typst_str(&renderable_tex(tex)))
             }
         };
         formulas.push(expr.clone());

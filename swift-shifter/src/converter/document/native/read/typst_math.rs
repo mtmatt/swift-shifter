@@ -28,14 +28,18 @@ use crate::converter::document::native::ast::{is_variation_selector, push_tex};
 use crate::converter::document::native::typst::library;
 
 /// TeX for a typst equation, which typst sets in display size on a line of
-/// its own (`$ x $`), and in text size in a line of text (`$x$`).
+/// its own (`$ x $`), and in text size in a line of text (`$x$`), where
+/// rows that start at the left have their last on the baseline, as
+/// `aligned`'s `[b]` sets them.
 pub fn equation(eq: ast::Equation) -> String {
-    let (size, align) = if eq.block() {
-        (MathSize::Display, Align::Center)
-    } else {
-        (MathSize::Text, Align::Start)
-    };
-    run(Expr::Math(eq.body()), size, align)
+    if eq.block() {
+        return run(Expr::Math(eq.body()), MathSize::Display, Align::Center);
+    }
+    let tex = run(Expr::Math(eq.body()), MathSize::Text, Align::Start);
+    match tex.strip_prefix("\\begin{aligned}&") {
+        Some(rows) => format!("\\begin{{aligned}}[b]&{rows}"),
+        None => tex,
+    }
 }
 
 /// How typst aligns the rows of a run that has no alignment points: at
@@ -1837,7 +1841,8 @@ mod tests {
 
     /// Typst centres rows without alignment points in an equation of its
     /// own and starts them at the left in one in text, where `aligned`
-    /// would put them in its right-aligned column.
+    /// would put them in its right-aligned column. There it sets their last
+    /// on the baseline, as `[b]` does.
     #[test]
     fn rows_without_alignment_points_are_centred_or_start_at_the_left() {
         assert_eq!(
@@ -1846,18 +1851,19 @@ mod tests {
         );
         assert_eq!(
             tex("a \\ b b b b"),
-            "\\begin{aligned}&{a } \\\\ &{ b b b b}\\end{aligned}"
+            "\\begin{aligned}[b]&{a } \\\\ &{ b b b b}\\end{aligned}"
         );
         // In braces, an operator that starts a row stays as typst sets it.
         assert_eq!(
             tex("a \\ -b \\ = c"),
-            "\\begin{aligned}&{a } \\\\ &{ -b } \\\\ &{ = c}\\end{aligned}"
+            "\\begin{aligned}[b]&{a } \\\\ &{ -b } \\\\ &{ = c}\\end{aligned}"
         );
         assert_eq!(
             tex("a \\ \\ b"),
-            "\\begin{aligned}&{a } \\\\ &{ } \\\\ &{ b}\\end{aligned}"
+            "\\begin{aligned}[b]&{a } \\\\ &{ } \\\\ &{ b}\\end{aligned}"
         );
-        // The rows of operands and arguments too.
+        // The rows of operands and arguments too, but those stay centred
+        // on the math axis.
         assert_eq!(
             tex(" sqrt(a \\ b) "),
             "\\sqrt{\\begin{gathered}a \\\\  b\\end{gathered}}"
@@ -2015,7 +2021,7 @@ mod tests {
         // Rows that start at the left start after an `&`.
         assert_eq!(
             tex("[0, 1[ \\ [a]"),
-            "\\begin{aligned}&{[0, 1[ } \\\\ &{ \\left[ a \\right]}\\end{aligned}"
+            "\\begin{aligned}[b]&{[0, 1[ } \\\\ &{ \\left[ a \\right]}\\end{aligned}"
         );
         // A bracket that stretches is `\left[`.
         assert_eq!(

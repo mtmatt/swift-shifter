@@ -1961,6 +1961,30 @@ mod tests {
         assert_eq!(html.matches("<mtable").count(), 4, "{html}");
     }
 
+    /// typst sets the rows of an equation in text with the last on the
+    /// baseline, as LaTeX does with `aligned`'s `[b]`, which pulldown-latex
+    /// and mitex don't take: the HTML and the PDF leave it out, not show it.
+    #[test]
+    fn typst_rows_in_text_take_aligned_b_where_tex_is_kept() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = "Rows $a \\ b$ in text.\n";
+        let rows = "\\begin{aligned}[b]&{a } \\\\ &{ b}\\end{aligned}";
+        let (_, tex) = converted(dir.path(), "rows.typ", source, "tex");
+        assert!(tex.contains(rows), "{tex}");
+        let (_, markdown) = converted(dir.path(), "rows.typ", source, "md");
+        assert!(markdown.contains(rows), "{markdown}");
+        let (_, html) = converted(dir.path(), "rows.typ", source, "html");
+        assert!(html.contains("<mtable"), "{html}");
+        assert!(!html.contains(">[</mo>"), "{html}");
+        // The annotation keeps it for the way back.
+        assert!(html.contains("aligned}[b]&amp;"), "{html}");
+        let typst_source = typeset_not_tex(&markdown);
+        assert!(typst_source.contains("aligned("), "{typst_source}");
+        assert!(!typst_source.contains("[b"), "{typst_source}");
+        let (_, typ) = converted(dir.path(), "rows.md", &markdown, "typst");
+        assert!(typ.contains("#mi(") && !typ.contains("[b"), "{typ}");
+    }
+
     /// Regression for #65 and #49: typed large operators take typst's
     /// limits in HTML and their names in LaTeX, and a string keeps the
     /// space typst sets beside it in both.
