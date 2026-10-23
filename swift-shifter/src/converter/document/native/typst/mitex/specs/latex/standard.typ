@@ -46,6 +46,14 @@
 #let _greedy-handle(fn) = (..args) => $fn(#args.pos().sum())$
 #let greedy-handle(alias, fn) = define-greedy-cmd(alias, handle: _greedy-handle(fn))
 #let limits-handle(alias, wrap) = define-cmd(1, alias: alias, handle: it => math.limits(wrap(it)))
+// `\mathrlap` and the like: no width, the content set from `shift` (0, -0.5
+// or -1) times its own width. It keeps its measured width inside, so it
+// doesn't break into lines.
+#let lap-handle(shift) = define-cmd(1, handle: it => context {
+  let body = $it$
+  let width = measure(body).width
+  box(width: 0pt, move(dx: shift * width, box(width: width, body)))
+})
 #let matrix-handle(delim: none, handle: none) = define-env(
   none,
   kind: "is-matrix",
@@ -924,7 +932,9 @@
   cosec: of-sym(math.op("cosec")),
   cotg: of-sym(math.op("cotg")),
   injlim: of-sym(math.op("inj\u{2009}lim", limits: true)),
-  mathclap: define-cmd(1, handle: it => box(width: 0pt, $it$)),
+  mathclap: lap-handle(-0.5),
+  mathllap: lap-handle(-1),
+  mathrlap: lap-handle(0),
   mathring: define-cmd(1, handle: it => math.circle(it)),
   nobreak: ignore-sym,
   noexpand: ignore-sym,

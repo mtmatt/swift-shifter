@@ -167,6 +167,12 @@ mod tests {
             r"\begin{pmatrix} a & b \\ c & d \end{pmatrix} \begin{bmatrix} 1 \\ 2 \end{bmatrix} \begin{vmatrix} a & b \\ c & d \end{vmatrix}",
             r"\begin{Bmatrix}a&b\\c&d\end{Bmatrix}",
             r"\begin{Vmatrix}a&b\\c&d\end{Vmatrix}",
+            r"\mathrlap{x}",
+            r"\mathllap{x}",
+            r"\mathclap{x}",
+            r"\rlap{y}",
+            r"\llap{y}",
+            r"\clap{y}",
             r"f(x) = \begin{cases} 1 & x > 0 \\ 0 & \text{otherwise} \end{cases}",
             r"\begin{aligned} a &= b + c \\ d &= e \end{aligned}",
             r"\begin{array}{cc} 1 & 2 \\ 3 & 4 \end{array}",
@@ -207,6 +213,36 @@ mod tests {
             failures.len(),
             failures.join("\n")
         );
+    }
+
+    /// `\mathrlap`, `\mathllap` and `\mathclap` take no width and set their
+    /// content after, before and across the point they're at, on one line:
+    /// checked by typst itself, from where markers around them are laid out.
+    #[test]
+    fn laps_take_no_width_and_overlap_their_side() {
+        let source = format!(
+            r#"#import "{VIRTUAL_DIR}/mitex/specs/mod.typ": mitex-scope
+#let x(name, side) = label(name + "-" + side)
+#for name in ("mathrlap", "mathllap", "mathclap") [
+  a#metadata(none)#x(name, "before")#(mitex-scope.at(name))[#metadata(none)#x(name, "start")$x + y + z$#metadata(none)#x(name, "end")]#metadata(none)#x(name, "after")b
+  #context {{
+    let at(side) = locate(x(name, side)).position()
+    let (before, start, end, after) = ("before", "start", "end", "after").map(at)
+    assert.eq(before, after, message: name + " takes width")
+    assert.eq(start.y, end.y, message: name + " breaks its line")
+    assert(end.x - start.x > 10pt, message: name + " is empty")
+    let middle = (start.x + end.x) / 2
+    let (lead, trail) = (before.x - start.x, end.x - before.x)
+    if name == "mathrlap" {{ assert.eq(start.x, before.x, message: name) }}
+    if name == "mathllap" {{ assert.eq(end.x, before.x, message: name) }}
+    if name == "mathclap" {{ assert(calc.abs((lead - trail).pt()) < 0.01, message: name) }}
+  }}
+]
+"#
+        );
+        if let Err(e) = compile_pdf(project(&source)) {
+            panic!("{}", e.message);
+        }
     }
 
     #[test]
