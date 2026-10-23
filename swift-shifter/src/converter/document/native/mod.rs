@@ -2637,6 +2637,153 @@ mod tests {
         );
     }
 
+    /// What epubcheck reports of our books that's accepted for now, by its
+    /// message ID, each with why. Each is to be fixed, or its reason made
+    /// for good (#79).
+    const EPUBCHECK_ACCEPTED: &[(&str, &str)] = &[];
+
+    /// Our books pass epubcheck (the EPUB 3 specification's checker): the
+    /// fixtures, a Typst source among them, and a book with display math,
+    /// an image converted to PNG, raw HTML, a note and a cover. Skipped
+    /// where epubcheck isn't installed.
+    #[test]
+    fn books_pass_epubcheck() {
+        let dir = tempfile::tempdir().unwrap();
+        image::RgbImage::new(8, 8)
+            .save(dir.path().join("cover.png"))
+            .unwrap();
+        image::RgbImage::new(8, 8)
+            .save(dir.path().join("chart.bmp"))
+            .unwrap();
+        let extras = dir.path().join("extras.md");
+        std::fs::write(
+            &extras,
+            "---\ntitle: Extras\ncover-image: cover.png\n---\n\n# Extras\n\n\
+             $$\\int_0^1 x^2\\,dx = \\frac{1}{3}$$\n\n\
+             A chart: ![chart](chart.bmp)\n\n\
+             <div class=\"note\"><p>Raw <b>HTML</b>.</p></div>\n\n\
+             <details><summary>More</summary>Hidden text.</details>\n\n\
+             A sentence with a note.[^n]\n\n[^n]: The note.\n",
+        )
+        .unwrap();
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docs");
+        let mut inputs: Vec<PathBuf> = std::fs::read_dir(&fixtures)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        inputs.sort();
+        inputs.push(extras);
+        // The books are written either way; only checking them needs Java.
+        let books: Vec<(String, PathBuf)> = inputs
+            .iter()
+            .map(|input| {
+                let name = input.file_stem().unwrap().to_string_lossy().into_owned();
+                let book = dir.path().join(format!("{name}.epub"));
+                convert(input, "epub", &book).unwrap_or_else(|e| panic!("{name}: {e}"));
+                (name, book)
+            })
+            .collect();
+        let Ok(epubcheck) = which::which("epubcheck") else {
+            // CI installs it, so there a pass means the books were checked.
+            assert!(
+                std::env::var("CI").as_deref() != Ok("true"),
+                "epubcheck isn't installed, and CI checks the books with it"
+            );
+            eprintln!("epubcheck isn't installed: skipped");
+            return;
+        };
+
+        let mut reported = Vec::new();
+        for (name, book) in &books {
+            let json = dir.path().join(format!("{name}.json"));
+            let run = std::process::Command::new(&epubcheck)
+                .arg(book)
+                .arg("--json")
+                .arg(&json)
+                .output()
+                .unwrap();
+            let json = std::fs::read(&json)
+                .unwrap_or_else(|_| panic!("{name}: {}", String::from_utf8_lossy(&run.stderr)));
+            let (messages, findings) =
+                epubcheck_findings(name, &json).unwrap_or_else(|e| panic!("{e}"));
+            println!("epubcheck: {name}: {messages} messages");
+            reported.extend(findings);
+        }
+        println!("epubcheck checked {} books", books.len());
+        assert!(reported.is_empty(), "{}", reported.join("\n"));
+    }
+
+    /// What epubcheck's JSON report on the book `name` says: how many
+    /// messages it holds, and its FATAL, ERROR and WARNING ones not
+    /// [`EPUBCHECK_ACCEPTED`]. A report with no checker or messages is no
+    /// report (epubcheck failed, or its format changed): an error, so a
+    /// check that read nothing can't pass.
+    fn epubcheck_findings(name: &str, json: &[u8]) -> Result<(usize, Vec<String>), String> {
+        let report: serde_json::Value =
+            serde_json::from_slice(json).map_err(|e| format!("{name}: not JSON: {e}"))?;
+        if report.get("checker").is_none() {
+            return Err(format!("{name}: the report names no checker"));
+        }
+        let messages = report["messages"]
+            .as_array()
+            .ok_or_else(|| format!("{name}: the report holds no messages"))?;
+        let findings = messages
+            .iter()
+            .filter(|message| {
+                let id = message["ID"].as_str().unwrap_or("");
+                let severity = message["severity"].as_str().unwrap_or("");
+                matches!(severity, "FATAL" | "ERROR" | "WARNING")
+                    && !EPUBCHECK_ACCEPTED
+                        .iter()
+                        .any(|(accepted, _)| *accepted == id)
+            })
+            .map(|message| {
+                let at = &message["locations"][0];
+                format!(
+                    "{name}: {} {} {} ({}:{})",
+                    message["severity"].as_str().unwrap_or(""),
+                    message["ID"].as_str().unwrap_or(""),
+                    message["message"].as_str().unwrap_or(""),
+                    at["path"].as_str().unwrap_or("?"),
+                    at["line"]
+                )
+            })
+            .collect();
+        Ok((messages.len(), findings))
+    }
+
+    #[test]
+    fn epubcheck_reports_must_name_their_checker_and_messages() {
+        for broken in ["not JSON", r#"{"messages": []}"#, r#"{"checker": {}}"#] {
+            assert!(
+                epubcheck_findings("b", broken.as_bytes()).is_err(),
+                "{broken}"
+            );
+        }
+        // FATAL, ERROR and WARNING count; USAGE and INFO don't.
+        let report = r#"{"checker": {}, "messages": [
+            {"ID": "PKG-008", "severity": "FATAL", "message": "Unreadable",
+             "locations": [{"path": "b.epub", "line": -1}]},
+            {"ID": "RSC-005", "severity": "ERROR", "message": "Bad",
+             "locations": [{"path": "a.xhtml", "line": 3}]},
+            {"ID": "OPF-085", "severity": "WARNING", "message": "Odd",
+             "locations": [{"path": "content.opf", "line": 2}]},
+            {"ID": "ACC-007", "severity": "USAGE", "message": "Hint", "locations": []},
+            {"ID": "INF-001", "severity": "INFO", "message": "Fine", "locations": []}
+        ]}"#;
+        assert_eq!(
+            epubcheck_findings("b", report.as_bytes()).unwrap(),
+            (
+                5,
+                vec![
+                    "b: FATAL PKG-008 Unreadable (b.epub:-1)".to_string(),
+                    "b: ERROR RSC-005 Bad (a.xhtml:3)".to_string(),
+                    "b: WARNING OPF-085 Odd (content.opf:2)".to_string(),
+                ]
+            )
+        );
+    }
+
     /// Asserts that tectonic (XeLaTeX) compiles `tex` to a PDF, and returns
     /// what it printed. Skipped, returning `None`, where tectonic isn't
     /// installed or can't download its bundle.
