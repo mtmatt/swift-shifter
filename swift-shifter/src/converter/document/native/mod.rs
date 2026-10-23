@@ -1375,6 +1375,18 @@ mod tests {
         assert!(fallback.is_empty(), "{fallback:?}");
     }
 
+    #[test]
+    fn every_delimited_matrix_is_typeset_not_tex() {
+        let doc = read::markdown::read(
+            "$$\\begin{Bmatrix}a&b\\\\c&d\\end{Bmatrix}$$\n\n\
+             $$\\begin{Vmatrix}a&b\\\\c&d\\end{Vmatrix}$$\n\n\
+             $$\\begin{pmatrix}a\\end{pmatrix} \\begin{bmatrix}a\\end{bmatrix} \
+             \\begin{vmatrix}a\\end{vmatrix}$$\n",
+        );
+        let (_, fallback) = typeset_with_fallback(&doc, &std::env::temp_dir()).unwrap();
+        assert!(fallback.is_empty(), "{fallback:?}");
+    }
+
     fn media_box_size(pdf: &[u8]) -> (f32, f32) {
         let doc = lopdf::Document::load_mem(pdf).unwrap();
         let (_, page_id) = doc.get_pages().into_iter().next().unwrap();

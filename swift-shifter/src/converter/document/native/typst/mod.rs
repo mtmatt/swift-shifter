@@ -165,6 +165,8 @@ mod tests {
             r"\left( \frac{a}{b} \right) \left[ x \right] \left\{ y \right\} \left| z \right| \langle u \rangle",
             r"\begin{matrix} a & b \\ c & d \end{matrix}",
             r"\begin{pmatrix} a & b \\ c & d \end{pmatrix} \begin{bmatrix} 1 \\ 2 \end{bmatrix} \begin{vmatrix} a & b \\ c & d \end{vmatrix}",
+            r"\begin{Bmatrix}a&b\\c&d\end{Bmatrix}",
+            r"\begin{Vmatrix}a&b\\c&d\end{Vmatrix}",
             r"f(x) = \begin{cases} 1 & x > 0 \\ 0 & \text{otherwise} \end{cases}",
             r"\begin{aligned} a &= b + c \\ d &= e \end{aligned}",
             r"\begin{array}{cc} 1 & 2 \\ 3 & 4 \end{array}",
