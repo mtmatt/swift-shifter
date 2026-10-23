@@ -32,6 +32,12 @@ const DROPPED: &[&str] = &[
     "base", "meta", "link", "source", "title",
 ];
 
+/// The [`DROPPED`] elements that are content a reader would miss: scripts
+/// and what plays or embeds something. The rest style, set up the page,
+/// stand in for a script (`<noscript>`) or belong to one of these
+/// (`<source>`).
+const DROPPED_CONTENT: &[&str] = &["script", "iframe", "object", "embed", "video", "audio"];
+
 /// Attributes left out: `srcset` names images we don't package.
 const DROPPED_ATTRS: &[&str] = &["srcset"];
 
@@ -68,16 +74,18 @@ pub(crate) fn ids(html: &Html) -> Vec<String> {
 }
 
 /// The fragment's content as XHTML for EPUB, without the elements EPUB
-/// content leaves out ([`DROPPED`]), and the features it uses.
-pub(crate) fn serialize(html: &Html, hooks: &mut Hooks) -> (String, Features) {
+/// content leaves out ([`DROPPED`]), the features it uses, and how many of
+/// those it left out were content ([`DROPPED_CONTENT`]).
+pub(crate) fn serialize(html: &Html, hooks: &mut Hooks) -> (String, Features, usize) {
     let mut writer = Serializer {
         out: String::new(),
         features: Features::default(),
         hooks,
         dropped: DROPPED,
+        content_dropped: 0,
     };
     writer.children(html.root_element(), XHTML_NS);
-    (writer.out, writer.features)
+    (writer.out, writer.features, writer.content_dropped)
 }
 
 /// The HTML `fragment` with its image and link URLs rewritten by `hooks`,
@@ -90,6 +98,7 @@ pub(crate) fn rewrite_urls(fragment: &str, hooks: &mut Hooks) -> String {
         features: Features::default(),
         hooks,
         dropped: &[],
+        content_dropped: 0,
     };
     writer.children(parse(fragment).root_element(), XHTML_NS);
     writer.out
@@ -101,6 +110,8 @@ struct Serializer<'h, 'a> {
     hooks: &'h mut Hooks<'a>,
     /// The elements left out, with their content.
     dropped: &'static [&'static str],
+    /// How many of those left out were [`DROPPED_CONTENT`].
+    content_dropped: usize,
 }
 
 impl Serializer<'_, '_> {
@@ -123,6 +134,9 @@ impl Serializer<'_, '_> {
         let name = element.name();
         let ns: &str = &element.name.ns;
         if ns == XHTML_NS && self.dropped.contains(&name) {
+            if DROPPED_CONTENT.contains(&name) {
+                self.content_dropped += 1;
+            }
             return;
         }
         // `<o:p>` from Word and the like: no XML name we could write, so
@@ -286,7 +300,8 @@ mod tests {
             image: &mut image,
             link: &link,
         };
-        serialize(&parse(html), &mut hooks)
+        let (xhtml, features, _) = serialize(&parse(html), &mut hooks);
+        (xhtml, features)
     }
 
     fn assert_well_formed(xhtml: &str) {

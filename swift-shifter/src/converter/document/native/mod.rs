@@ -223,12 +223,21 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
             }
             pdf
         }
-        "epub" => write::epub::write(
-            &doc,
-            &write::epub::Options {
+        "epub" => {
+            let options = write::epub::Options {
                 base_dir: base_dir.clone(),
-            },
-        )?,
+            };
+            let (epub, dropped) = write::epub::write_reporting(&doc, &options)?;
+            if dropped.elements > 0 {
+                warnings.push(Warning {
+                    one: "script or embed was left out of the book",
+                    many: "scripts and embeds were left out of the book",
+                    count: dropped.elements,
+                    line: None,
+                });
+            }
+            epub
+        }
         other => return Err(format!("The native converter can't write {other}")),
     };
     std::fs::write(out, rendered).map_err(|e| format!("Failed to write {}: {e}", out.display()))?;
@@ -1898,6 +1907,31 @@ mod tests {
             "{written}"
         );
         assert_tectonic_compiles(&tex);
+    }
+
+    /// Scripts and embeds a book leaves out count, one each; what only
+    /// styles or stands in for a script doesn't.
+    #[test]
+    fn content_left_out_of_books_is_counted() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("embeds.md");
+        std::fs::write(
+            &input,
+            "Text.\n\n<script>alert(1)</script>\n\n\
+             <iframe src=\"https://e.org/x\"></iframe>\n\n\
+             <p><video src=\"a.mp4\"><source src=\"a.webm\"></video> \
+             <audio src=\"a.mp3\"></audio> <object data=\"a.swf\"></object> \
+             <embed src=\"a.swf\"></p>\n\n\
+             <style>p { color: red }</style>\n\n<template><p>T</p></template>\n\n\
+             <noscript>No scripts.</noscript>\n\n<link rel=\"stylesheet\" href=\"a.css\">\n",
+        )
+        .unwrap();
+        let warnings = convert(&input, "epub", &input.with_extension("epub")).unwrap();
+        let messages: Vec<String> = warnings.iter().map(Warning::message).collect();
+        assert_eq!(messages, ["6 scripts and embeds were left out of the book"]);
+        // HTML keeps them all.
+        let html = convert(&input, "html", &input.with_extension("html")).unwrap();
+        assert_eq!(html, []);
     }
 
     #[test]

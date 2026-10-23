@@ -24,8 +24,21 @@ pub struct Options {
 
 const OPS_NS: &str = "http://www.idpf.org/2007/ops";
 
+/// What a book left out of its document.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Dropped {
+    /// Scripts and what plays or embeds something, which EPUB content
+    /// leaves out (see [`xhtml::serialize`]).
+    pub elements: usize,
+}
+
 /// Write `doc` as an EPUB 3 file.
 pub fn write(doc: &Document, options: &Options) -> Result<Vec<u8>, String> {
+    write_reporting(doc, options).map(|(epub, _)| epub)
+}
+
+/// [`write`], also returning what the book left out.
+pub fn write_reporting(doc: &Document, options: &Options) -> Result<(Vec<u8>, Dropped), String> {
     let title = doc
         .meta
         .title
@@ -62,6 +75,7 @@ pub fn write(doc: &Document, options: &Options) -> Result<Vec<u8>, String> {
     }
 
     let mut images = Images::new(&options.base_dir);
+    let mut dropped = Dropped::default();
     let chapters: Vec<Chapter> = rendered
         .into_iter()
         .map(|chapter| {
@@ -71,7 +85,8 @@ pub fn write(doc: &Document, options: &Options) -> Result<Vec<u8>, String> {
                 image: &mut image,
                 link: &link,
             };
-            let (body, features) = xhtml::serialize(&chapter.html, &mut hooks);
+            let (body, features, elements_dropped) = xhtml::serialize(&chapter.html, &mut hooks);
+            dropped.elements += elements_dropped;
             Chapter {
                 file: chapter.file,
                 headings: chapter.headings,
@@ -123,7 +138,7 @@ pub fn write(doc: &Document, options: &Options) -> Result<Vec<u8>, String> {
     for image in &images.files {
         files.push((image.href.clone(), image.data.clone()));
     }
-    zip_package(&files)
+    Ok((zip_package(&files)?, dropped))
 }
 
 /// The book-wide values every package file repeats.
