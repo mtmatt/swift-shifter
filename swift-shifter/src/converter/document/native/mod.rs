@@ -1894,7 +1894,7 @@ mod tests {
         assert!(tex.contains("{[}Gone{]}"), "{tex}");
         // What the HTML reader keeps of other elements stays.
         assert!(tex.contains("The video's fallback text."), "{tex}");
-        assert_tectonic_compiles(&out);
+        assert_latex_compiles(&out);
     }
 
     /// Our LaTeX compiles, tricky input included: brackets after `\item`
@@ -1925,7 +1925,7 @@ mod tests {
             !written.contains("{pic.png}") && !written.contains("logo.svg"),
             "{written}"
         );
-        assert_tectonic_compiles(&tex);
+        assert_latex_compiles(&tex);
     }
 
     /// Images a book can't package and links that can't work in it count;
@@ -2041,7 +2041,7 @@ mod tests {
         .unwrap();
         let tex = dir.path().join("deep.tex");
         convert(&md, "tex", &tex).unwrap();
-        assert_tectonic_compiles(&tex);
+        assert_latex_compiles(&tex);
     }
 
     /// Regression for #67: however deep quotes nest, the line keeps room
@@ -2093,7 +2093,7 @@ mod tests {
             "{written}"
         );
         std::fs::write(&tex, written).unwrap();
-        assert_tectonic_compiles(&tex);
+        assert_latex_compiles(&tex);
     }
 
     /// The LaTeX of typst math compiles: `:=`, symbols typed as Unicode
@@ -2135,7 +2135,7 @@ mod tests {
         .unwrap();
         let tex = dir.path().join("math.tex");
         convert(&typ, "tex", &tex).unwrap();
-        assert_tectonic_compiles(&tex);
+        assert_latex_compiles(&tex);
     }
 
     /// Math symbols typed as Unicode get TeX names, which LaTeX's math
@@ -2163,7 +2163,7 @@ mod tests {
         let written = std::fs::read_to_string(&tex).unwrap();
         let body = &written[written.find("\\begin{document}").unwrap()..];
         assert!(body.is_ascii(), "{body}");
-        if let Some(log) = assert_tectonic_compiles(&tex) {
+        if let Some(log) = assert_latex_compiles(&tex) {
             assert!(!log.contains("Missing character"), "{log}");
         }
     }
@@ -2189,7 +2189,7 @@ mod tests {
         std::fs::write(&md, "$a \\coloneqq b \\eqqcolon c \\Coloneqq d$\n").unwrap();
         let tex = dir.path().join("colon.tex");
         convert(&md, "tex", &tex).unwrap();
-        assert_tectonic_compiles(&tex);
+        assert_latex_compiles(&tex);
     }
 
     /// An equation with nothing in it (only an alignment point) writes no
@@ -2218,14 +2218,14 @@ mod tests {
         let (tex, text) = converted(dir.path(), "colon.typ", "Colon $a := b$.\n", "tex");
         assert!(text.contains("Colon \\(a \\coloneqq b\\)."), "{text}");
         assert!(text.contains(definition), "{text}");
-        assert_tectonic_compiles(&tex);
+        assert_latex_compiles(&tex);
 
         let source = "Define $\\newcommand{\\coloneqq}{\\mathrel{:=}} a \\coloneqq b$, \
                       then $c \\coloneqq d$ and $e ≔ f$.\n";
         let (tex, text) = converted(dir.path(), "own.md", source, "tex");
         assert!(text.contains(definition), "{text}");
         assert!(text.contains("\\(\\renewcommand{\\coloneqq}"), "{text}");
-        assert_tectonic_compiles(&tex);
+        assert_latex_compiles(&tex);
 
         let (_, text) = converted(dir.path(), "none.md", "No colon $a = b$.\n", "tex");
         assert!(!text.contains("coloneqq"), "{text}");
@@ -2379,7 +2379,7 @@ mod tests {
         ] {
             assert!(text.contains(named), "{named} in {text}");
         }
-        assert_tectonic_compiles(&tex);
+        assert_latex_compiles(&tex);
     }
 
     /// Regression for #65: degrees, primes and script characters with a
@@ -2390,11 +2390,11 @@ mod tests {
         let source = "Raised $x°^2$, $a²^3$, $x°_1$ and $y′^2$.\n";
         let (tex, text) = converted(dir.path(), "deg.typ", source, "tex");
         assert!(text.contains("\\(x{{}^{\\circ}}^{2}\\)"), "{text}");
-        assert_tectonic_compiles(&tex);
+        assert_latex_compiles(&tex);
         let source = "Raised $x°^2$ $a²^3$ $b³^2$ $c¹^2$ $d⁰^2$ $e⁴^2$ $f⁹^2$ $g⁺^2$ \
                       $h⁻^2$ $i⁼^2$ $j⁽^2$ $k⁾^2$ $l ⁱ^2$ $m°'$ $n₁^2$.\n";
         let (tex, _) = converted(dir.path(), "deg-md.md", source, "tex");
-        assert_tectonic_compiles(&tex);
+        assert_latex_compiles(&tex);
     }
 
     /// Regression for #65: a text argument without braces and `\verb`'s
@@ -2415,7 +2415,7 @@ mod tests {
         ] {
             assert!(text.contains(written), "{written} in {text}");
         }
-        assert_tectonic_compiles(&tex);
+        assert_latex_compiles(&tex);
     }
 
     /// Regression for #65: amssymb's negated relations, and symbols and
@@ -2442,7 +2442,7 @@ mod tests {
                     && !body.contains("\\operatorname"),
                 "{body}"
             );
-            if let Some(log) = assert_tectonic_compiles(&tex) {
+            if let Some(log) = assert_latex_compiles(&tex) {
                 assert!(!log.contains("Missing character"), "{log}");
             }
         }
@@ -2462,7 +2462,7 @@ mod tests {
             text.contains("\\intertext{where $c \\coloneqq d$}"),
             "{text}"
         );
-        assert_tectonic_compiles(&tex);
+        assert_latex_compiles(&tex);
 
         // The formula's own, and one it has made before, hold in it.
         let source = "$\\providecommand{\\coloneqq}{\\mathrel{\\equiv}} a \\coloneqq b$, \
@@ -2475,7 +2475,7 @@ mod tests {
                 && text.contains("\\providecommand{\\coloneqq}{=}"),
             "{text}"
         );
-        assert_tectonic_compiles(&tex);
+        assert_latex_compiles(&tex);
         if let Some(shown) = pdf_text(&tex.with_extension("pdf")) {
             let shown: String = shown.split_whitespace().collect();
             assert!(shown.contains("a≡b,c:=dande∼f"), "{shown}");
@@ -2501,7 +2501,7 @@ mod tests {
             ) && text.contains("\\section[Plain \\texorpdfstring{\\(c \\coloneqq d\\)}"),
             "{text}"
         );
-        assert_tectonic_compiles(&tex);
+        assert_latex_compiles(&tex);
     }
 
     /// The text of `pdf`, as pdftotext reads it. `None` where pdftotext
@@ -2787,7 +2787,7 @@ mod tests {
     /// Asserts that tectonic (XeLaTeX) compiles `tex` to a PDF, and returns
     /// what it printed. Skipped, returning `None`, where tectonic isn't
     /// installed or can't download its bundle.
-    fn assert_tectonic_compiles(tex: &Path) -> Option<String> {
+    fn assert_latex_compiles(tex: &Path) -> Option<String> {
         let Ok(tectonic) = which::which("tectonic") else {
             eprintln!("skipping: tectonic not found");
             return None;
@@ -2854,7 +2854,7 @@ Ref[^code].\n\n\
                       [^4]: Next.\n[^5]: Level two.\n[^6]: Cell[^8].\n[^7]: Later cell.\n\
                       [^8]: In cell.\n";
         let (tex, text) = converted(dir.path(), "nested.md", source, "tex");
-        assert_tectonic_compiles(&tex);
+        assert_latex_compiles(&tex);
         if let Some(shown) = pdf_text(&tex.with_extension("pdf")) {
             let shown: String = shown.split_whitespace().collect();
             for note in [
@@ -2897,7 +2897,7 @@ Ref[^code].\n\n\
             text.contains("\\sout{strike\\mbox{\\footnotemark[1]}}\\footnotetext[1]"),
             "{text}"
         );
-        assert_tectonic_compiles(&tex);
+        assert_latex_compiles(&tex);
         if let Some(shown) = pdf_text(&tex.with_extension("pdf")) {
             let shown: String = shown.split_whitespace().collect();
             // The texts in number order, the head's before the body's.
@@ -2916,7 +2916,7 @@ Ref[^code].\n\n\
         let source = "The “raw” data — and “draft” ones… it’s a ‘test’.\n\n\
                       He said “你好” to me, and `say “hi” — now`.\n\n他说“你好”——“好”。\n";
         let (tex, _) = converted(dir.path(), "mixed.md", source, "tex");
-        assert_tectonic_compiles(&tex);
+        assert_latex_compiles(&tex);
         if let Some(shown) = pdf_text(&tex.with_extension("pdf")) {
             for line in [
                 "The “raw” data — and “draft” ones… it’s a ‘test’.",
