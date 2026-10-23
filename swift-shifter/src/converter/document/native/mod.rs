@@ -2637,6 +2637,92 @@ mod tests {
         );
     }
 
+    /// What epubcheck reports of our books that's accepted for now, by its
+    /// message ID, each with why. Each is to be fixed, or its reason made
+    /// for good (#79).
+    const EPUBCHECK_ACCEPTED: &[(&str, &str)] = &[];
+
+    /// Our books pass epubcheck (the EPUB 3 specification's checker): the
+    /// fixtures, a Typst source among them, and a book with display math,
+    /// an image converted to PNG, raw HTML, a note and a cover. Skipped
+    /// where epubcheck isn't installed.
+    #[test]
+    fn books_pass_epubcheck() {
+        let dir = tempfile::tempdir().unwrap();
+        image::RgbImage::new(8, 8)
+            .save(dir.path().join("cover.png"))
+            .unwrap();
+        image::RgbImage::new(8, 8)
+            .save(dir.path().join("chart.bmp"))
+            .unwrap();
+        let extras = dir.path().join("extras.md");
+        std::fs::write(
+            &extras,
+            "---\ntitle: Extras\ncover-image: cover.png\n---\n\n# Extras\n\n\
+             $$\\int_0^1 x^2\\,dx = \\frac{1}{3}$$\n\n\
+             A chart: ![chart](chart.bmp)\n\n\
+             <div class=\"note\"><p>Raw <b>HTML</b>.</p></div>\n\n\
+             <details><summary>More</summary>Hidden text.</details>\n\n\
+             A sentence with a note.[^n]\n\n[^n]: The note.\n",
+        )
+        .unwrap();
+        let fixtures = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docs");
+        let mut inputs: Vec<PathBuf> = std::fs::read_dir(&fixtures)
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect();
+        inputs.sort();
+        inputs.push(extras);
+        // The books are written either way; only checking them needs Java.
+        let books: Vec<(String, PathBuf)> = inputs
+            .iter()
+            .map(|input| {
+                let name = input.file_stem().unwrap().to_string_lossy().into_owned();
+                let book = dir.path().join(format!("{name}.epub"));
+                convert(input, "epub", &book).unwrap_or_else(|e| panic!("{name}: {e}"));
+                (name, book)
+            })
+            .collect();
+        let Ok(epubcheck) = which::which("epubcheck") else {
+            eprintln!("epubcheck isn't installed: skipped");
+            return;
+        };
+
+        let mut reported = Vec::new();
+        for (name, book) in &books {
+            let json = dir.path().join(format!("{name}.json"));
+            let run = std::process::Command::new(&epubcheck)
+                .arg(book)
+                .arg("--json")
+                .arg(&json)
+                .output()
+                .unwrap();
+            let report: serde_json::Value = std::fs::read(&json)
+                .ok()
+                .and_then(|bytes| serde_json::from_slice(&bytes).ok())
+                .unwrap_or_else(|| panic!("{name}: {}", String::from_utf8_lossy(&run.stderr)));
+            for message in report["messages"].as_array().into_iter().flatten() {
+                let id = message["ID"].as_str().unwrap_or("");
+                let severity = message["severity"].as_str().unwrap_or("");
+                if !matches!(severity, "FATAL" | "ERROR" | "WARNING")
+                    || EPUBCHECK_ACCEPTED
+                        .iter()
+                        .any(|(accepted, _)| *accepted == id)
+                {
+                    continue;
+                }
+                let at = &message["locations"][0];
+                reported.push(format!(
+                    "{name}: {severity} {id} {} ({}:{})",
+                    message["message"].as_str().unwrap_or(""),
+                    at["path"].as_str().unwrap_or("?"),
+                    at["line"]
+                ));
+            }
+        }
+        assert!(reported.is_empty(), "{}", reported.join("\n"));
+    }
+
     /// Asserts that tectonic (XeLaTeX) compiles `tex` to a PDF, and returns
     /// what it printed. Skipped, returning `None`, where tectonic isn't
     /// installed or can't download its bundle.

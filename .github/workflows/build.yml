@@ -42,7 +42,8 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
-            nasm
+            nasm \
+            epubcheck
 
       - name: Install Fedora system dependencies
         if: matrix.name == 'Fedora'
@@ -117,6 +118,13 @@ jobs:
       - name: Clippy
         working-directory: swift-shifter
         run: cargo clippy --all-targets -- -D warnings
+
+      # The EPUB writer's books against the EPUB 3 specification (#79).
+      # Only this test: the suite as a whole isn't run in CI.
+      - name: Check EPUB output with epubcheck
+        if: matrix.name == 'Ubuntu'
+        working-directory: swift-shifter
+        run: cargo test --bin swift-shifter books_pass_epubcheck -- --nocapture
 
       - name: Build Tauri app (compile check, no bundle)
         run: npm run tauri -- build --no-bundle
