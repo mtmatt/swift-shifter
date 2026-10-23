@@ -1958,7 +1958,11 @@ mod tests {
                       $op(a \\ b)$.\n";
         let (_, html) = converted(dir.path(), "rows.typ", source, "html");
         assert!(!html.contains("<code class=\"math\">"), "{html}");
-        assert_eq!(html.matches("<mtable").count(), 4, "{html}");
+        // Rows in text that end on the baseline have a second table, of
+        // those above their last.
+        let tables = html.matches("<mtable").count();
+        let on_baseline = html.matches("<mover accent=\"true\" class=\"last-row-on-baseline\">");
+        assert_eq!(tables - on_baseline.count(), 4, "{html}");
     }
 
     /// typst sets the rows of an equation in text with the last on the
