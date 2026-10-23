@@ -202,7 +202,18 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
         "html" => write::html::write(&doc).into_bytes(),
         "typst" => typst_file_source(&doc, &base_dir).into_bytes(),
         "tex" => write::latex::write(&doc).into_bytes(),
-        "pdf" => typeset(&doc, &base_dir)?,
+        "pdf" => {
+            let (pdf, shown_as_tex) = typeset(&doc, &base_dir)?;
+            if shown_as_tex > 0 {
+                warnings.push(Warning {
+                    one: "formula couldn't be typeset and is shown as TeX",
+                    many: "formulas couldn't be typeset and are shown as TeX",
+                    count: shown_as_tex,
+                    line: None,
+                });
+            }
+            pdf
+        }
         "epub" => write::epub::write(
             &doc,
             &write::epub::Options {
@@ -231,16 +242,18 @@ fn typst_file_source(doc: &Document, base_dir: &Path) -> String {
 
 /// Typeset `doc` to PDF. Formulas the compiler rejects are shown as TeX
 /// instead and the document is typeset again, so one odd formula doesn't
-/// fail the whole conversion.
-pub fn typeset(doc: &Document, base_dir: &Path) -> Result<Vec<u8>, String> {
-    typeset_with_fallback(doc, base_dir).map(|(pdf, _)| pdf)
+/// fail the whole conversion. Also returns how many formulas it shows as
+/// TeX: those, and those mitex can't convert.
+pub fn typeset(doc: &Document, base_dir: &Path) -> Result<(Vec<u8>, usize), String> {
+    typeset_with_fallback(doc, base_dir).map(|(pdf, _, shown_as_tex)| (pdf, shown_as_tex))
 }
 
-/// [`typeset`], also returning the indices of the formulas shown as TeX.
+/// [`typeset`], also returning the indices of the formulas the compiler
+/// rejected.
 fn typeset_with_fallback(
     doc: &Document,
     base_dir: &Path,
-) -> Result<(Vec<u8>, HashSet<usize>), String> {
+) -> Result<(Vec<u8>, HashSet<usize>, usize), String> {
     let lang = doc.effective_lang();
     let fonts = typst::text_fonts(lang.as_deref());
     if ast::contains_cjk(&doc.plain_text()) && !typst::has_cjk_font(&fonts) {
@@ -256,6 +269,13 @@ fn typeset_with_fallback(
             tex_fallback: &fallback,
         };
         let output = write::typst::write(doc, &options);
+        // The writer shows a formula as TeX in `#raw(…)`, whether it's
+        // one of `fallback` or mitex couldn't convert it.
+        let shown_as_tex = output
+            .formulas
+            .iter()
+            .filter(|range| output.source[(*range).clone()].starts_with("#raw("))
+            .count();
         let project = typst::Project {
             main: output.source,
             main_name: None,
@@ -264,7 +284,7 @@ fn typeset_with_fallback(
             allow_packages: false,
         };
         let error = match typst::compile_pdf(project) {
-            Ok(pdf) => return Ok((pdf, fallback)),
+            Ok(pdf) => return Ok((pdf, fallback, shown_as_tex)),
             Err(error) => error,
         };
         let failed: Vec<usize> = output
@@ -1417,7 +1437,7 @@ mod tests {
         let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/docs");
         for (name, doc, _) in docs {
             let pdf = match typeset(&doc, &base) {
-                Ok(pdf) => pdf,
+                Ok((pdf, _)) => pdf,
                 // A machine without CJK fonts can't typeset the CJK fixture,
                 // and says so.
                 Err(e) if name == "cjk.md" && e.contains("no font for it is installed") => continue,
@@ -1430,13 +1450,41 @@ mod tests {
     #[test]
     fn formulas_the_compiler_rejects_fall_back_to_tex() {
         let doc = read::markdown::read("Good $x^2$, odd $\\frac{a}$, good $y_1$ and fine text.\n");
-        let (pdf, fallback) = typeset_with_fallback(&doc, &std::env::temp_dir()).unwrap();
+        let (pdf, fallback, _) = typeset_with_fallback(&doc, &std::env::temp_dir()).unwrap();
         assert_eq!(page_count(&pdf), 1);
         // mitex turns `\frac{a}` into `frac(a)`, which typst rejects.
         assert_eq!(fallback, HashSet::from([1]), "only the odd formula");
         let doc = read::markdown::read("All good: $x^2$ and $$\\frac{a}{b}$$\n");
-        let (_, fallback) = typeset_with_fallback(&doc, &std::env::temp_dir()).unwrap();
+        let (_, fallback, _) = typeset_with_fallback(&doc, &std::env::temp_dir()).unwrap();
         assert!(fallback.is_empty());
+    }
+
+    /// Formulas the compiler rejects and those mitex can't convert both
+    /// show as TeX in the PDF; each counts.
+    #[test]
+    fn formulas_shown_as_tex_are_counted() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("math.md");
+        let pdf = |markdown: &str| {
+            std::fs::write(&input, markdown).unwrap();
+            let warnings = convert(&input, "pdf", &input.with_extension("pdf")).unwrap();
+            warnings.iter().map(Warning::message).collect::<Vec<_>>()
+        };
+        // `\frac{a}` the compiler rejects; mitex can't convert `\sideset`
+        // once the `\mathclap` its macros use is redefined.
+        assert_eq!(
+            pdf("Good $x^2$, rejected $\\frac{a}$, and \
+                 $\\providecommand{\\mathclap}[1]{#1} \\sideset{_a}{_b}\\sum$.\n"),
+            ["2 formulas couldn't be typeset and are shown as TeX"]
+        );
+        assert_eq!(
+            pdf("Rejected $\\frac{a}$.\n"),
+            ["1 formula couldn't be typeset and is shown as TeX"]
+        );
+        assert_eq!(
+            pdf("All good: $x^2$ and $$\\frac{a}{b}$$\n"),
+            [] as [String; 0]
+        );
     }
 
     /// The typst source for `markdown`, after checking that each of its
@@ -1454,7 +1502,7 @@ mod tests {
         };
         let source = write::typst::write(&doc, &options).source;
         assert!(!source.contains("#raw("), "{source}");
-        let (_, fallback) = typeset_with_fallback(&doc, &std::env::temp_dir()).unwrap();
+        let (_, fallback, _) = typeset_with_fallback(&doc, &std::env::temp_dir()).unwrap();
         assert!(fallback.is_empty(), "{fallback:?}");
         source
     }
@@ -1594,7 +1642,7 @@ mod tests {
         let main = dir.path().join("main.typ");
         std::fs::write(&main, &source).unwrap();
         let typst_file_pdf = typst_file_to_pdf(&main).unwrap();
-        let (pdf, _) = typeset_with_fallback(&doc, dir.path()).unwrap();
+        let (pdf, _, _) = typeset_with_fallback(&doc, dir.path()).unwrap();
         for pdf in [typst_file_pdf, pdf] {
             let mut links = pdf_links(&pdf);
             links.sort();
