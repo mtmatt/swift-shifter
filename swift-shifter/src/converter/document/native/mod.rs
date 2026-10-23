@@ -156,9 +156,10 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
         .is_some_and(|out_dir| !same_dir(&base_dir, out_dir));
     // Raw HTML elements shown as text alone.
     let mut raw_html_lost = 0;
+    let mut svgs_as_alt_text = 0;
     if target == "tex" {
         raw_html_lost += read_raw_inline_html(&mut doc.blocks);
-        copy_images_for_latex(
+        svgs_as_alt_text = copy_images_for_latex(
             &mut doc.blocks,
             &base_dir,
             out,
@@ -192,6 +193,14 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
             one: "raw HTML element kept only its text",
             many: "raw HTML elements kept only their text",
             count: raw_html_lost,
+            line: None,
+        });
+    }
+    if svgs_as_alt_text > 0 {
+        warnings.push(Warning {
+            one: "SVG image became its alt text",
+            many: "SVG images became their alt text",
+            count: svgs_as_alt_text,
             line: None,
         });
     }
@@ -732,13 +741,14 @@ fn copy_images_beside(blocks: &mut [Block], src_dir: &Path, out: &Path) -> Resul
 /// output is in another folder). The LaTeX writer reads raw HTML blocks
 /// itself, so headings in them take no id of the main text's (see
 /// [`DocumentIds`](write::DocumentIds)): their images and links are
-/// rewritten in the HTML.
+/// rewritten in the HTML. Returns how many SVG images became their alt
+/// text.
 fn copy_images_for_latex(
     blocks: &mut [Block],
     src_dir: &Path,
     out: &Path,
     rebase_links: bool,
-) -> Result<(), String> {
+) -> Result<usize, String> {
     let mut images = LatexImages::new(src_dir, out);
     for_each_url(blocks, &mut |kind, url| match kind {
         UrlKind::Link if rebase_links => rebase_url(url, src_dir),
@@ -771,7 +781,7 @@ fn copy_images_for_latex(
         };
         *html = write::xhtml::rewrite_urls(html, &mut hooks);
     });
-    images.error.map_or(Ok(()), Err)
+    images.error.map_or(Ok(images.svgs_as_alt_text), Err)
 }
 
 /// The images `.tex` output shows, copied beside it into one folder with
@@ -784,6 +794,8 @@ struct LatexImages<'a> {
     /// The folder's name, which copied images' paths start with.
     dir_name: String,
     copied: usize,
+    /// SVG images shown as their alt text, which LaTeX can't include.
+    svgs_as_alt_text: usize,
     /// Why a copy failed, which fails the conversion.
     error: Option<String>,
 }
@@ -809,6 +821,7 @@ impl<'a> LatexImages<'a> {
             dir: out.with_file_name(&dir_name),
             dir_name,
             copied: 0,
+            svgs_as_alt_text: 0,
             error: None,
         }
     }
@@ -842,6 +855,9 @@ impl<'a> LatexImages<'a> {
             match ::image::open(&path) {
                 Ok(image) => image.save(&target).map_err(|e| e.to_string()),
                 Err(::image::ImageError::Decoding(_) | ::image::ImageError::Unsupported(_)) => {
+                    if ext == "svg" {
+                        self.svgs_as_alt_text += 1;
+                    }
                     return LatexImage::AltText;
                 }
                 Err(e) => Err(e.to_string()),
@@ -1882,6 +1898,41 @@ mod tests {
             "{written}"
         );
         assert_tectonic_compiles(&tex);
+    }
+
+    #[test]
+    fn svgs_shown_as_alt_text_in_latex_are_counted() {
+        let dir = tempfile::tempdir().unwrap();
+        let svg = "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"4\"/>";
+        std::fs::write(dir.path().join("a.svg"), svg).unwrap();
+        std::fs::write(dir.path().join("b.svg"), svg).unwrap();
+        image::RgbImage::new(4, 4)
+            .save(dir.path().join("p.png"))
+            .unwrap();
+        image::RgbImage::new(4, 4)
+            .save(dir.path().join("j.jpg"))
+            .unwrap();
+        let input = dir.path().join("pics.md");
+        // One in Markdown, one in raw HTML; PNG and JPEG are included.
+        std::fs::write(
+            &input,
+            "![a](a.svg) ![p](p.png) ![j](j.jpg)\n\n<p><img src=\"b.svg\" alt=\"b\"></p>\n",
+        )
+        .unwrap();
+        let messages = |target: &str| {
+            let output = dir.path().join("out").join(format!("pics.{target}"));
+            std::fs::create_dir_all(output.parent().unwrap()).unwrap();
+            let warnings = convert(&input, target, &output).unwrap();
+            warnings.iter().map(Warning::message).collect::<Vec<_>>()
+        };
+        assert_eq!(messages("tex"), ["2 SVG images became their alt text"]);
+        for target in ["md", "html", "txt", "typst", "pdf", "epub"] {
+            let messages = messages(target);
+            assert!(
+                !messages.iter().any(|m| m.contains("SVG")),
+                "{target}: {messages:?}"
+            );
+        }
     }
 
     /// Regression for #67: quotes nested past LaTeX's six lists compile,
