@@ -51,6 +51,24 @@ pub fn text_of(html: &str) -> String {
         .to_string()
 }
 
+/// The id of an HTML snippet that's nothing but an empty anchor,
+/// `<a id="…"></a>`, which marks a place for links to point to.
+pub fn empty_anchor_id(html: &str) -> Option<String> {
+    let fragment = Html::parse_fragment(html);
+    let blank = |n: &Node| n.as_text().is_some_and(|t| t.trim().is_empty());
+    let mut nodes = fragment
+        .root_element()
+        .children()
+        .filter(|n| !blank(n.value()));
+    let anchor = ElementRef::wrap(nodes.next()?)?;
+    let id = anchor.value().attr("id")?;
+    (nodes.next().is_none()
+        && anchor.value().name() == "a"
+        && anchor.children().all(|n| blank(n.value()))
+        && !id.is_empty())
+    .then(|| id.to_string())
+}
+
 /// Read an HTML snippet (e.g. an HTML block inside Markdown) as blocks.
 pub fn read_fragment(html: &str) -> Vec<Block> {
     let fragment = Html::parse_fragment(html);
