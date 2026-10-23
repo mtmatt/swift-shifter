@@ -225,6 +225,58 @@ pub(crate) fn for_each_anchor(
     note_bodies.iter().for_each(|body| walk(body, f));
 }
 
+/// How many raw HTML elements of `doc` the plain, Typst and LaTeX writers
+/// show only the text of. A raw block is read as HTML first, and only what
+/// that leaves raw counts (an `<h2>` is a heading). In text, each tag that
+/// opens an element counts (Markdown gives `<kbd>`, `Ctrl` and `</kbd>`
+/// apart), except an empty anchor's, which shows nothing. Those in notes
+/// count where the note is written.
+pub(crate) fn raw_html_elements(doc: &Document) -> usize {
+    fn in_text(inlines: &[Inline]) -> usize {
+        let mut count = 0;
+        for (i, inline) in inlines.iter().enumerate() {
+            count += match inline {
+                Inline::Raw { text, .. } if !text.trim_start().starts_with("</") => {
+                    usize::from(inline_anchor(&inlines[i..]).is_none())
+                }
+                Inline::Emph(c)
+                | Inline::Strong(c)
+                | Inline::Strikethrough(c)
+                | Inline::Superscript(c)
+                | Inline::Subscript(c)
+                | Inline::Link { content: c, .. } => in_text(c),
+                _ => 0,
+            };
+        }
+        count
+    }
+    /// `parsed`: whether `blocks` are what a raw block was read as, whose
+    /// raw blocks the writers show the text of rather than read again.
+    fn walk(blocks: &[Block], parsed: bool) -> usize {
+        let mut count = 0;
+        for block in blocks {
+            match block {
+                Block::Raw { text, .. } if !parsed => {
+                    count += walk(&read::html::read_fragment(text), true);
+                }
+                Block::Raw { .. } => count += 1,
+                Block::FootnoteDefinition { .. } => {}
+                other => {
+                    for_each_inlines(other, &mut |inlines| count += in_text(inlines));
+                    for_each_child_blocks(other, |children| count += walk(children, parsed));
+                }
+            }
+        }
+        count
+    }
+    let (_, note_bodies) = Footnotes::collect(doc);
+    walk(&doc.blocks, false)
+        + note_bodies
+            .iter()
+            .map(|body| walk(body, false))
+            .sum::<usize>()
+}
+
 /// Indent every line after the first (list items, footnote bodies).
 pub(crate) fn indent_rest(text: &str, indent: &str) -> String {
     let mut lines = text.lines();
