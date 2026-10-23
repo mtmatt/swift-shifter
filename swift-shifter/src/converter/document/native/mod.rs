@@ -21,6 +21,34 @@ pub const INPUTS: &[&str] = &["md", "txt", "html", "epub", "typst"];
 /// Output formats the native writers handle.
 pub const OUTPUTS: &[&str] = &["md", "txt", "html", "pdf", "typst", "epub", "tex"];
 
+/// Something of the input a conversion left out of its output. The
+/// conversion still succeeds; this says what it lost.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Warning {
+    /// What was lost, said of one: "SVG image became its alt text".
+    pub one: &'static str,
+    /// The same, said of several: "SVG images became their alt text".
+    pub many: &'static str,
+    pub count: usize,
+    /// The input line, where the reader knows it.
+    pub line: Option<usize>,
+}
+
+impl Warning {
+    /// "2 SVG images became their alt text", "1 … at line 12".
+    #[cfg_attr(
+        not(test),
+        expect(dead_code, reason = "shown once the command layer passes warnings on")
+    )]
+    pub fn message(&self) -> String {
+        let what = if self.count == 1 { self.one } else { self.many };
+        match self.line {
+            Some(line) => format!("{} {what} at line {line}", self.count),
+            None => format!("{} {what}", self.count),
+        }
+    }
+}
+
 /// Whether the native engine converts `from` → `to` (normalized extensions).
 pub fn handles(from: &str, to: &str) -> bool {
     INPUTS.contains(&from) && OUTPUTS.contains(&to) && from != to
@@ -50,15 +78,17 @@ pub async fn convert_document(
     let input = PathBuf::from(path);
     let out_for_task = out.clone();
     let target = target.to_string();
-    tokio::task::spawn_blocking(move || convert(&input, &target, &out_for_task))
+    // The command layer doesn't pass warnings on yet.
+    let _warnings = tokio::task::spawn_blocking(move || convert(&input, &target, &out_for_task))
         .await
         .map_err(|e| format!("task panicked: {e}"))??;
     progress(100.0);
     Ok(out.to_string_lossy().into_owned())
 }
 
-/// Synchronous core of [`convert_document`].
-pub fn convert(input: &Path, target: &str, out: &Path) -> Result<(), String> {
+/// Synchronous core of [`convert_document`]: also returns what the
+/// conversion left out.
+pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, String> {
     let from = input
         .extension()
         .and_then(|e| e.to_str())
@@ -69,8 +99,8 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<(), String> {
     // only lose what typst can lay out.
     if from == "typst" && target == "pdf" {
         let pdf = typst_file_to_pdf(input)?;
-        return std::fs::write(out, pdf)
-            .map_err(|e| format!("Failed to write {}: {e}", out.display()));
+        std::fs::write(out, pdf).map_err(|e| format!("Failed to write {}: {e}", out.display()))?;
+        return Ok(Vec::new());
     }
 
     // An EPUB is extracted to a temp folder its images are read from; it
@@ -147,7 +177,8 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<(), String> {
         )?,
         other => return Err(format!("The native converter can't write {other}")),
     };
-    std::fs::write(out, rendered).map_err(|e| format!("Failed to write {}: {e}", out.display()))
+    std::fs::write(out, rendered).map_err(|e| format!("Failed to write {}: {e}", out.display()))?;
+    Ok(Vec::new())
 }
 
 /// A standalone `.typ` file for the user's own typst.
@@ -2294,6 +2325,39 @@ mod tests {
         convert(&input, target, &output).unwrap();
         let text = std::fs::read_to_string(&output).unwrap();
         (output, text)
+    }
+
+    #[test]
+    fn clean_conversions_warn_of_nothing() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("clean.md");
+        std::fs::write(&input, "# Title\n\nPlain *text* and $x^2$.\n").unwrap();
+        for target in ["md", "txt", "html", "typst", "tex", "epub", "pdf"] {
+            let output = input.with_extension(target);
+            assert_eq!(convert(&input, target, &output).unwrap(), [], "{target}");
+        }
+    }
+
+    #[test]
+    fn warnings_say_how_many_and_where() {
+        let warning = |count, line| Warning {
+            one: "SVG image became its alt text",
+            many: "SVG images became their alt text",
+            count,
+            line,
+        };
+        assert_eq!(
+            warning(1, None).message(),
+            "1 SVG image became its alt text"
+        );
+        assert_eq!(
+            warning(3, None).message(),
+            "3 SVG images became their alt text"
+        );
+        assert_eq!(
+            warning(1, Some(12)).message(),
+            "1 SVG image became its alt text at line 12"
+        );
     }
 
     /// Asserts that tectonic (XeLaTeX) compiles `tex` to a PDF, and returns
