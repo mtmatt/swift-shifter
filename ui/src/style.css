@@ -448,6 +448,18 @@ body {
     text-decoration: underline dotted;
     text-underline-offset: 2px;
 }
+/* What a conversion left out: two lines at most, however narrow the row;
+   the tooltip has it all. */
+.file-warnings {
+    font-size: 11px;
+    letter-spacing: 0.02em;
+    color: var(--warn);
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    overflow: hidden;
+}
 
 /* ─── Batch toolbar ───────────────────────────────────────────────────── */
 .batch-toolbar {

@@ -206,6 +206,11 @@ body {
     color: var(--success);
 }
 
+#status .warnings {
+    color: var(--warn);
+    white-space: pre;
+}
+
 #status.failed {
     color: var(--danger);
 }

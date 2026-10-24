@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { type ConversionWarning, warningLine, warningTooltip } from "./warnings";
 
 // ─── Interfaces ──────────────────────────────────────────────────────────
 
@@ -35,12 +36,6 @@ interface FileEntry {
 interface BatchItem {
   path: string;
   targetFormat: string;
-}
-/** Something of the input a conversion left out of its output. */
-interface ConversionWarning {
-  message: string;
-  count: number;
-  line: number | null;
 }
 interface Converted {
   output: string;
@@ -815,6 +810,7 @@ async function trimAll(): Promise<void> {
     const tb = item.querySelector<HTMLButtonElement>(".trim-btn");
     if (tb) tb.disabled = true;
     item.querySelector(".file-status")?.remove();
+    item.querySelector(".file-warnings")?.remove();
 
     let progressRow = item.querySelector<HTMLElement>(".progress-row");
     let progressFill: HTMLElement;
@@ -920,6 +916,20 @@ async function trimAll(): Promise<void> {
   }
 }
 
+/**
+ * A yellow line under a converted file's status saying what the conversion
+ * left out; long lines are cut short and shown whole in the tooltip.
+ */
+function appendWarnings(item: HTMLElement, warnings: ConversionWarning[]): void {
+  const line = warningLine(warnings);
+  if (!line) return;
+  const el = document.createElement("div");
+  el.className = "file-warnings";
+  el.textContent = line;
+  el.title = warningTooltip(warnings);
+  item.appendChild(el);
+}
+
 // ─── Single-file conversion ───────────────────────────────────────────────
 
 async function startConversion(
@@ -931,6 +941,7 @@ async function startConversion(
     .querySelectorAll<HTMLButtonElement>(".fmt-btn")
     .forEach((b) => (b.disabled = true));
   item.querySelector(".file-status")?.remove();
+  item.querySelector(".file-warnings")?.remove();
 
   let progressRow = item.querySelector<HTMLElement>(".progress-row");
   let progressFill: HTMLElement;
@@ -968,7 +979,10 @@ async function startConversion(
   progressUnlisteners.set(path, unlisten);
 
   try {
-    const { output: outputPath } = await invoke<Converted>("convert", { path, targetFormat });
+    const { output: outputPath, warnings } = await invoke<Converted>("convert", {
+      path,
+      targetFormat,
+    });
     progressFill.style.width = "100%";
     progressLabel.textContent = "100%";
 
@@ -1017,6 +1031,7 @@ async function startConversion(
         );
       }
       item.appendChild(status);
+      appendWarnings(item, warnings);
       item
         .querySelectorAll<HTMLButtonElement>(".fmt-btn")
         .forEach((b) => (b.disabled = false));
@@ -1182,6 +1197,7 @@ async function startBatchConversion(targetFormat: string): Promise<void> {
       .querySelectorAll<HTMLButtonElement>(".fmt-btn")
       .forEach((b) => (b.disabled = true));
     item.querySelector(".file-status")?.remove();
+    item.querySelector(".file-warnings")?.remove();
 
     let progressRow = item.querySelector<HTMLElement>(".progress-row");
     let progressFill: HTMLElement;
@@ -1289,6 +1305,7 @@ async function startBatchConversion(targetFormat: string): Promise<void> {
             );
           }
           item.appendChild(status);
+          appendWarnings(item, result.warnings);
           item
             .querySelectorAll<HTMLButtonElement>(".fmt-btn")
             .forEach((b) => (b.disabled = false));

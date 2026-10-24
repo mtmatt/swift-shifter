@@ -3,6 +3,7 @@ import { LogicalSize } from "@tauri-apps/api/dpi";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { parseQuery, rankFiles, relativeTime, type RecentFile } from "./quick-search";
+import { type ConversionWarning, warningTooltip } from "./warnings";
 
 // ─── Backend payloads ─────────────────────────────────────────────────────
 
@@ -18,7 +19,7 @@ interface ProgressPayload {
 
 interface Converted {
   output: string;
-  warnings: { message: string; count: number; line: number | null }[];
+  warnings: ConversionWarning[];
 }
 
 // ─── Layout ───────────────────────────────────────────────────────────────
@@ -38,7 +39,7 @@ const MAX_ROWS = 7;
 type Job =
   | { kind: "idle" }
   | { kind: "converting"; path: string; percent: number }
-  | { kind: "done"; output: string }
+  | { kind: "done"; output: string; warnings: ConversionWarning[] }
   | { kind: "failed"; message: string };
 
 let recentFiles: RecentFile[] = [];
@@ -161,11 +162,11 @@ async function convertSelected(): Promise<void> {
   job = { kind: "converting", path: file.path, percent: 0 };
   render();
   try {
-    const { output } = await invoke<Converted>("convert", {
+    const { output, warnings } = await invoke<Converted>("convert", {
       path: file.path,
       targetFormat: format,
     });
-    job = { kind: "done", output };
+    job = { kind: "done", output, warnings };
     void refreshRecentFiles(); // the output is now a recent file too
   } catch (e) {
     job = { kind: "failed", message: String(e) };
@@ -258,6 +259,7 @@ function formatPicker(): HTMLElement {
 
 function renderStatus(): void {
   status.className = job.kind;
+  status.title = "";
   switch (job.kind) {
     case "idle":
       status.textContent = "";
@@ -269,6 +271,15 @@ function renderStatus(): void {
       break;
     case "done":
       status.textContent = `✓ saved ${job.output.split(/[\\/]/).pop()}`;
+      // What it left out, behind a mark: the bar has room for one line. The
+      // mark goes first, where a long file name can't cut it off.
+      if (job.warnings.length > 0) {
+        const mark = document.createElement("span");
+        mark.className = "warnings";
+        mark.textContent = "⚠ ";
+        status.prepend(mark);
+        status.title = warningTooltip(job.warnings);
+      }
       hint.textContent = "↵ show in folder";
       break;
     case "failed":
