@@ -223,6 +223,18 @@ where
 {
     // Clear the window config so no GUI window is created in CLI mode.
     context.config_mut().app.windows.clear();
+    // Windowless, the app still needs a window server on macOS. Without a
+    // session (over SSH, say), AppKit ends the process with status 0 while
+    // the app is built, past where anything here could say so, so it's
+    // checked first. Elsewhere an app that can't start says so itself.
+    #[cfg(target_os = "macos")]
+    if !has_window_server() {
+        eprintln!(
+            "{}",
+            nothing_done("there's no window server session, as over SSH")
+        );
+        return 1;
+    }
 
     tauri::Builder::default()
         .manage(AppState {
@@ -239,9 +251,45 @@ where
         })
         .build(context)
         .expect("failed to build headless app")
-        .run(|_, _| {});
+        // `run` would end the process with the loop; this returns.
+        .run_return(|_, _| {});
+    // The task exits the process once it's done, so the event loop ending
+    // first means it stopped partway, having maybe converted some files.
+    eprintln!("{STOPPED_PARTWAY}");
+    1
+}
 
-    0 // unreachable: the spawned task calls std::process::exit
+/// What the CLI says when its app ended before the command finished.
+const STOPPED_PARTWAY: &str =
+    "swift-shifter: the command stopped before it finished: the app it runs in ended first";
+
+/// Whether this macOS session has a window server, which a session over
+/// SSH hasn't.
+#[cfg(target_os = "macos")]
+fn has_window_server() -> bool {
+    use std::ffi::c_void;
+    #[link(name = "CoreGraphics", kind = "framework")]
+    unsafe extern "C" {
+        fn CGSessionCopyCurrentDictionary() -> *const c_void;
+    }
+    #[link(name = "CoreFoundation", kind = "framework")]
+    unsafe extern "C" {
+        fn CFRelease(cf: *const c_void);
+    }
+    // SAFETY: it takes nothing, and returns a dictionary the caller owns,
+    // released here, or null where there's no session.
+    let session = unsafe { CGSessionCopyCurrentDictionary() };
+    if session.is_null() {
+        return false;
+    }
+    unsafe { CFRelease(session) };
+    true
+}
+
+/// What the CLI says when, for `why`, it did nothing.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn nothing_done(why: &str) -> String {
+    format!("swift-shifter: nothing was done: {why}")
 }
 
 pub fn run_convert(
@@ -427,6 +475,21 @@ mod tests {
     }
 
     use std::path::PathBuf;
+
+    /// Regression for #118: where its app can't run, the CLI says it did
+    /// nothing; where the app ends partway, that it stopped partway.
+    #[test]
+    fn an_app_that_cant_run_or_ends_first_is_said_so() {
+        assert_eq!(
+            nothing_done("there's no window server session"),
+            "swift-shifter: nothing was done: there's no window server session"
+        );
+        assert!(!STOPPED_PARTWAY.contains("nothing was done"));
+        // This session either has a window server or hasn't; asking
+        // mustn't fail.
+        #[cfg(target_os = "macos")]
+        let _ = has_window_server();
+    }
 
     #[test]
     fn format_check_marks_found_and_missing() {
