@@ -33,7 +33,8 @@ mod signature;
 mod table;
 mod wrapper;
 
-use std::collections::HashMap;
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
@@ -42,6 +43,7 @@ use typst::syntax::ast::{self, AstNode, Expr};
 
 use super::markdown::push_text;
 use super::{typst_math, walk};
+use crate::converter::document::native::Warning;
 use crate::converter::document::native::ast::{Block, Document, Inline, List, ListItem, Meta};
 
 use finish::{
@@ -56,12 +58,12 @@ use wrapper::{MAX_UNWRAPPED, Presets, UNWRAPPED_PER_BYTE};
 /// [`read_in`] for a document with no folder: files it imports aren't read.
 #[cfg(test)]
 pub fn read(source: &str) -> Document {
-    Reader::default().read(source)
+    Reader::default().read(source).0
 }
 
-/// Read `source`, a typst file in `dir`. The `.typ` files it imports from
-/// inside `dir` are read for what they define (see [`Reader::module`]).
-pub fn read_in(source: &str, dir: &Path) -> Document {
+/// [`read_in`], also returning what of the document's code that would
+/// show something the reader didn't run (see [`Skipped`]).
+pub fn read_in_reporting(source: &str, dir: &Path) -> (Document, Vec<Warning>) {
     // `in.typ`'s parent is the empty path.
     let dir = if dir.as_os_str().is_empty() {
         Path::new(".")
@@ -75,6 +77,163 @@ pub fn read_in(source: &str, dir: &Path) -> Document {
         ..Reader::default()
     };
     reader.read(source)
+}
+
+/// Read `source`, a typst file in `dir`. The `.typ` files it imports from
+/// inside `dir` are read for what they define (see [`Reader::module`]).
+#[cfg(test)]
+pub fn read_in(source: &str, dir: &Path) -> Document {
+    read_in_reporting(source, dir).0
+}
+
+/// The line (from 1) and the byte each piece of [`Skipped`] code in `root`,
+/// parsed from `source`, starts at, by its node, wherever it is: in markup
+/// or given to a call. Walked with a stack of its own, as deep as typst
+/// parses, past what the stack conversions run on holds; numbering the
+/// spans instead (`Source::detached`) recurses as deep, and overflows it.
+fn skipped_places(root: &SyntaxNode, source: &str) -> HashMap<*const SyntaxNode, (usize, usize)> {
+    // Typst's own, which ends lines where typst does (CR, CRLF, LF and
+    // Unicode's line and paragraph separators).
+    let source_lines = typst::syntax::Lines::new(source);
+    let mut places = HashMap::new();
+    let mut nodes = vec![(root, 0)];
+    while let Some((node, start)) = nodes.pop() {
+        if node.cast::<Expr>().and_then(Skipped::of).is_some()
+            && let Some(line) = source_lines.byte_to_line(start)
+        {
+            places.insert(node as *const SyntaxNode, (line + 1, start));
+        }
+        let mut offset = start;
+        for child in node.children() {
+            nodes.push((child, offset));
+            offset += child.len();
+        }
+    }
+    places
+}
+
+/// What code the reader didn't run (see [`Reader::skip`]).
+#[derive(Default)]
+struct Skips {
+    /// How much of each [`Skipped`] kind, and the line of the first.
+    tally: [(usize, Option<usize>); Skipped::ALL.len()],
+    /// The code counted: each piece once, however often it's read or
+    /// placed in table parts.
+    counted: HashSet<SkipId>,
+    /// While a table's part made beforehand is read, the code it holds,
+    /// kept with it rather than counted: it's counted where the part is
+    /// placed, and not at all if it isn't (see [`Reader::holding_skips`]).
+    held: Option<Vec<HeldSkip>>,
+}
+
+/// A piece of code the reader didn't run, as it's counted once: where it
+/// is, in the input (no file) or an imported one (its canonical path),
+/// which outlasts its syntax; or, where the reader has no place for it,
+/// its node.
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum SkipId {
+    Place(Option<Rc<Path>>, usize),
+    Node(*const SyntaxNode),
+}
+
+/// Code of a kind the reader didn't run, and its line in the input.
+type HeldSkip = (Skipped, SkipId, Option<usize>);
+
+/// Code the reader doesn't run that would show something (see
+/// [`Reader::skip`]). Imported files show nothing, so what they hold
+/// isn't counted.
+#[derive(Clone, Copy)]
+enum Skipped {
+    Loop,
+    Conditional,
+    CodeBlock,
+    Context,
+    Value,
+}
+
+impl Skipped {
+    /// The kind of code `expr` is, if the reader doesn't run it and typst
+    /// would show something.
+    fn of(expr: Expr) -> Option<Skipped> {
+        Some(match expr {
+            Expr::ForLoop(_) | Expr::WhileLoop(_) => Skipped::Loop,
+            // `if false` with no `else` shows nothing.
+            Expr::Conditional(conditional)
+                if !(matches!(conditional.condition(), Expr::Bool(b) if !b.get())
+                    && conditional.else_body().is_none()) =>
+            {
+                Skipped::Conditional
+            }
+            // A block of only bindings and rules shows nothing.
+            Expr::CodeBlock(block)
+                if !block.body().exprs().all(|e| {
+                    matches!(
+                        e,
+                        Expr::LetBinding(_)
+                            | Expr::SetRule(_)
+                            | Expr::ShowRule(_)
+                            | Expr::ModuleImport(_)
+                    )
+                }) =>
+            {
+                Skipped::CodeBlock
+            }
+            Expr::Contextual(_) => Skipped::Context,
+            // What the parentheses hold, which the reader drops even where
+            // it would show it bare (`#([text])`).
+            Expr::Parenthesized(parenthesized) => {
+                let inner = parenthesized.expr();
+                return match inner {
+                    Expr::None(_)
+                    | Expr::Auto(_)
+                    | Expr::Conditional(_)
+                    | Expr::CodeBlock(_)
+                    | Expr::Parenthesized(_) => Skipped::of(inner),
+                    _ => Some(Skipped::of(inner).unwrap_or(Skipped::Value)),
+                };
+            }
+            Expr::Unary(_)
+            | Expr::Binary(_)
+            | Expr::Bool(_)
+            | Expr::Int(_)
+            | Expr::Float(_)
+            | Expr::Numeric(_)
+            | Expr::Array(_)
+            | Expr::Dict(_) => Skipped::Value,
+            _ => return None,
+        })
+    }
+
+    const ALL: [Skipped; 5] = [
+        Skipped::Loop,
+        Skipped::Conditional,
+        Skipped::CodeBlock,
+        Skipped::Context,
+        Skipped::Value,
+    ];
+
+    /// What [`Warning`] says of one and of several.
+    fn said(self) -> (&'static str, &'static str) {
+        match self {
+            Skipped::Loop => ("Typst loop wasn't run", "Typst loops weren't run"),
+            Skipped::Conditional => (
+                "Typst condition wasn't evaluated",
+                "Typst conditions weren't evaluated",
+            ),
+            Skipped::CodeBlock => (
+                "Typst code block wasn't run",
+                "Typst code blocks weren't run",
+            ),
+            Skipped::Context => (
+                "Typst context expression wasn't run",
+                "Typst context expressions weren't run",
+            ),
+            Skipped::Value => (
+                "computed Typst value wasn't shown",
+                "computed Typst values weren't shown",
+            ),
+        }
+    }
 }
 
 /// How deep calls and markup (a content block, a list item) are read
@@ -129,6 +288,16 @@ struct Reader {
     /// What's left of what references to headings may copy of their text
     /// (see [`MAX_REFERENCE_TEXT`]).
     reference_text_left: usize,
+    /// The line and the byte each piece of [`Skipped`] code in the file
+    /// being read starts at, by its node. Code from elsewhere (a function
+    /// imported from another file) has none.
+    skipped_places: HashMap<*const SyntaxNode, (usize, usize)>,
+    /// The file being read, canonical, if it's imported; `None` for the
+    /// input.
+    file: Option<Rc<Path>>,
+    /// The code the reader didn't run (see [`Reader::skip`]), counted
+    /// where arguments are only looked at, too.
+    skipped: RefCell<Skips>,
 }
 
 /// What a function call (or a content block) shows, as it continues the
@@ -422,18 +591,96 @@ enum Labelled {
 
 impl Reader {
     /// The document `source` holds, read to the end (see
-    /// [`Reader::finish`]).
-    fn read(mut self, source: &str) -> Document {
+    /// [`Reader::finish`]), and what of its code it didn't run.
+    fn read(mut self, source: &str) -> (Document, Vec<Warning>) {
         self.unwrapping_left = MAX_UNWRAPPED.max(source.len().saturating_mul(UNWRAPPED_PER_BYTE));
         self.grown_cells_left = MAX_GROWN_CELLS;
         self.reference_text_left =
             MAX_REFERENCE_TEXT.max(source.len().saturating_mul(REFERENCE_TEXT_PER_BYTE));
         let root = typst::syntax::parse(source);
+        self.skipped_places = skipped_places(&root, source);
         let blocks = match root.cast::<ast::Markup>() {
             Some(markup) => self.blocks(markup),
             None => Vec::new(),
         };
-        self.finish(blocks)
+        let warnings = Skipped::ALL
+            .iter()
+            .zip(self.skipped.take().tally)
+            .filter(|(_, (count, _))| *count > 0)
+            .map(|(kind, (count, line))| {
+                let (one, many) = kind.said();
+                Warning {
+                    one,
+                    many,
+                    count,
+                    line,
+                }
+            })
+            .collect();
+        (self.finish(blocks), warnings)
+    }
+
+    /// Counts `expr`, code of `kind` the reader doesn't run, at its line:
+    /// the reader may meet the code given to a call after what follows it.
+    fn skip(&self, kind: Skipped, expr: Expr) {
+        let node = expr.to_untyped() as *const SyntaxNode;
+        let (id, line) = match self.skipped_places.get(&node) {
+            // Lines are the input's: an imported file's would mislead.
+            Some(&(line, offset)) => (
+                SkipId::Place(self.file.clone(), offset),
+                self.file.is_none().then_some(line),
+            ),
+            None => (SkipId::Node(node), None),
+        };
+        self.count_skips(&[(kind, id, line)]);
+    }
+
+    /// Counts `skips`, each piece of code once wherever it's met, or holds
+    /// them for the table's part being made: a part placed here passes
+    /// what it holds on.
+    fn count_skips(&self, skips: &[HeldSkip]) {
+        let mut skipped = self.skipped.borrow_mut();
+        if let Some(held) = &mut skipped.held {
+            held.extend_from_slice(skips);
+            return;
+        }
+        for (kind, id, line) in skips {
+            if skipped.counted.insert(id.clone()) {
+                skipped.add(*kind, *line);
+            }
+        }
+    }
+
+    /// Reads with what `read` skips held rather than counted: what it
+    /// returns, and those skips.
+    fn holding_skips<T>(&mut self, read: impl FnOnce(&mut Reader) -> T) -> (T, Vec<HeldSkip>) {
+        let outer = self.skipped.get_mut().held.replace(Vec::new());
+        let out = read(self);
+        let held = std::mem::replace(&mut self.skipped.get_mut().held, outer);
+        (out, held.unwrap_or_default())
+    }
+}
+
+impl Skips {
+    /// Counts code of `kind` on `line`.
+    fn add(&mut self, kind: Skipped, line: Option<usize>) {
+        let (count, first) = &mut self.tally[kind as usize];
+        *count += 1;
+        *first = match (*first, line) {
+            (Some(first), Some(line)) => Some(first.min(line)),
+            (first, line) => first.or(line),
+        };
+    }
+}
+
+impl Reader {
+    /// Counts `expr`, an argument the reader drops from where the call
+    /// shows content, if it's code, however it's written: the callers
+    /// tell where content goes apart from where settings do.
+    fn skip_arg(&self, expr: Expr) {
+        if let Some(kind) = Skipped::of(expr) {
+            self.skip(kind, expr);
+        }
     }
 
     fn blocks(&mut self, markup: ast::Markup) -> Vec<Block> {
@@ -656,8 +903,14 @@ impl Reader {
                     push_text(out, &text);
                 }
             }
-            // Code (`show`, loops) and values: dropped.
-            _ => {}
+            // Code and values the reader doesn't run: dropped, and counted
+            // where typst would show something. Show rules aren't counted
+            // yet.
+            _ => {
+                if let Some(kind) = Skipped::of(expr) {
+                    self.skip(kind, expr);
+                }
+            }
         }
     }
 
@@ -797,10 +1050,17 @@ impl Reader {
             // or a string, wherever it is. Typst refuses more than one; none
             // is lost.
             "text" => {
-                let shown = args
+                let (shown, rest): (Vec<Expr>, Vec<Expr>) = args
                     .positional()
-                    .filter(|&expr| matches!(expr, Expr::Str(_)) || self.is_content(expr))
-                    .collect();
+                    .partition(|&expr| matches!(expr, Expr::Str(_)) || self.is_content(expr));
+                // With none shown, its body is code the reader doesn't run;
+                // with one, the rest are settings. A value is one either way
+                // (`20pt`): typst takes no number for the body.
+                if shown.is_empty() {
+                    rest.into_iter()
+                        .filter(|&expr| !matches!(Skipped::of(expr), Some(Skipped::Value)))
+                        .for_each(|expr| self.skip_arg(expr));
+                }
                 self.joined(shown)
             }
             "emph" => body(self).styled(Inline::Emph),

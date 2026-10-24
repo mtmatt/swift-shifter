@@ -309,6 +309,9 @@ impl Reader {
                     return Some(string);
                 }
                 let shown = matches!(expr, Expr::Str(_)) || self.is_content(expr);
+                if !shown {
+                    self.skip_arg(expr);
+                }
                 shown.then_some(expr)
             })
             .collect()
@@ -390,6 +393,19 @@ impl Reader {
             }
             if showable && shows {
                 shown.push((name, expr));
+                continue;
+            }
+            // Code given where content goes, which the reader drops: where
+            // the function shows it, or of one it can't see, by a name for
+            // what it shows, or by position but before the content given
+            // so, where settings go.
+            let content_place = match (signature, name) {
+                (Some(_), _) => shows,
+                (None, Some(name)) => SHOWN_NAMES.contains(&name),
+                (None, None) => first_content.is_none_or(|first| item_index > first),
+            };
+            if content_place {
+                self.skip_arg(expr);
             }
         }
         shown

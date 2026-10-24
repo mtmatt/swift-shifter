@@ -31,16 +31,19 @@ pub struct Warning {
     /// The same, said of several: "SVG images became their alt text".
     pub many: &'static str,
     pub count: usize,
-    /// The input line, where the reader knows it.
+    /// The input line, of the first where there are several, where the
+    /// reader knows it.
     pub line: Option<usize>,
 }
 
 impl Warning {
-    /// "2 SVG images became their alt text", "1 … at line 12".
+    /// "2 SVG images became their alt text", "1 … at line 12", "3 …
+    /// (first at line 12)".
     pub fn message(&self) -> String {
         let what = if self.count == 1 { self.one } else { self.many };
         match self.line {
-            Some(line) => format!("{} {what} at line {line}", self.count),
+            Some(line) if self.count == 1 => format!("1 {what} at line {line}"),
+            Some(line) => format!("{} {what} (first at line {line})", self.count),
             None => format!("{} {what}", self.count),
         }
     }
@@ -141,7 +144,12 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
             match from.as_str() {
                 "md" => read::markdown::read(source),
                 "txt" => read::plain::read(source),
-                "typst" => read::typst::read_in(source, input.parent().unwrap_or(Path::new("."))),
+                "typst" => {
+                    let dir = input.parent().unwrap_or(Path::new("."));
+                    let (doc, skipped) = read::typst::read_in_reporting(source, dir);
+                    warnings.extend(skipped);
+                    doc
+                }
                 "tex" => {
                     let (doc, warning) = read::latex::read(source);
                     warnings.extend(warning);
@@ -1936,6 +1944,163 @@ mod tests {
         assert_latex_compiles(&tex);
     }
 
+    /// Code in a table's part made beforehand counts where the part is
+    /// placed: not at all if it isn't, once if it is, and once still if
+    /// it's placed twice, each piece of code counting once, as elsewhere.
+    #[test]
+    fn typst_code_in_table_parts_counts_where_they_are_placed() {
+        let dir = tempfile::tempdir().unwrap();
+        let messages = |source: &str| -> Vec<String> {
+            let input = dir.path().join("parts.typ");
+            std::fs::write(&input, source).unwrap();
+            let warnings = convert(&input, "md", &input.with_extension("md")).unwrap();
+            warnings.iter().map(Warning::message).collect()
+        };
+        let made = "#let c = table.cell[#if true [A]]\n\
+                    #let h = table.header[#for i in range(2) [H#i]]\n";
+        assert!(messages(&format!("{made}Visible\n")).is_empty());
+        for placed in ["c", "c, c"] {
+            assert_eq!(
+                messages(&format!("{made}#table(columns: 2, {placed})\n")),
+                ["1 Typst condition wasn't evaluated at line 1"],
+                "{placed}"
+            );
+        }
+        assert_eq!(
+            messages(&format!("{made}#table(columns: 2, h)\n")),
+            ["1 Typst loop wasn't run at line 2"]
+        );
+        // A part placed in another part, and beside it, counts once.
+        assert_eq!(
+            messages(
+                "#let c = table.cell[#if true [A]]\n#let h = table.header(c, c)\n\
+                 #table(columns: 2, h, c, c)\n"
+            ),
+            ["1 Typst condition wasn't evaluated at line 1"]
+        );
+        // Parts imported from files read and let go one after another
+        // count each, with no line (that's in another file).
+        let mut main = String::new();
+        for n in 0..20 {
+            std::fs::write(
+                dir.path().join(format!("lib{n}.typ")),
+                "#let c = table.cell[#if true [Lost]]\n",
+            )
+            .unwrap();
+            main.push_str(&format!("#import \"lib{n}.typ\": c as c{n}\n"));
+        }
+        let cells: Vec<String> = (0..20).map(|n| format!("c{n}")).collect();
+        main.push_str(&format!("#table(columns: 20, {})\n", cells.join(", ")));
+        assert_eq!(messages(&main), ["20 Typst conditions weren't evaluated"]);
+    }
+
+    /// Code given to a call where content goes counts, if it evidently
+    /// makes content, for typst's `text`, its other functions and those the
+    /// document defines or the reader can't see; settings don't.
+    #[test]
+    fn typst_code_given_to_calls_is_counted() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("args.typ");
+        std::fs::write(
+            &input,
+            "#let dark = true\n\
+             #text(if true [Lost content])\n\
+             #text(fill: red)[x] #text(20pt, red)[y] #text(if dark { white } else { black })[z]\n\
+             #block(for i in range(2) [B#i])\n\
+             #let f(x) = x\n\
+             #f(if true [Custom])\n\
+             #g(context [Unknown])\n\
+             #text(20pt, (if true [Lost content]))\n\
+             #text(if true { [Lost content] })\n\
+             #g(body: context [Unknown])\n\
+             #g(fill: if dark { red } else { blue })[x] #g(if dark { red } else { blue })[y]\n\
+             #align(if dark { left } else { right }, [A])\n",
+        )
+        .unwrap();
+        let warnings = convert(&input, "md", &input.with_extension("md")).unwrap();
+        let messages: Vec<String> = warnings.iter().map(Warning::message).collect();
+        // However the code is written; settings (line 3, 11, 12) aren't
+        // counted.
+        assert_eq!(
+            messages,
+            [
+                "1 Typst loop wasn't run at line 4",
+                "4 Typst conditions weren't evaluated (first at line 2)",
+                "2 Typst context expressions weren't run (first at line 7)",
+            ]
+        );
+    }
+
+    /// Typst code the reader doesn't run counts by kind, at the line of
+    /// the first; code that shows nothing, and an imported file's, doesn't.
+    #[test]
+    fn typst_code_the_reader_skips_is_counted() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("lib.typ"),
+            "#let x = 1\n#for i in range(2) [Lib #i]\n",
+        )
+        .unwrap();
+        let input = dir.path().join("code.typ");
+        std::fs::write(
+            &input,
+            "#import \"lib.typ\": x\n\
+             #table(columns: 1, if true [A])\n\
+             #for i in range(3) [Item #i. ]\n\
+             #let n = 0\n\
+             #while n < 2 { n += 1; [W#n ] }\n\
+             #if true [Shown.] #if false [Hidden.]\n\
+             #{ \"Computed.\" } #{ let y = 2 }\n\
+             #context [In context.]\n\
+             #set text(lang: \"en\")\n\
+             #show heading: set text(red)\n\
+             Sum #(1 + 2), #true, #([Paren]).\n",
+        )
+        .unwrap();
+        let warnings = convert(&input, "md", &input.with_extension("md")).unwrap();
+        let messages: Vec<String> = warnings.iter().map(Warning::message).collect();
+        // The condition given to the table, met after what follows it, is
+        // the first.
+        assert_eq!(
+            messages,
+            [
+                "2 Typst loops weren't run (first at line 3)",
+                "2 Typst conditions weren't evaluated (first at line 2)",
+                "1 Typst code block wasn't run at line 7",
+                "1 Typst context expression wasn't run at line 8",
+                "3 computed Typst values weren't shown (first at line 11)",
+            ]
+        );
+        // Lines end where typst ends them: CR, CRLF, a line separator.
+        let breaks = dir.path().join("breaks.typ");
+        std::fs::write(
+            &breaks,
+            "Title\r#if true [A]\r\nText\u{2028}#for i in range(1) [B]\n",
+        )
+        .unwrap();
+        let warnings = convert(&breaks, "md", &breaks.with_extension("md")).unwrap();
+        let messages: Vec<String> = warnings.iter().map(Warning::message).collect();
+        assert_eq!(
+            messages,
+            [
+                "1 Typst loop wasn't run at line 4",
+                "1 Typst condition wasn't evaluated at line 2",
+            ]
+        );
+        // Parentheses around what shows nothing show nothing.
+        let plain = dir.path().join("plain.typ");
+        std::fs::write(
+            &plain,
+            "= Title\n\n#let a = [A]\n#set text(lang: \"en\")\nText #a.\n\
+             #(none) #(if false [Hidden]) #((auto))\n",
+        )
+        .unwrap();
+        assert_eq!(
+            convert(&plain, "md", &plain.with_extension("md")).unwrap(),
+            []
+        );
+    }
+
     /// Images a book can't package and links that can't work in it count;
     /// those it keeps don't.
     #[test]
@@ -2643,6 +2808,10 @@ mod tests {
         assert_eq!(
             warning(1, Some(12)).message(),
             "1 SVG image became its alt text at line 12"
+        );
+        assert_eq!(
+            warning(3, Some(12)).message(),
+            "3 SVG images became their alt text (first at line 12)"
         );
     }
 
