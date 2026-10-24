@@ -183,8 +183,9 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
     }
 
     // Markdown, HTML and EPUB keep raw HTML; the other writers show the
-    // text of what they can't read.
-    if !matches!(target, "md" | "html" | "epub") {
+    // text of what they can't read. Plain text is meant to keep only the
+    // text, so it loses nothing there.
+    if !matches!(target, "md" | "html" | "epub" | "txt") {
         raw_html_lost += write::raw_html_elements(&doc);
     }
     let mut warnings = Vec::new();
@@ -2581,7 +2582,7 @@ mod tests {
              [^n]: Press <kbd>N</kbd>.\n\n[^u]: <kbd>U</kbd>\n",
         )
         .unwrap();
-        for target in ["txt", "typst", "pdf", "tex"] {
+        for target in ["typst", "pdf", "tex"] {
             let output = input.with_extension(target);
             let warnings = convert(&input, target, &output).unwrap();
             let messages: Vec<String> = warnings.iter().map(Warning::message).collect();
@@ -2591,7 +2592,8 @@ mod tests {
                 "{target}"
             );
         }
-        for target in ["md", "html", "epub"] {
+        // Kept, or only text was meant to be kept.
+        for target in ["md", "html", "epub", "txt"] {
             let output = dir.path().join(format!("out.{target}"));
             assert_eq!(convert(&input, target, &output).unwrap(), [], "{target}");
         }
