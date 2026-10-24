@@ -12,8 +12,8 @@ use crate::converter::document::native::Warning;
 use crate::converter::document::native::ast::{Block, Document, Inline};
 
 /// The stack reading takes per level the parser and the reader recurse
-/// into, in a debug build, which takes more than a release one: 475 bytes
-/// for `{` and `\(`, 570 for `\begin`, 953 for `^`, `_` and `'`, the
+/// into, in a debug build, which takes more than a release one: 553 bytes
+/// for `{` and `\(`, 570 for `\begin`, 1114 for `^`, `_` and `'`, the
 /// costliest (see the test `stack_per_level_is_measured`). This is well
 /// over twice that.
 const STACK_PER_LEVEL: usize = 4 << 10;
@@ -71,15 +71,11 @@ fn read_parsed(source: &str) -> Document {
     // Expanding macros, which may never end, would also parse more than
     // `source` holds, past `nesting_bound`.
     let root = mitex_parser::parse_without_macro(source, CommandSpec::new(Default::default()));
-    let mut text = String::new();
-    words(&document_body(&root).unwrap_or(root), &mut text);
-    let text = text.split_whitespace().collect::<Vec<_>>().join(" ");
+    let mut reader = Reader::default();
+    reader.flow(pieces(&document_body(&root).unwrap_or(root)));
+    reader.end_paragraph();
     Document {
-        blocks: if text.is_empty() {
-            Vec::new()
-        } else {
-            vec![Block::Paragraph(vec![Inline::Text(text)])]
-        },
+        blocks: reader.blocks,
         ..Document::default()
     }
 }
@@ -95,45 +91,310 @@ fn document_body(root: &SyntaxNode) -> Option<SyntaxNode> {
     })
 }
 
-/// The text of `node` as it's written, without commands, environments'
-/// names, comments or braces, into `out`: the reader's first step, read
-/// into paragraphs from #73's next part on.
-fn words(node: &SyntaxNode, out: &mut String) {
+/// A node's child, its text split into its tokens.
+#[derive(Clone)]
+enum Piece {
+    Token(SyntaxKind, String),
+    Node(SyntaxNode),
+}
+
+fn pieces(node: &SyntaxNode) -> Vec<Piece> {
+    let mut out = Vec::new();
     for item in node.children_with_tokens() {
         match item {
-            SyntaxElement::Node(node) => match node.kind() {
-                SyntaxKind::ItemCmd
-                | SyntaxKind::ItemBegin
-                | SyntaxKind::ItemEnd
-                | SyntaxKind::ItemBlockComment
-                | SyntaxKind::ItemTypstCode => out.push(' '),
-                _ => words(&node, out),
-            },
-            SyntaxElement::Token(token) => match token.kind() {
-                SyntaxKind::TokenComment | SyntaxKind::TokenLBrace | SyntaxKind::TokenRBrace => {}
-                SyntaxKind::TokenWhiteSpace | SyntaxKind::TokenLineBreak => out.push(' '),
-                _ => out.push_str(token.text()),
-            },
+            SyntaxElement::Node(text) if text.kind() == SyntaxKind::ItemText => {
+                out.extend(text.children_with_tokens().filter_map(|token| {
+                    let token = token.into_token()?;
+                    Some(Piece::Token(token.kind(), token.text().to_string()))
+                }));
+            }
+            SyntaxElement::Node(node) => out.push(Piece::Node(node)),
+            SyntaxElement::Token(token) => {
+                out.push(Piece::Token(token.kind(), token.text().to_string()));
+            }
         }
     }
+    out
+}
+
+#[derive(Default)]
+struct Reader {
+    blocks: Vec<Block>,
+    /// The paragraph being read.
+    inlines: Vec<Inline>,
+    /// What the line breaks since the last text make: nothing (0), a space
+    /// (1) or, after an empty line, a new paragraph (2).
+    breaks: usize,
+    /// A comment runs to its line break, which then breaks nothing.
+    in_comment: bool,
+    /// At a line's start, whose spaces TeX skips: a line break there ends
+    /// an empty line.
+    line_start: bool,
+    /// After a control word, whose following spaces TeX skips.
+    skip_spaces: bool,
+}
+
+impl Reader {
+    fn flow(&mut self, items: Vec<Piece>) {
+        let mut at = 0;
+        while let Some(item) = items.get(at).cloned() {
+            at += 1;
+            match item {
+                Piece::Token(kind, text) => self.token(kind, &text),
+                Piece::Node(node) => match node.kind() {
+                    SyntaxKind::ItemCmd => {
+                        let name = command_name(&node);
+                        let mut groups = Vec::new();
+                        // Those the reader knows take none: they're read on.
+                        while !NO_GROUPS.contains(&name.as_str())
+                            && let Some(Piece::Node(group)) = items.get(at)
+                            && group.kind() == SyntaxKind::ItemCurly
+                        {
+                            groups.push(pieces(group));
+                            at += 1;
+                        }
+                        self.non_space();
+                        let letters = &name[1..];
+                        let control_word =
+                            !letters.is_empty() && letters.chars().all(|c| c.is_ascii_alphabetic());
+                        self.skip_spaces = control_word && groups.is_empty();
+                        self.command(&name, groups);
+                    }
+                    // Begin and end name the environment, which is read for
+                    // its content.
+                    SyntaxKind::ItemBegin | SyntaxKind::ItemEnd => self.non_space(),
+                    // `\iffalse … \fi` shows nothing, and `\fi` is a control
+                    // word; so does mitex's own `\iftypst … \fi`.
+                    SyntaxKind::ItemBlockComment | SyntaxKind::ItemTypstCode => {
+                        self.non_space();
+                        self.skip_spaces = true;
+                    }
+                    _ => self.flow(pieces(&node)),
+                },
+            }
+        }
+    }
+
+    fn token(&mut self, kind: SyntaxKind, text: &str) {
+        match kind {
+            // The parser gives a run of line breaks as one token; CR, LF and
+            // CRLF each end a line.
+            SyntaxKind::TokenLineBreak => {
+                let mut lines = text
+                    .replace("\r\n", "\n")
+                    .matches(['\n', '\r'])
+                    .count()
+                    .max(1);
+                if std::mem::take(&mut self.in_comment) {
+                    lines -= 1;
+                    self.line_start = true;
+                }
+                if lines > 0 {
+                    self.breaks = if self.line_start || lines > 1 {
+                        2
+                    } else {
+                        self.breaks.max(1)
+                    };
+                }
+                self.line_start = true;
+            }
+            SyntaxKind::TokenComment => self.in_comment = true,
+            SyntaxKind::TokenWhiteSpace if !self.line_start && !self.skip_spaces => self.space(),
+            SyntaxKind::TokenWhiteSpace => {}
+            // A brace shows nothing, but it's no space.
+            SyntaxKind::TokenLBrace | SyntaxKind::TokenRBrace => self.non_space(),
+            SyntaxKind::TokenTilde => self.text("\u{a0}"),
+            _ => self.text(text),
+        }
+    }
+
+    /// The command `name`, given the groups right after it.
+    fn command(&mut self, name: &str, groups: Vec<Vec<Piece>>) {
+        match name {
+            "\\par" => self.end_paragraph(),
+            // A control space (`\ `, or `\` at a line's end) is a space of
+            // its own, and the spaces after it go.
+            "\\" => {
+                self.text(" ");
+                self.skip_spaces = true;
+            }
+            // Characters LaTeX gives meanings, escaped.
+            _ if ESCAPED.contains(&name) => self.text(&name[1..]),
+            // Unknown commands keep their groups' text, as pandoc keeps it.
+            _ => {
+                for group in groups {
+                    self.flow(group);
+                }
+            }
+        }
+    }
+
+    /// Before anything that isn't a space, shown or not (text, a brace, a
+    /// command, an environment's begin or end): the spaces and line breaks
+    /// before it settle, its line isn't empty, and a control word's spaces
+    /// end. Every such thing comes through here.
+    fn non_space(&mut self) {
+        self.settle_breaks();
+        self.line_start = false;
+        self.skip_spaces = false;
+    }
+
+    fn text(&mut self, text: &str) {
+        self.non_space();
+        match self.inlines.last_mut() {
+            Some(Inline::Text(last)) => last.push_str(text),
+            _ => self.inlines.push(Inline::Text(text.to_string())),
+        }
+    }
+
+    /// A space, unless one is already there: TeX makes one of a run.
+    fn space(&mut self) {
+        self.settle_breaks();
+        match self.inlines.last() {
+            Some(Inline::Text(last)) if last.ends_with(' ') => {}
+            None => {}
+            _ => self.text(" "),
+        }
+    }
+
+    /// The line breaks before text: a space, or a new paragraph.
+    fn settle_breaks(&mut self) {
+        let breaks = std::mem::take(&mut self.breaks);
+        let skip_spaces = std::mem::take(&mut self.skip_spaces);
+        if breaks >= 2 {
+            self.end_paragraph();
+        } else if breaks > 0 && !skip_spaces {
+            self.space();
+        }
+    }
+
+    fn end_paragraph(&mut self) {
+        self.breaks = 0;
+        let inlines = trimmed(std::mem::take(&mut self.inlines));
+        if !inlines.is_empty() {
+            self.blocks.push(Block::Paragraph(inlines));
+        }
+    }
+}
+
+/// Characters LaTeX gives meanings, escaped: each shows its character.
+const ESCAPED: [&str; 7] = ["\\%", "\\&", "\\#", "\\$", "\\_", "\\{", "\\}"];
+
+/// The commands the reader knows that take no arguments, so the groups
+/// after them are read as any others; unknown commands keep theirs' text.
+const NO_GROUPS: [&str; 9] = [
+    "\\par", "\\", "\\%", "\\&", "\\#", "\\$", "\\_", "\\{", "\\}",
+];
+
+fn command_name(command: &SyntaxNode) -> String {
+    command
+        .first_token()
+        .map(|name| name.text().to_string())
+        .unwrap_or_default()
+}
+
+/// `inlines` without the spaces at their ends, a block's (`~` is kept).
+fn trimmed(mut inlines: Vec<Inline>) -> Vec<Inline> {
+    if let Some(Inline::Text(first)) = inlines.first_mut() {
+        *first = first.trim_start_matches(' ').to_string();
+    }
+    if let Some(Inline::Text(last)) = inlines.last_mut() {
+        *last = last.trim_end_matches(' ').to_string();
+    }
+    inlines.retain(|inline| !matches!(inline, Inline::Text(text) if text.is_empty()));
+    inlines
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
+    fn text(s: &str) -> Inline {
+        Inline::Text(s.into())
+    }
+
+    /// The paragraphs `source` reads as, their text.
+    fn paragraphs(source: &str) -> Vec<Vec<Inline>> {
+        read(source)
+            .0
+            .blocks
+            .into_iter()
+            .map(|block| match block {
+                Block::Paragraph(inlines) => inlines,
+                other => panic!("{other:?}"),
+            })
+            .collect()
+    }
+
     #[test]
-    fn the_body_is_read_for_its_words() {
+    fn the_body_is_read_in_paragraphs() {
         let source = "\\documentclass{article}\n\\usepackage{amsmath}\n\\begin{document}\n\
-                      Some \\emph{text} % a comment\n\nhere.\n\\end{document}\n";
-        let (doc, warning) = read(source);
+                      Some\n  text. % a comment\n\nSecond.\\par Third.\n\\end{document}\n";
         assert_eq!(
-            doc.blocks,
-            [Block::Paragraph(vec![Inline::Text(
-                "Some text here.".into()
-            )])]
+            paragraphs(source),
+            [
+                vec![text("Some text.")],
+                vec![text("Second.")],
+                vec![text("Third.")],
+            ]
         );
-        assert!(warning.is_none());
+        assert!(read(source).1.is_none());
+    }
+
+    /// Each row: what TeX makes of the source, as the reader reads it.
+    #[test]
+    fn spaces_comments_and_control_words_are_read_as_tex_reads_them() {
+        let cases: &[(&str, &[&str])] = &[
+            // A line's end is a space; an empty one, a comment line's
+            // included, ends the paragraph.
+            ("a\nb", &["a b"]),
+            ("a\n  \nb", &["a", "b"]),
+            ("a %c\n\nb", &["a", "b"]),
+            ("a\n%c\nb", &["a b"]),
+            ("a\r\n\r\nb\rc", &["a", "b c"]),
+            // A run of spaces, a line's end among them, is one.
+            ("a  \n  b", &["a b"]),
+            // A group is its content, paragraphs and all.
+            ("a{}b {x\n\ny}", &["ab x", "y"]),
+            // A comment takes its line's end; the next line's spaces go, not
+            // the space before it.
+            ("a%comment\n  b %comment\n  c", &["ab c"]),
+            ("a %c\nb", &["a b"]),
+            ("before \\iffalse hidden\\fi after", &["before after"]),
+            ("a\\iffalse x\\fi b", &["ab"]),
+            // A control word takes the spaces after it, not a control symbol.
+            ("a \\relax b", &["a b"]),
+            ("a\\relax  b", &["ab"]),
+            ("a\\relax\n\nb", &["a", "b"]),
+            ("a\n\\relax b", &["a b"]),
+            ("a\n\\relax\nb", &["a b"]),
+            ("a\n\\begin{x}\nb\n\\end{x}\nc", &["a b c"]),
+            ("a\\relax\\begin{x} b\\end{x}", &["a b"]),
+            ("a\\begin{x}b\\relax\\end{x} c", &["ab c"]),
+            // A group after it, `{}` too, ends it.
+            ("a\\relax{} b", &["a b"]),
+            ("a\\relax {} b", &["a b"]),
+            ("a\n{}\nb", &["a b"]),
+            // `\par` takes no group: it's the next paragraph's. Nor does an
+            // escaped character or a control space.
+            ("a\\par{b}", &["a", "b"]),
+            ("a\\%{kept}b\\ {too}", &["a%keptb too"]),
+            ("a~b", &["a\u{a0}b"]),
+            ("a\\ b", &["a b"]),
+            ("Dr.\\  Who", &["Dr. Who"]),
+            ("a\\\nb", &["a b"]),
+            // An escaped character is itself, and takes no spaces.
+            (
+                "50\\% off \\& \\#1, \\$2 \\{a\\_b\\}",
+                &["50% off & #1, $2 {a_b}"],
+            ),
+            // An unknown command keeps its groups' text.
+            ("Just \\unknown{kept}{too} text.", &["Just kepttoo text."]),
+        ];
+        for &(source, expected) in cases {
+            let expected: Vec<Vec<Inline>> = expected.iter().map(|p| vec![text(p)]).collect();
+            assert_eq!(paragraphs(source), expected, "{source}");
+        }
     }
 
     /// Macros aren't expanded: one that expands forever doesn't hang it.
