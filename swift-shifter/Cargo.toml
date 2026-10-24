@@ -48,6 +48,9 @@ typst-layout = "0.15"
 mitex = "0.2"
 # The LaTeX reader's parser, which mitex itself uses.
 mitex-parser = "0.2"
+# Persistent maps: the Typst reader's table parts keep the names they were
+# made with, shared rather than copied (#113).
+rpds = "=1.2.1"
 unicode-math-class = "0.1"
 typst-kit = { version = "0.15", default-features = false, features = ["embedded-fonts", "scan-fonts", "system-files"] }
 chrono = "0.4"

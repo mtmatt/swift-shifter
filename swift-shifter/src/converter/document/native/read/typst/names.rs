@@ -3,16 +3,18 @@
 //! the `.typ` files imported from the input's folder, through
 //! destructuring, and to the members of modules and dictionaries.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use typst::syntax::SyntaxNode;
 use typst::syntax::ast::{self, AstNode, Expr};
 
 use super::signature::{Signature, std_value};
-use super::table::{Cell, TABLE_PARTS};
+use super::table::TABLE_PARTS;
 use super::wrapper::{Preset, Wrapper, returned_call};
-use super::{Args, HeldSkip, MAX_NESTING, Reader, unparenthesized};
+use super::{MAX_NESTING, Places, Reader, unparenthesized};
 use crate::converter::document::native::typst as native_typst;
 
 /// How deep imports of imports are followed (see [`Reader::module`]).
@@ -25,7 +27,7 @@ const MAX_IMPORT_BYTES: u64 = 1 << 20;
 const MAX_ARRAY: usize = 1 << 10;
 
 /// The names a typst file binds (see [`Reader::module`]).
-pub(super) type Module = Rc<HashMap<String, Name>>;
+pub(super) type Module = Bound;
 
 /// What a name bound by `#import` or `#let` stands for, as far as the
 /// reader can tell without running code. Cloning one is cheap.
@@ -40,16 +42,23 @@ pub(super) enum Name {
     /// wide(body) = table.cell(colspan: 2, body)`, or
     /// `table.cell.with(colspan: 2)`.
     Wrapper(Rc<Wrapper>),
-    /// One of a table's parts ([`TABLE_PARTS`]), made by a call, with the
-    /// cells it was made with: `toprule` after `#let toprule =
-    /// table.hline(…)` is a line, and `hdr` after `#let hdr =
-    /// table.header([A], [B])` a header of two cells. The code its cells
-    /// hold that the reader didn't run is counted where it's placed, not
-    /// where it's made, so a part never placed warns of nothing.
+    /// One of a table's parts ([`TABLE_PARTS`]), made by a call: `toprule`
+    /// after `#let toprule = table.hline(…)` is a line, and `hdr` after
+    /// `#let hdr = table.header([A], [B])` a header of two cells. Its call
+    /// is read where it's placed, each time, as typst lays it out there, so
+    /// a part never placed shows, and warns of, nothing (#113). It's read
+    /// as it was made: in its file, its imports in that file's `dir`, its
+    /// code where that file's `places` say, and with the `names` bound
+    /// where it was made, whatever they're bound to by the time it's placed,
+    /// in an imported file its own, kept among the [`PartNames`] at index
+    /// `names` (see [`Reader::part_cells`]).
     Part {
         part: &'static str,
-        cells: Rc<[Cell]>,
-        skipped: Rc<[HeldSkip]>,
+        call: SyntaxNode,
+        dir: Option<PathBuf>,
+        file: Option<Rc<Path>>,
+        places: Places,
+        names: usize,
     },
     /// An imported file's names: `lib` after `#import "lib.typ"`.
     Module(Module),
@@ -124,13 +133,25 @@ impl Name {
     }
 }
 
+/// The names bound at one point and what each stands for: a persistent map,
+/// so a table's part made there keeps them all, sharing what's unchanged
+/// with those bound after rather than copying them (see [`Name::Part`]).
+pub(super) type Bound = rpds::HashTrieMap<String, Name>;
+
+/// The names each table's part made beforehand keeps, by the index its
+/// [`Name::Part`] holds, for every file read (an imported one's parts too).
+/// Held here rather than in the parts, whose names hold parts in turn: so
+/// they make no chain, which dropping, as deep as it's long, would
+/// overflow the stack on.
+pub(super) type PartNames = Rc<RefCell<Vec<Bound>>>;
+
 /// The names bound by `#import` and `#let` so far, scoped as typst scopes
 /// them: those a content block binds are its own, so past it the names
 /// mean what they did before (see [`Reader::scoped`]). Leaving a scope
 /// undoes only what it bound, however many names there are.
 #[derive(Default)]
 pub(super) struct Names {
-    bound: HashMap<String, Name>,
+    bound: Bound,
     /// For each scope open, innermost last: the names bound in it, and
     /// what each stood for before.
     shadowed: Vec<Vec<(String, Option<Name>)>>,
@@ -142,7 +163,8 @@ impl Names {
     }
 
     fn insert(&mut self, name: String, value: Name) {
-        let before = self.bound.insert(name.clone(), value);
+        let before = self.bound.get(&name).cloned();
+        self.bound.insert_mut(name.clone(), value);
         if let Some(scope) = self.shadowed.last_mut() {
             scope.push((name, before));
         }
@@ -156,10 +178,18 @@ impl Names {
         let scope = self.shadowed.pop().unwrap_or_default();
         for (name, before) in scope.into_iter().rev() {
             match before {
-                Some(value) => self.bound.insert(name, value),
-                None => self.bound.remove(&name),
+                Some(value) => self.bound.insert_mut(name, value),
+                None => {
+                    self.bound.remove_mut(&name);
+                }
             };
         }
+    }
+
+    /// Binds `bound`, the names a part keeps, in place of those bound now,
+    /// which it returns, to be bound again after.
+    pub(super) fn replace(&mut self, bound: Bound) -> Bound {
+        std::mem::replace(&mut self.bound, bound)
     }
 }
 
@@ -344,18 +374,20 @@ impl Reader {
             // It's read where it's imported, as deep as the import.
             nesting: self.nesting,
             modules: std::mem::take(&mut self.modules),
+            // Its parts are placed in the file importing it, too.
+            part_names: self.part_names.clone(),
             unwrapping_left: self.unwrapping_left,
             grown_cells_left: self.grown_cells_left,
             ..Reader::default()
         };
         let parsed = typst::syntax::parse(&source);
         // Where its code is, for the table parts it makes (see `SkipId`).
-        reader.skipped_places = super::skipped_places(&parsed, &source);
+        reader.skipped_places = Rc::new(super::skipped_places(&parsed, &source));
         reader.file = Some(Rc::from(file.as_path()));
         if let Some(markup) = parsed.cast::<ast::Markup>() {
             reader.blocks(markup);
         }
-        let names = Rc::new(reader.names.bound);
+        let names = reader.names.bound;
         self.modules = reader.modules;
         self.unwrapping_left = reader.unwrapping_left;
         self.grown_cells_left = reader.grown_cells_left;
@@ -568,17 +600,16 @@ impl Reader {
                         _ => Name::Opaque,
                     };
                 };
-                // What it skips counts where it's placed (see `Name::Part`).
-                let (cells, skipped) = self.holding_skips(|reader| match part {
-                    "header" | "footer" => reader.section(call, &Args::default()),
-                    "cell" => vec![reader.cell(call, &Args::default())],
-                    // A line.
-                    _ => Vec::new(),
-                });
+                // Read where it's placed, as it was made (see `Name::Part`).
+                let mut kept = self.part_names.borrow_mut();
+                kept.push(self.names.bound.clone());
                 Name::Part {
                     part,
-                    cells: cells.into(),
-                    skipped: skipped.into(),
+                    call: call.to_untyped().clone(),
+                    dir: self.dir.clone(),
+                    file: self.file.clone(),
+                    places: self.skipped_places.clone(),
+                    names: kept.len() - 1,
                 }
             }
             name @ (Expr::Ident(_) | Expr::FieldAccess(_)) => self.resolve(name),
@@ -1067,6 +1098,126 @@ mod tests {
                 std::slice::from_ref(&expected),
                 "{source}"
             );
+        }
+    }
+
+    /// Regression for #113: a part made beforehand is read where it's
+    /// placed, each time, as typst lays it out. One never placed shows
+    /// nothing, its note included; one placed twice shows twice, a note
+    /// each time.
+    #[test]
+    fn parts_made_beforehand_are_read_where_they_are_placed() {
+        let notes = |doc: crate::converter::document::native::ast::Document| {
+            doc.blocks
+                .iter()
+                .filter(|block| matches!(block, Block::FootnoteDefinition { .. }))
+                .count()
+        };
+        assert_eq!(
+            notes(read("#let unused = table.cell[a#footnote[N]]\nText.\n")),
+            0
+        );
+        assert_eq!(
+            notes(read(
+                "#let c = table.cell[a#footnote[N]]\n#table(columns: 2, c, c)\n"
+            )),
+            2
+        );
+        // Its call's names, through a preset too.
+        assert_eq!(
+            table_texts(
+                "#let cell = table.cell[Kept]\n#let header = table.header.with(cell)\n\
+                 #let h = header()\n#table(columns: 1, h, [Body])\n"
+            ),
+            [(strings(&["Kept"]), vec![strings(&["Body"])])]
+        );
+        // Its names are those bound where it was made, one bound again
+        // after or not.
+        assert_eq!(
+            notes(read(
+                "#let note = footnote\n#let c = table.cell[a#note[N]]\n#let note = text\n\
+                 #table(columns: 1, c)\n"
+            )),
+            1
+        );
+        // Its imports are in its own file's folder.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir(dir.path().join("sub")).unwrap();
+        std::fs::write(dir.path().join("sub/defs.typ"), "#let note = footnote\n").unwrap();
+        std::fs::write(
+            dir.path().join("sub/lib.typ"),
+            "#let c = table.cell[#import \"defs.typ\": note\na#note[N]]\n",
+        )
+        .unwrap();
+        let doc = read_in(
+            "#import \"sub/lib.typ\": c\n#table(columns: 1, c)\n",
+            dir.path(),
+        );
+        assert_eq!(notes(doc), 1);
+        // An imported part sees its own file's names, not imported here.
+        std::fs::write(
+            dir.path().join("alias.typ"),
+            "#let note = footnote\n#let c = table.cell[a#note[N]]\n",
+        )
+        .unwrap();
+        let doc = read_in(
+            "#import \"alias.typ\": c\n#table(columns: 1, c)\n",
+            dir.path(),
+        );
+        assert_eq!(notes(doc), 1);
+    }
+
+    /// A part keeps every name bound where it was made, shared, not copied:
+    /// many parts made with many names between them stay quick.
+    #[test]
+    fn parts_share_the_names_they_keep() {
+        let mut source = String::new();
+        for n in 0..20_000 {
+            source.push_str(&format!("#let v{n} = [x]\n#let c{n} = table.cell[x]\n"));
+        }
+        source.push_str("#table(columns: 1, c19999)\n");
+        let start = std::time::Instant::now();
+        assert_eq!(table_texts(&source), [(Vec::new(), vec![strings(&["x"])])]);
+        assert!(start.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    /// Parts placing parts twice, again and again, would be read 2^30
+    /// times: what the reader may spend unwrapping bounds it.
+    #[test]
+    fn parts_placing_parts_twice_stay_bounded() {
+        let mut source = String::from("#let c0 = table.cell[x]\n");
+        for n in 1..=30 {
+            source.push_str(&format!(
+                "#let c{n} = table.cell[#table(columns: 2, c{0}, c{0})]\n",
+                n - 1
+            ));
+        }
+        source.push_str("#table(columns: 1, c30)\n");
+        let start = std::time::Instant::now();
+        read(&source);
+        assert!(start.elapsed() < std::time::Duration::from_secs(5));
+    }
+
+    /// A part made of the one bound before it, 20,000 times over, nests
+    /// nothing while it's not placed, and placed, nests no deeper than the
+    /// reader reads; so does a header placing itself, within the stack
+    /// conversions run on.
+    #[test]
+    fn parts_made_of_parts_stay_within_the_stack() {
+        let mut chain = String::from("#let c = table.cell[x]\n");
+        chain.push_str(&"#let c = table.cell[#table(columns: 1, c)]\n".repeat(20_000));
+        let header = "#let h = table.header[A]\n#let h = table.header(h)\n#table(columns: 1, h)\n";
+        for source in [
+            chain.clone(),
+            format!("{chain}#table(columns: 1, c)\n"),
+            header.to_string(),
+        ] {
+            std::thread::Builder::new()
+                .stack_size(2 << 20)
+                .spawn(move || read(&source))
+                .unwrap()
+                .join()
+                .unwrap();
         }
     }
 
