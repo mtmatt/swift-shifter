@@ -256,6 +256,22 @@ fn test_route_hop_covers_every_satisfiable_edge() {
 }
 
 #[test]
+fn test_no_chain_passes_through_plain_text() {
+    // Plain-text output warns of nothing it drops (it's meant to keep only
+    // the text), so a chain through it would drop formatting unreported.
+    use crate::converter::graph::{edges, shortest_paths};
+    for e in edges() {
+        for (target, route) in shortest_paths(e.from) {
+            assert!(
+                !route[1..route.len() - 1].contains(&"txt".to_string()),
+                "{} -> {target} goes through txt: {route:?}",
+                e.from
+            );
+        }
+    }
+}
+
+#[test]
 fn test_detect_with_chains_png_offers_chained_mobi() {
     let r = crate::converter::graph::detect_with_chains("/x.png").unwrap();
     // direct still includes a 1-hop target
