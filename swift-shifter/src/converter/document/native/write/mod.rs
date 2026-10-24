@@ -154,9 +154,24 @@ pub(crate) trait BlockWriter {
 /// TeX `tex` as pulldown-latex and mitex can render it. Neither takes
 /// `aligned`'s optional position, so the `[b]` the Typst reader gives rows
 /// in text, which LaTeX sets with their last on the baseline, would show as
-/// text; it's left out.
+/// text; it's left out. Nor do they take `\tag*`, which the reader ends a
+/// numbered equation with: its number follows the equation instead.
 pub(crate) fn renderable_tex(tex: &str) -> String {
-    tex.replace("\\begin{aligned}[b]", "\\begin{aligned}")
+    let tex = tex.replace("\\begin{aligned}[b]", "\\begin{aligned}");
+    if let Some((math, tag)) = tex.rsplit_once(" \\tag*{")
+        && let Some(number) = tag.strip_suffix('}')
+        // Text, its braces escaped, as the reader writes it.
+        && !number.replace("\\{", "").replace("\\}", "").contains(['{', '}'])
+    {
+        // `\text` would show escapes as they are, so a number with them
+        // is math, where they mean their characters.
+        return if number.contains('\\') {
+            format!("{math} \\qquad {number}")
+        } else {
+            format!("{math} \\qquad \\text{{{number}}}")
+        };
+    }
+    tex
 }
 
 /// The id of raw HTML that's nothing but an empty anchor (see

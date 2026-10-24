@@ -3,8 +3,8 @@
 //! emphasis, code, math (converted to TeX), links, labels and references,
 //! footnotes, images, figures and their captions, quotes and their
 //! attributions, and tables. The document's `#set document(…)` and `#set
-//! text(lang: …)` become its metadata, and `#set enum(start: …)` numbers
-//! its lists.
+//! text(lang: …)` become its metadata, `#set enum(start: …)` numbers its
+//! lists, and `#set math.equation(numbering: …)` its display equations.
 //!
 //! Styling (`set`/`show` rules, the settings given to `#text(…)` and the
 //! like, spacing) and code (`let`, loops) are dropped. What a call shows
@@ -38,17 +38,20 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
+use typst::model::NumberingPattern;
 use typst::syntax::SyntaxNode;
 use typst::syntax::ast::{self, AstNode, Expr};
 
 use super::markdown::push_text;
 use super::{typst_math, walk};
 use crate::converter::document::native::Warning;
-use crate::converter::document::native::ast::{Block, Document, Inline, List, ListItem, Meta};
+use crate::converter::document::native::ast::{
+    Block, Document, Inline, List, ListItem, Meta, RawFormat,
+};
 
 use finish::{
     FRAME_MARK, HEADING_MARK, LABEL_LINK, MAX_REFERENCE_TEXT, QUOTE_MARK, REFERENCE_TEXT_PER_BYTE,
-    quoted_text,
+    equation_supplement, quoted_text, spend_on_reference,
 };
 use names::{Module, Name, Names, PartNames};
 use signature::{Given, std_symbol_text};
@@ -59,6 +62,13 @@ use wrapper::{MAX_UNWRAPPED, Presets, UNWRAPPED_PER_BYTE};
 #[cfg(test)]
 pub fn read(source: &str) -> Document {
     Reader::default().read(source).0
+}
+
+#[cfg(test)]
+thread_local! {
+    /// How many equation numbers the reader has made from their pattern on
+    /// this thread, for tests to tell numbers it skipped making.
+    static NUMBERS_APPLIED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
 /// [`read_in`], also returning what of the document's code that would
@@ -254,6 +264,27 @@ struct Reader {
     note_labels: HashMap<String, String>,
     /// Heading ids (their [`HEADING_MARK`]) by the typst `<label>` on them.
     heading_labels: HashMap<String, usize>,
+    /// Numbered equations by the typst `<label>` on them.
+    equation_labels: HashMap<String, EquationRef>,
+    /// How `#set math.equation(numbering: …)` numbers display equations,
+    /// scoped like the names; `None` leaves them unnumbered.
+    equation_numbering: Option<NumberingPattern>,
+    /// What `#set math.equation(supplement: …)` makes references to
+    /// equations show before the number, scoped like the names: `None`
+    /// typst's own, in [`Reader::text_lang`], and `Some(None)` nothing.
+    /// Shared by the equations it's set for, however long it is.
+    equation_supplement: Option<Option<Rc<str>>>,
+    /// Whether `#set math.equation(block: …)` displays the equations
+    /// `math.equation` calls make, scoped like the names: `$ … $` says for
+    /// itself.
+    equation_block: bool,
+    /// The language `#set text(lang:)` sets, scoped like the names.
+    text_lang: Option<Rc<str>>,
+    /// Whether what's read isn't laid out (the document's title), so its
+    /// equations aren't numbered whatever is set inside it.
+    unlaid: bool,
+    /// Numbered equations read so far.
+    equations_numbered: u64,
     /// Headings read so far: the next one's id.
     headings_read: usize,
     /// What the names bound by `#import` and `#let` stand for; a name not
@@ -590,6 +621,48 @@ struct ItemCall {
 enum Labelled {
     Heading(usize),
     Note(String),
+    Equation(EquationRef),
+}
+
+/// What a reference to a numbered equation needs.
+#[derive(Clone)]
+struct EquationRef {
+    /// The index of its id (see [`equation_id`]).
+    index: u64,
+    /// The number a reference shows.
+    number: String,
+    /// The supplement set where it is (see [`Reader::equation_supplement`]).
+    supplement: Option<Option<Rc<str>>>,
+    /// Typst's own supplement in the language where it is, shown where none
+    /// is set.
+    default_supplement: &'static str,
+}
+
+impl EquationRef {
+    /// What a reference to it shows ("Equation 1"). Made only once it's
+    /// paid for (see [`EquationRef::text_len`]), so a long supplement
+    /// referred to again and again isn't copied past what references may
+    /// copy.
+    fn text(&self) -> String {
+        match self.supplement() {
+            Some(supplement) => format!("{supplement} {}", self.number),
+            None => self.number.clone(),
+        }
+    }
+
+    /// The length of [`EquationRef::text`].
+    fn text_len(&self) -> usize {
+        self.supplement()
+            .map_or(0, |supplement| supplement.len() + 1)
+            + self.number.len()
+    }
+
+    fn supplement(&self) -> Option<&str> {
+        match &self.supplement {
+            None => Some(self.default_supplement),
+            Some(supplement) => supplement.as_deref(),
+        }
+    }
 }
 
 impl Reader {
@@ -704,11 +777,11 @@ impl Reader {
             }
             match expr {
                 Expr::ListItem(item) => {
-                    let content = self.blocks(item.body());
+                    let content = self.rules_scoped(|reader| reader.blocks(item.body()));
                     flow.push_item(None, content);
                 }
                 Expr::EnumItem(item) => {
-                    let content = self.blocks(item.body());
+                    let content = self.rules_scoped(|reader| reader.blocks(item.body()));
                     let number = item.number().or(self.enum_start).unwrap_or(1);
                     flow.push_item(Some(number), content);
                 }
@@ -717,17 +790,22 @@ impl Reader {
                 Expr::Heading(heading) => {
                     // The parser ends a heading at a label: its label
                     // follows it.
-                    let content = self.inlines(heading.body());
+                    let content = self.rules_scoped(|reader| reader.inlines(heading.body()));
                     let heading = self.heading(heading.depth().get(), content, &mut last);
                     flow.push_blocks(heading);
                 }
                 Expr::Equation(eq) if eq.block() => {
-                    flow.push_blocks(vec![Block::Math(typst_math::equation(eq))]);
+                    let equation = self.display_equation(eq, &mut last);
+                    flow.push_blocks(equation);
                 }
                 Expr::Raw(raw) if raw.block() => flow.push_blocks(vec![code_block(raw)]),
                 Expr::TermItem(item) => {
-                    let term = self.inlines(item.term());
-                    let description = self.inlines(item.description());
+                    let (term, description) = self.rules_scoped(|reader| {
+                        (
+                            reader.inlines(item.term()),
+                            reader.inlines(item.description()),
+                        )
+                    });
                     flow.push_blocks(vec![Block::Paragraph(term_item(term, description))]);
                 }
                 Expr::Label(label) => {
@@ -785,6 +863,99 @@ impl Reader {
         vec![Block::Heading { level, content }]
     }
 
+    /// A display equation. Numbered (see [`Reader::equation_numbering`]),
+    /// it shows its number as `\tag*` does, after an anchor references
+    /// link to, and a label after it names it (`last`).
+    fn display_equation(&mut self, eq: ast::Equation, last: &mut Option<Labelled>) -> Vec<Block> {
+        let tex = typst_math::equation(eq);
+        let Some((index, shown)) = self.number_equation(last) else {
+            return vec![Block::Math(tex)];
+        };
+        let anchor = Block::Raw {
+            format: RawFormat::Html,
+            text: format!("<a id=\"{}\"></a>", equation_id(index)),
+        };
+        if fits_tag(&shown) {
+            vec![anchor, Block::Math(format!("{tex} \\tag*{{{shown}}}"))]
+        } else {
+            // A number no tag takes shows after the equation, as it is.
+            vec![
+                anchor,
+                Block::Math(tex),
+                Block::Paragraph(vec![Inline::Text(shown)]),
+            ]
+        }
+    }
+
+    /// A display equation inside text (`*$ x $*`), which typst sets apart
+    /// all the same: inline math, numbered like [`Reader::display_equation`]
+    /// but with its number after it, since `\tag` isn't allowed inline.
+    fn display_equation_inline(
+        &mut self,
+        out: &mut Vec<Inline>,
+        eq: ast::Equation,
+        last: &mut Option<Labelled>,
+    ) {
+        let tex = typst_math::equation(eq);
+        match self.number_equation(last) {
+            Some((index, shown)) => push_numbered(out, index, &shown, [Inline::Math(tex)]),
+            None => out.push(Inline::Math(tex)),
+        }
+    }
+
+    /// Counts a display equation when equations are numbered, and names it
+    /// to a label after it (`last`): its index and the number it shows.
+    fn number_equation(&mut self, last: &mut Option<Labelled>) -> Option<(u64, String)> {
+        if self.unlaid {
+            return None;
+        }
+        let pattern = self.equation_numbering.as_ref()?;
+        self.equations_numbered += 1;
+        let index = self.equations_numbered;
+        let prefix = pattern
+            .pieces
+            .first()
+            .map_or("", |(prefix, _)| prefix.as_str());
+        // Every equation repeats the prefix and suffix, which may be long:
+        // they're within what the reader may copy, past which an equation
+        // shows its bare number, without making the rest first.
+        let least = prefix.len() + pattern.suffix.len() + index.to_string().len();
+        let applied = if least <= self.reference_text_left {
+            #[cfg(test)]
+            NUMBERS_APPLIED.with(|n| n.set(n.get() + 1));
+            Some(pattern.apply(None, &[index]).map(String::from).ok()?)
+        } else {
+            None
+        };
+        let (shown, referenced) = match applied {
+            Some(shown) if spend_on_reference(&mut self.reference_text_left, shown.len()) => {
+                // A reference shows the number without the pattern's prefix
+                // and suffix, as typst's does: "Equation 1", not "Equation
+                // (1)".
+                let referenced = shown
+                    .strip_prefix(prefix)
+                    .and_then(|rest| rest.strip_suffix(pattern.suffix.as_str()))
+                    .unwrap_or(&shown)
+                    .to_string();
+                (shown, referenced)
+            }
+            // Longer than its digits (`*` numbers repeat their symbols): the
+            // numbers past it are too, so it spends what's left.
+            Some(_) => {
+                self.reference_text_left = 0;
+                (index.to_string(), index.to_string())
+            }
+            None => (index.to_string(), index.to_string()),
+        };
+        *last = Some(Labelled::Equation(EquationRef {
+            index,
+            number: referenced,
+            supplement: self.equation_supplement.clone(),
+            default_supplement: equation_supplement(self.text_lang.as_deref()),
+        }));
+        Some((index, shown))
+    }
+
     /// The inline content of `markup`, its ends as they are.
     fn inlines(&mut self, markup: ast::Markup) -> Vec<Inline> {
         let mut out = Vec::new();
@@ -812,9 +983,25 @@ impl Reader {
     fn scoped<T>(&mut self, read: impl FnOnce(&mut Reader) -> T) -> T {
         let enum_start = self.enum_start;
         self.names.open_scope();
-        let out = read(self);
+        let out = self.rules_scoped(read);
         self.names.close_scope();
         self.enum_start = enum_start;
+        out
+    }
+
+    /// `read` the inside of `*…*`, `_…_`, a heading or a list, enum or term
+    /// item. Typst scopes the rules set there to it, but not the names
+    /// bound: equations past it are numbered as before.
+    fn rules_scoped<T>(&mut self, read: impl FnOnce(&mut Reader) -> T) -> T {
+        let equation_numbering = self.equation_numbering.clone();
+        let equation_supplement = self.equation_supplement.clone();
+        let equation_block = self.equation_block;
+        let text_lang = self.text_lang.clone();
+        let out = read(self);
+        self.equation_numbering = equation_numbering;
+        self.equation_supplement = equation_supplement;
+        self.equation_block = equation_block;
+        self.text_lang = text_lang;
         out
     }
 
@@ -844,11 +1031,11 @@ impl Reader {
                 content: Vec::new(),
             }),
             Expr::Strong(strong) => {
-                let content = self.inlines(strong.body());
+                let content = self.rules_scoped(|reader| reader.inlines(strong.body()));
                 out.extend(styled(Inline::Strong, content));
             }
             Expr::Emph(emph) => {
-                let content = self.inlines(emph.body());
+                let content = self.rules_scoped(|reader| reader.inlines(emph.body()));
                 out.extend(styled(Inline::Emph, content));
             }
             Expr::Raw(raw) => out.push(Inline::Code(raw_text(raw))),
@@ -859,6 +1046,7 @@ impl Reader {
             }),
             Expr::Ref(reference) => out.push(label_ref(reference.target())),
             Expr::Label(label) => self.attach_label(label.get(), last.take()),
+            Expr::Equation(eq) if eq.block() => self.display_equation_inline(out, eq, last),
             Expr::Equation(eq) => out.push(Inline::Math(typst_math::equation(eq))),
             Expr::Str(text) => push_text(out, &text.get()),
             Expr::ContentBlock(block) => out.extend(self.content_flow(block).into_inlines()),
@@ -867,12 +1055,22 @@ impl Reader {
             Expr::LetBinding(binding) => self.let_binding(binding),
             Expr::ModuleImport(import) => self.import(import),
             // Block markup inside inline content: its text.
-            Expr::Heading(heading) => out.extend(self.inlines(heading.body())),
-            Expr::ListItem(item) => out.extend(self.inlines(item.body())),
-            Expr::EnumItem(item) => out.extend(self.inlines(item.body())),
+            Expr::Heading(heading) => {
+                out.extend(self.rules_scoped(|reader| reader.inlines(heading.body())));
+            }
+            Expr::ListItem(item) => {
+                out.extend(self.rules_scoped(|reader| reader.inlines(item.body())));
+            }
+            Expr::EnumItem(item) => {
+                out.extend(self.rules_scoped(|reader| reader.inlines(item.body())));
+            }
             Expr::TermItem(item) => {
-                let term = self.inlines(item.term());
-                let description = self.inlines(item.description());
+                let (term, description) = self.rules_scoped(|reader| {
+                    (
+                        reader.inlines(item.term()),
+                        reader.inlines(item.description()),
+                    )
+                });
                 out.extend(term_item(term, description));
             }
             // A symbol of typst's own (`#sym.arrow`, `#emoji.rocket`): its
@@ -903,49 +1101,46 @@ impl Reader {
             Some(Labelled::Note(note)) => {
                 self.note_labels.insert(label.to_string(), note);
             }
+            Some(Labelled::Equation(equation)) => {
+                self.equation_labels.insert(label.to_string(), equation);
+            }
             None => {}
         }
     }
 
-    /// `#set document(title:, author:, date:)`, `#set text(lang:)` and
-    /// `#set enum(start:)`.
+    /// `#set document(title:, author:, date:)`, `#set text(lang:)`, `#set
+    /// enum(start:)` and `#set math.equation(numbering:, supplement:)`,
+    /// each a value or `none`. A rule set `if false` sets nothing; one set
+    /// on a condition the reader can't tell is taken to hold.
     fn set_rule(&mut self, rule: ast::SetRule) {
+        if let Some(Expr::Bool(condition)) = rule.condition()
+            && !condition.get()
+        {
+            return;
+        }
+        let args = Args::new(rule.args());
+        if let Expr::FieldAccess(access) = rule.target()
+            && let Expr::Ident(module) = access.target()
+            && (module.as_str(), access.field().as_str()) == ("math", "equation")
+        {
+            return self.equation_settings(&args);
+        }
         let Expr::Ident(target) = rule.target() else {
             return;
         };
-        let args = Args::new(rule.args());
         match target.as_str() {
-            "document" => {
-                if let Some(title) = args.named("title").map(|e| self.plain_text(e)) {
-                    self.meta.title = Some(title).filter(|t| !t.is_empty());
-                }
-                match args.named("author") {
-                    Some(Expr::Array(array)) => {
-                        self.meta.authors = array
-                            .items()
-                            .filter_map(|item| match item {
-                                ast::ArrayItem::Pos(e) => Some(self.plain_text(e)),
-                                ast::ArrayItem::Spread(_) => None,
-                            })
-                            .collect();
-                    }
-                    Some(author) => self.meta.authors = vec![self.plain_text(author)],
-                    None => {}
-                }
-                if let Some(Expr::Str(date)) = args.named("date") {
-                    self.meta.date = Some(date.get().to_string());
-                }
-                if let Some(description) = args.named("description") {
-                    self.meta.description = Some(self.plain_text(description));
-                }
-            }
+            // What typst keeps of the document but doesn't lay out: its
+            // equations aren't numbered.
+            "document" => self.unnumbered(|reader| reader.document_rule(&args)),
             "text" => {
                 if let Some(Expr::Str(lang)) = args.named("lang") {
                     let region = match args.named("region") {
                         Some(Expr::Str(region)) => format!("-{}", region.get().to_uppercase()),
                         _ => String::new(),
                     };
-                    self.meta.lang = Some(format!("{}{region}", lang.get()));
+                    let lang = format!("{}{region}", lang.get());
+                    self.text_lang = Some(lang.as_str().into());
+                    self.meta.lang = Some(lang);
                 }
             }
             "enum" => {
@@ -955,6 +1150,105 @@ impl Reader {
             }
             _ => {}
         }
+    }
+
+    /// The `numbering:`, `supplement:` and `block:` of `math.equation`, set
+    /// or given to a call.
+    fn equation_settings(&mut self, args: &Args) {
+        if let Some(Expr::Bool(block)) = args.named("block") {
+            self.equation_block = block.get();
+        }
+        match args.named("numbering") {
+            Some(Expr::Str(pattern)) => self.equation_numbering = pattern.get().parse().ok(),
+            Some(Expr::None(_)) => self.equation_numbering = None,
+            _ => {}
+        }
+        match args.named("supplement") {
+            Some(Expr::Auto(_)) => self.equation_supplement = None,
+            Some(Expr::None(_)) => self.equation_supplement = Some(None),
+            // Shown by references, not where it's set.
+            Some(supplement @ (Expr::Str(_) | Expr::ContentBlock(_))) => {
+                let text = self.unnumbered(|reader| reader.plain_text(supplement));
+                self.equation_supplement = Some(Some(text.into()));
+            }
+            _ => {}
+        }
+    }
+
+    /// `#math.equation(…)`: an equation, displayed and counted as `$ … $`
+    /// is with `block: true`, else inline and uncounted, whatever its body
+    /// is written as. A body the reader can't write as math (`[x]`) shows
+    /// what it shows, numbered as in text (see
+    /// [`Reader::display_equation_inline`]), and the equations in it aren't
+    /// counted: the equations after it are numbered as typst numbers them
+    /// all the same.
+    fn equation_call(&mut self, args: &Args, last: &mut Option<Labelled>) -> Item {
+        // What it's given holds for it alone.
+        self.rules_scoped(|reader| {
+            reader.equation_settings(args);
+            let block = reader.equation_block;
+            match args.body() {
+                Some(Expr::Equation(eq)) if block => {
+                    Item::blocks(reader.display_equation(eq, last))
+                }
+                Some(Expr::Equation(eq)) => {
+                    Item::Inlines(vec![Inline::Math(typst_math::equation(eq))])
+                }
+                _ => {
+                    let numbered = if block {
+                        reader.number_equation(last)
+                    } else {
+                        None
+                    };
+                    let content = reader.unnumbered(|reader| {
+                        reader.joined(reader.std_shown_args("math.equation", args))
+                    });
+                    match numbered {
+                        Some((index, shown)) => {
+                            let mut out = Vec::new();
+                            push_numbered(&mut out, index, &shown, content.into_inlines());
+                            Item::blocks(vec![Block::Paragraph(out)])
+                        }
+                        None => content,
+                    }
+                }
+            }
+        })
+    }
+
+    /// `#set document(title:, author:, date:, description:)`.
+    fn document_rule(&mut self, args: &Args) {
+        if let Some(title) = args.named("title").map(|e| self.plain_text(e)) {
+            self.meta.title = Some(title).filter(|t| !t.is_empty());
+        }
+        match args.named("author") {
+            Some(Expr::Array(array)) => {
+                self.meta.authors = array
+                    .items()
+                    .filter_map(|item| match item {
+                        ast::ArrayItem::Pos(e) => Some(self.plain_text(e)),
+                        ast::ArrayItem::Spread(_) => None,
+                    })
+                    .collect();
+            }
+            Some(author) => self.meta.authors = vec![self.plain_text(author)],
+            None => {}
+        }
+        if let Some(Expr::Str(date)) = args.named("date") {
+            self.meta.date = Some(date.get().to_string());
+        }
+        if let Some(description) = args.named("description") {
+            self.meta.description = Some(self.plain_text(description));
+        }
+    }
+
+    /// `read`, with display equations unnumbered: for what typst doesn't
+    /// lay out, which doesn't count (see [`Reader::unlaid`]).
+    fn unnumbered<T>(&mut self, read: impl FnOnce(&mut Self) -> T) -> T {
+        let unlaid = std::mem::replace(&mut self.unlaid, true);
+        let read = read(self);
+        self.unlaid = unlaid;
+        read
     }
 
     /// The text of a string or content argument.
@@ -1024,6 +1318,7 @@ impl Reader {
             "table" | "grid" => {
                 Item::blocks(self.table(&args).map(Block::Table).into_iter().collect())
             }
+            "math.equation" => self.equation_call(&args, last),
             "line" => Item::blocks(vec![Block::ThematicBreak]),
             "linebreak" => Item::Inlines(vec![Inline::LineBreak]),
             // As typst parses it: past the settings it finds by their type
@@ -1287,9 +1582,7 @@ impl Reader {
             Expr::FuncCall(call) => self.call(call, &mut None),
             Expr::Parenthesized(inner) => self.arg_item(inner.expr()),
             Expr::Raw(raw) if raw.block() => Item::blocks(vec![code_block(raw)]),
-            Expr::Equation(eq) if eq.block() => {
-                Item::blocks(vec![Block::Math(typst_math::equation(eq))])
-            }
+            Expr::Equation(eq) if eq.block() => Item::blocks(self.display_equation(eq, &mut None)),
             other => Item::Inlines(self.inlines_of(other)),
         }
     }
@@ -1481,6 +1774,44 @@ fn label_ref(target: &str) -> Inline {
     }
 }
 
+/// Append `content`, numbered equation `index` in text: after the anchor
+/// references link to, tag by tag as Markdown gives an anchor in text, and
+/// before the number it shows.
+fn push_numbered(
+    out: &mut Vec<Inline>,
+    index: u64,
+    shown: &str,
+    content: impl IntoIterator<Item = Inline>,
+) {
+    let raw = |text: String| Inline::Raw {
+        format: RawFormat::Html,
+        text,
+    };
+    out.push(raw(format!("<a id=\"{}\">", equation_id(index))));
+    out.push(raw("</a>".into()));
+    out.extend(content);
+    push_text(out, &format!(" {shown}"));
+}
+
+/// Whether `text`, an equation's number, goes in a `\tag*` as it is: it
+/// holds none of the characters TeX gives a meaning, as a numbering
+/// pattern's prefix and suffix may (`"1%"`). Escaped, they'd take the
+/// renderers here to math, not text (see
+/// [`crate::converter::document::native::write::renderable_tex`]), and
+/// `\`, `^` and `~` are commands neither pulldown-latex nor mitex takes in a
+/// tag's place.
+fn fits_tag(text: &str) -> bool {
+    !text.contains(['%', '#', '&', '$', '_', '{', '}', '\\', '^', '~'])
+}
+
+/// The id of the anchor before numbered equation `index` (see
+/// [`Reader::display_equation`]). Its colon keeps it apart from the
+/// headings' ids, which have none (see
+/// [`crate::converter::document::native::write::HeadingIds`]).
+fn equation_id(index: u64) -> String {
+    format!("equation:{index}")
+}
+
 /// The id a heading's [`HEADING_MARK`] names, if it has one.
 fn heading_mark(content: &[Inline]) -> Option<usize> {
     match content.last() {
@@ -1506,7 +1837,34 @@ fn flatten(blocks: Vec<Block>) -> Vec<Inline> {
             Block::Quote(children) => flatten(children),
             Block::List(list) => flatten(list.items.into_iter().flat_map(|i| i.content).collect()),
             Block::Code { code, .. } => vec![Inline::Code(code)],
-            Block::Math(tex) => vec![Inline::Math(tex)],
+            // A numbered equation, as in text (see
+            // `Reader::display_equation_inline`): `\tag` isn't allowed
+            // inline, so its number follows it.
+            Block::Math(tex) => match tex.rsplit_once(" \\tag*{") {
+                Some((math, tag)) if tag.ends_with('}') => {
+                    // As it is: no number with TeX's own characters goes
+                    // in a tag (see `fits_tag`).
+                    let shown = &tag[..tag.len() - 1];
+                    vec![
+                        Inline::Math(math.to_string()),
+                        Inline::Text(format!(" {shown}")),
+                    ]
+                }
+                _ => vec![Inline::Math(tex)],
+            },
+            // An equation's anchor, as text gives one: tag by tag.
+            Block::Raw {
+                format: RawFormat::Html,
+                ref text,
+            } if crate::converter::document::native::write::lone_anchor(text).is_some()
+                && let Some(open) = text.strip_suffix("</a>") =>
+            {
+                let raw = |text: &str| Inline::Raw {
+                    format: RawFormat::Html,
+                    text: text.to_string(),
+                };
+                vec![raw(open), raw("</a>")]
+            }
             Block::Table(table) => flatten(
                 table
                     .header
@@ -1522,7 +1880,9 @@ fn flatten(blocks: Vec<Block>) -> Vec<Inline> {
         if content.is_empty() {
             continue;
         }
-        if !out.is_empty() {
+        // An anchor stays right before what it marks.
+        let after_anchor = matches!(out.last(), Some(Inline::Raw { text, .. }) if text == "</a>");
+        if !out.is_empty() && !after_anchor {
             push_text(&mut out, " ");
         }
         out.extend(content);
@@ -1916,6 +2276,7 @@ mod tests {
     use crate::converter::document::native::ast::{Align, ListItem, Table, inline_text};
     use crate::converter::document::native::read::markdown;
     use crate::converter::document::native::write;
+    use std::cell::Cell;
 
     // Helpers the reader's other test modules share.
 
@@ -2107,6 +2468,85 @@ fn main() {}
                 note("note-3", vec![text("Third")]),
             ]
         );
+    }
+
+    /// A long numbering prefix, repeated for every equation, is copied
+    /// within what the reader may copy; past it, equations show their bare
+    /// number.
+    #[test]
+    fn long_equation_numbers_are_copied_within_a_bound() {
+        let prefix = "-".repeat(100_000);
+        let source = format!(
+            "#set math.equation(numbering: \"{prefix}1\")\n{}",
+            "$ x $\n\n".repeat(100)
+        );
+        let doc = read(&source);
+        let maths: Vec<&String> = doc
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::Math(tex) => Some(tex),
+                _ => None,
+            })
+            .collect();
+        assert!(maths[0].ends_with(&format!("{prefix}1}}")));
+        assert_eq!(maths[99], "x \\tag*{100}");
+        let budget = MAX_REFERENCE_TEXT.max(source.len() * REFERENCE_TEXT_PER_BYTE);
+        let copied: usize = maths.iter().map(|tex| tex.len()).sum();
+        assert!(copied < budget + prefix.len(), "{copied}");
+        // Past the bound, numbers aren't made only to be dropped.
+        let with_prefix = maths.iter().filter(|tex| tex.contains(&prefix)).count();
+        assert!(with_prefix < 100);
+        assert_eq!(NUMBERS_APPLIED.with(Cell::get), with_prefix);
+    }
+
+    /// Numbers longer than their digits (`*` repeats its symbols) stop
+    /// being made once one doesn't fit.
+    #[test]
+    fn numbers_longer_than_estimated_spend_the_rest() {
+        // The 4000th is over 1000 symbols long; all of them, about 3 MB.
+        let source = format!(
+            "#set math.equation(numbering: \"*\")\n{}",
+            "$ x $\n\n".repeat(4000)
+        );
+        let doc = read(&source);
+        let numbered = doc
+            .blocks
+            .iter()
+            .filter(|block| match block {
+                Block::Math(tex) => tex.split_once("\\tag*{").is_some_and(|(_, tag)| {
+                    !tag.trim_end_matches('}')
+                        .bytes()
+                        .all(|b| b.is_ascii_digit())
+                }),
+                _ => false,
+            })
+            .count();
+        assert!((1..4000).contains(&numbered), "{numbered}");
+        // The number that didn't fit is the last one made.
+        assert_eq!(NUMBERS_APPLIED.with(Cell::get), numbered + 1);
+    }
+
+    /// Equations share the supplement set for them rather than each copy
+    /// it, so a long one on many labelled equations isn't copied for each.
+    #[test]
+    fn labelled_equations_share_their_supplement() {
+        let source = format!(
+            "#set math.equation(numbering: \"(1)\", supplement: [{}])\n{}",
+            "word ".repeat(1000),
+            (0..3)
+                .map(|i| format!("$ x $ <e{i}>\n\n"))
+                .collect::<String>()
+        );
+        let mut reader = Reader::default();
+        let root = typst::syntax::parse(&source);
+        reader.blocks(root.cast::<ast::Markup>().unwrap());
+        let supplement = |label: &str| match &reader.equation_labels[label].supplement {
+            Some(Some(supplement)) => Rc::clone(supplement),
+            other => panic!("{label}: {:?}", other.is_some()),
+        };
+        assert!(Rc::ptr_eq(&supplement("e0"), &supplement("e2")));
+        assert!(supplement("e0").starts_with("word word "));
     }
 
     #[test]
