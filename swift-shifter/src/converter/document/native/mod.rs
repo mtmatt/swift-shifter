@@ -983,6 +983,10 @@ fn read_raw_inlines(inlines: &mut Vec<Inline>) -> usize {
     for (i, inline) in raw.iter().enumerate() {
         let mut inline = inline.clone();
         match &mut inline {
+            // An empty anchor's two tags are where links go: the writer's.
+            Inline::Raw { .. }
+                if write::inline_anchor(&raw[i..]).is_some()
+                    || i > 0 && write::inline_anchor(&raw[i - 1..]).is_some() => {}
             Inline::Raw { text, .. } => {
                 let blocks = read::html::read_fragment(text);
                 // Anything that isn't inline (MathML kept raw): leave the tag
@@ -2519,6 +2523,361 @@ mod tests {
             let after_d = &page[page.find(" D").unwrap()..];
             assert_eq!(after_d.find("#fn-"), after_d.find("#fn-3"), "{page}");
         }
+    }
+
+    /// Regression for #75: with `math.equation` numbered, a display
+    /// equation shows its number, and a reference to it its supplement and
+    /// number, linking to it; unnumbered, neither changes.
+    #[test]
+    fn typst_numbered_equations_show_and_link_their_numbers() {
+        let dir = tempfile::tempdir().unwrap();
+        let body = "$ x = 1 $ <eq>\n\nSee @eq.\n";
+        let source = format!("#set math.equation(numbering: \"(1)\")\n{body}");
+        let (_, markdown) = converted(dir.path(), "eq.typ", &source, "md");
+        for written in [
+            "<a id=\"equation:1\"></a>",
+            "x = 1 \\tag*{(1)}",
+            "See [Equation 1](#equation:1).",
+        ] {
+            assert!(markdown.contains(written), "{written} in {markdown}");
+        }
+        let (_, html) = converted(dir.path(), "eq.typ", &source, "html");
+        for written in [
+            "<a id=\"equation:1\"></a>",
+            "<mtext>(1)</mtext>",
+            "See <a href=\"#equation:1\">Equation 1</a>.",
+        ] {
+            assert!(html.contains(written), "{written} in {html}");
+        }
+        assert!(!html.contains("<code class=\"math\">"), "{html}");
+        // LaTeX takes `\tag*` in amsmath's display math, and the
+        // reference reaches a label at the equation.
+        let (_, tex) = converted(dir.path(), "eq.typ", &source, "tex");
+        for written in [
+            "\\usepackage{amsmath",
+            "\\phantomsection\\label{equation:3a:1}\n\n\\[\nx = 1 \\tag*{(1)}\n\\]",
+            "See \\hyperref[equation:3a:1]{Equation 1}.",
+        ] {
+            assert!(tex.contains(written), "{written} in {tex}");
+        }
+        // The PDF shows the number rather than falling back to TeX.
+        let typst_source = typeset_not_tex(&markdown);
+        assert!(!typst_source.contains("tag"), "{typst_source}");
+        // Back from Markdown, the reference reaches the equation in a
+        // `.typ` file and the PDF.
+        let doc = read::markdown::read(&markdown);
+        let typ = typst_file_source(&doc, dir.path());
+        assert!(
+            typ.contains("#link(label(\"anchor:equation:1\"))[Equation 1]"),
+            "{typ}"
+        );
+        let main = dir.path().join("main.typ");
+        std::fs::write(&main, &typ).unwrap();
+        let (pdf, ..) = typeset_with_fallback(&doc, dir.path()).unwrap();
+        for pdf in [typst_file_to_pdf(&main).unwrap(), pdf] {
+            assert_eq!(pdf_links(&pdf), [None]);
+        }
+
+        let (_, plain) = converted(dir.path(), "plain.typ", body, "md");
+        assert!(
+            !plain.contains("tag") && !plain.contains("equation:1"),
+            "{plain}"
+        );
+        assert!(plain.contains("See @eq."), "{plain}");
+    }
+
+    /// A display equation in text (`*$ x $*`) counts, as typst counts it,
+    /// and shows its number after it.
+    #[test]
+    fn typst_display_equations_in_text_are_numbered_too() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = "#set math.equation(numbering: \"(1)\")\n*$ x $*\n\n$ y $ <eq>\n\nSee @eq.\n";
+        let (_, markdown) = converted(dir.path(), "eq.typ", source, "md");
+        for written in [
+            "**<a id=\"equation:1\"></a>$x$ (1)**",
+            "y \\tag*{(2)}",
+            "See [Equation 2](#equation:2).",
+        ] {
+            assert!(markdown.contains(written), "{written} in {markdown}");
+        }
+        let (_, tex) = converted(dir.path(), "eq.typ", source, "tex");
+        for written in [
+            "\\textbf{\\phantomsection\\label{equation:3a:1}\\(x\\) (1)}",
+            "See \\hyperref[equation:3a:2]{Equation 2}.",
+        ] {
+            assert!(tex.contains(written), "{written} in {tex}");
+        }
+        let doc = read::markdown::read(&markdown);
+        let typ = typst_file_source(&doc, dir.path());
+        let main = dir.path().join("main.typ");
+        std::fs::write(&main, &typ).unwrap();
+        assert_eq!(pdf_links(&typst_file_to_pdf(&main).unwrap()), [None]);
+    }
+
+    /// A numbered equation in a table cell, where only text goes, is as one
+    /// in text: its anchor stays, and its number follows it, `\tag` being
+    /// no LaTeX there.
+    #[test]
+    fn typst_numbered_equations_in_table_cells_keep_their_anchor() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = "#set math.equation(numbering: \"(1)\")\n#table(columns: 1, [$ x $ <eq>])\n\nSee @eq.\n";
+        let (_, markdown) = converted(dir.path(), "cell.typ", source, "md");
+        for written in [
+            "<a id=\"equation:1\"></a>$x$ (1)",
+            "See [Equation 1](#equation:1).",
+        ] {
+            assert!(markdown.contains(written), "{written} in {markdown}");
+        }
+        let (tex, text) = converted(dir.path(), "cell.typ", source, "tex");
+        assert!(
+            !text.contains("\\tag") && text.contains("\\label{equation:3a:1}\\(x\\) (1)"),
+            "{text}"
+        );
+        assert_latex_compiles(&tex);
+    }
+
+    /// A table cell bound to a name numbers its equations where it is
+    /// placed, as typst does: each time it is placed, and not at all when
+    /// it never is.
+    #[test]
+    fn typst_bound_table_cells_number_equations_where_placed() {
+        let dir = tempfile::tempdir().unwrap();
+        let markdown = |placed: &str| -> String {
+            let source = format!(
+                "#set math.equation(numbering: \"(1)\")\n#let c = table.cell[$ x $]\n\
+                 {placed}\n\n$ y $ <eq>\n\nSee @eq.\n"
+            );
+            converted(dir.path(), "cell.typ", &source, "md").1
+        };
+        let unused = markdown("");
+        for written in ["y \\tag*{(1)}", "See [Equation 1](#equation:1)."] {
+            assert!(unused.contains(written), "{written} in {unused}");
+        }
+        let twice = markdown("#table(columns: 2, c, c)");
+        for written in [
+            "<a id=\"equation:1\"></a>$x$ (1)",
+            "<a id=\"equation:2\"></a>$x$ (2)",
+            "y \\tag*{(3)}",
+            "See [Equation 3](#equation:3).",
+        ] {
+            assert!(twice.contains(written), "{written} in {twice}");
+        }
+    }
+
+    /// `math.equation(block: true, …)` is numbered in turn with `$ … $`,
+    /// and the document's title, which typst doesn't lay out, isn't.
+    #[test]
+    fn typst_equation_calls_count_and_titles_do_not() {
+        let dir = tempfile::tempdir().unwrap();
+        let markdown = |before: &str| -> String {
+            let source = format!(
+                "#set math.equation(numbering: \"(1)\")\n{before}\n\n$ y $ <eq>\n\nSee @eq.\n"
+            );
+            converted(dir.path(), "eq.typ", &source, "md").1
+        };
+        let called = markdown("#math.equation(block: true, $x = 1$) <first>\n\nSee @first.");
+        for written in [
+            "x = 1 \\tag*{(1)}",
+            "See [Equation 1](#equation:1).",
+            "y \\tag*{(2)}",
+            "See [Equation 2](#equation:2).",
+        ] {
+            assert!(called.contains(written), "{written} in {called}");
+        }
+        // A body that isn't math shows as it is, numbered after it.
+        for body in ["[x]", "\"x\""] {
+            let shown = markdown(&format!(
+                "#math.equation(block: true, {body}) <first>\n\nSee @first."
+            ));
+            for written in [
+                "<a id=\"equation:1\"></a>x (1)",
+                "See [Equation 1](#equation:1).",
+                "y \\tag*{(2)}",
+                "See [Equation 2](#equation:2).",
+            ] {
+                assert!(shown.contains(written), "{written} in {shown}");
+            }
+        }
+        // Without `block: true`, inline and uncounted, as is what it holds.
+        for call in [
+            "#math.equation(block: false, $ x $)",
+            "#math.equation($ x $)",
+            "#math.equation([$ x $])",
+        ] {
+            let inline = markdown(call);
+            for written in ["y \\tag*{(1)}", "See [Equation 1](#equation:1)."] {
+                assert!(inline.contains(written), "{written} in {inline}");
+            }
+            assert!(!inline.contains("x \\tag"), "{inline}");
+        }
+        // `block: true` set, as typst sets it: within its block.
+        let set = markdown(
+            "#[#set math.equation(block: true)\n#math.equation($x$) <first>]\n\n\
+             #math.equation($z$)\n\nSee @first.",
+        );
+        for written in [
+            "x \\tag*{(1)}",
+            "See [Equation 1](#equation:1).",
+            "y \\tag*{(2)}",
+            "See [Equation 2](#equation:2).",
+        ] {
+            assert!(set.contains(written), "{written} in {set}");
+        }
+        assert!(!set.contains("z \\tag"), "{set}");
+        // What a call is given holds for it alone.
+        let given = markdown(
+            "#math.equation(block: true, numbering: none, $x$)\n\n\
+             #math.equation(block: true, supplement: [Eq.], $z$) <z>\n\nSee @z.",
+        );
+        for written in [
+            "See [Eq. 1](#equation:1).",
+            "y \\tag*{(2)}",
+            "See [Equation 2](#equation:2).",
+        ] {
+            assert!(given.contains(written), "{written} in {given}");
+        }
+        assert!(!given.contains("x \\tag"), "{given}");
+        for unlaid in [
+            "#set document(title: [$ x $])",
+            "#set document(title: [#math.equation(block: true, numbering: \"(1)\", $x$)])",
+            "#set math.equation(supplement: [$ z $])",
+        ] {
+            let titled = markdown(unlaid);
+            for written in ["y \\tag*{(1)}", " 1](#equation:1)."] {
+                assert!(titled.contains(written), "{written} in {titled}");
+            }
+        }
+    }
+
+    /// A number with what TeX writes as commands (`\`, `^`, `~`), which no
+    /// renderer here takes in a tag, shows whole after its equation rather
+    /// than make it fall back to TeX or lose them.
+    #[test]
+    fn typst_equation_numbers_no_tag_takes_show_after_them() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = "#set math.equation(numbering: \"(1^)\")\n$ x $ <eq>\n\nSee @eq.\n";
+        let (_, markdown) = converted(dir.path(), "eq.typ", source, "md");
+        for written in [
+            "<a id=\"equation:1\"></a>",
+            "$$\nx\n$$\n\n(1\\^)",
+            "See [Equation 1](#equation:1).",
+        ] {
+            assert!(markdown.contains(written), "{written} in {markdown}");
+        }
+        assert!(!markdown.contains("tag"), "{markdown}");
+        typeset_not_tex(&markdown);
+        let source = "#set math.equation(numbering: \"(1^~\\\\)\")\n$ x $\n";
+        let (_, html) = converted(dir.path(), "odd.typ", source, "html");
+        assert!(html.contains("<p>(1^~\\)</p>"), "{html}");
+        let (tex, text) = converted(dir.path(), "odd.typ", source, "tex");
+        assert!(!text.contains("tag"), "{text}");
+        assert_latex_compiles(&tex);
+    }
+
+    /// A reference shows what typst calls an equation in the language set
+    /// where the equation is, not the document's last.
+    #[test]
+    fn typst_equation_references_name_them_in_their_language() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = "#set math.equation(numbering: \"(1)\")\n#set text(lang: \"en\")\n\
+                      $ x $ <first>\n\n#[#set text(lang: \"fr\")\n$ z $ <scoped>]\n\n\
+                      #set text(lang: \"de\")\n$ y $ <second>\n\n\
+                      See @first, @scoped and @second.\n";
+        let (_, markdown) = converted(dir.path(), "eq.typ", source, "md");
+        assert!(
+            markdown.contains(
+                "See [Equation 1](#equation:1), [Équation 2](#equation:2) \
+                 and [Gleichung 3](#equation:3)."
+            ),
+            "{markdown}"
+        );
+    }
+
+    /// Equation rules set in `*…*`, `_…_`, a list, enum or term item or a
+    /// heading hold only there, as in typst.
+    #[test]
+    fn typst_equation_rules_in_strong_emph_items_and_headings_stay_there() {
+        let dir = tempfile::tempdir().unwrap();
+        let markdown = |inside: &str| -> String {
+            let source = format!(
+                "#set math.equation(numbering: \"(1)\")\n{inside}\n\n$ y $ <eq>\n\nSee @eq.\n"
+            );
+            converted(dir.path(), "eq.typ", &source, "md").1
+        };
+        for unnumbered in [
+            "*#set math.equation(numbering: none)\n$ x $*",
+            "_#set math.equation(numbering: none)\n$ x $_",
+            "- #set math.equation(numbering: none)\n  $ x $",
+            "+ #set math.equation(numbering: none)\n  $ x $",
+            "/ Term: #set math.equation(numbering: none)\n  $ x $",
+            "= Title #set math.equation(numbering: none)",
+        ] {
+            let md = markdown(unnumbered);
+            for written in ["y \\tag*{(1)}", "See [Equation 1](#equation:1)."] {
+                assert!(md.contains(written), "{written} in {md}");
+            }
+        }
+        let md = markdown("*#set math.equation(supplement: [Eq.])\n$ x $*");
+        assert!(md.contains("See [Equation 2](#equation:2)."), "{md}");
+        // An item in text, read as its text, too.
+        let source = "#set math.equation(numbering: \"(1)\")\n*a\n\
+                      - #set math.equation(numbering: none)\n  $ x $\n$ y $ <eq>*\n\nSee @eq.\n";
+        let (_, md) = converted(dir.path(), "eq.typ", source, "md");
+        for written in ["$y$ (1)", "See [Equation 1](#equation:1)."] {
+            assert!(md.contains(written), "{written} in {md}");
+        }
+    }
+
+    /// A rule set `if false` numbers nothing, and references show the
+    /// supplement set for the equation, or none.
+    #[test]
+    fn typst_equation_numbers_follow_conditions_and_supplements() {
+        let dir = tempfile::tempdir().unwrap();
+        let markdown = |set: &str| -> String {
+            let source = format!("#set math.equation({set})\n$ x $ <eq>\n\nSee @eq.\n");
+            converted(dir.path(), "eq.typ", &source, "md").1
+        };
+        let unset = markdown("numbering: \"(1)\") if false\n#set text(lang: \"en\"");
+        assert!(
+            !unset.contains("tag") && unset.contains("See @eq."),
+            "{unset}"
+        );
+        let set = markdown("numbering: \"(1)\") if true\n#set text(lang: \"en\"");
+        assert!(set.contains("See [Equation 1](#equation:1)."), "{set}");
+        let custom = markdown("numbering: \"(1)\", supplement: [Eq.]");
+        assert!(custom.contains("See [Eq. 1](#equation:1)."), "{custom}");
+        let none = markdown("numbering: \"(1)\", supplement: none");
+        assert!(none.contains("See [1](#equation:1)."), "{none}");
+        // `auto` sets typst's own again.
+        for set in ["supplement: none", "supplement: [Eq.]"] {
+            let auto = markdown(&format!(
+                "numbering: \"(1)\", {set})\n#set math.equation(supplement: auto"
+            ));
+            assert!(auto.contains("See [Equation 1](#equation:1)."), "{auto}");
+        }
+    }
+
+    /// An equation's id is apart from a heading's of the same words, a
+    /// reference in a heading shows the equation's number, and a number
+    /// with what TeX gives a meaning (`%`) shows as text, spaces and all.
+    #[test]
+    fn typst_equation_numbers_keep_apart_from_headings_and_tex() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = "#set math.equation(numbering: \"{1}% done\")\n\
+                      = Equation 1\n\n= See @eq\n\n$ x $ <eq>\n";
+        let (_, html) = converted(dir.path(), "eq.typ", source, "html");
+        for written in [
+            "<h1 id=\"equation-1\">Equation 1</h1>",
+            "<h1 id=\"see-equation-1\">See <a href=\"#equation:1\">Equation 1</a></h1>",
+            "<a id=\"equation:1\"></a>",
+            "<p>{1}% done</p>",
+        ] {
+            assert!(html.contains(written), "{written} in {html}");
+        }
+        assert!(!html.contains("<code class=\"math\">"), "{html}");
+        let (_, markdown) = converted(dir.path(), "eq.typ", source, "md");
+        assert!(!markdown.contains("tag"), "{markdown}");
+        typeset_not_tex(&markdown);
     }
 
     /// Regression for #65 and #49: typed large operators take typst's
