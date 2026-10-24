@@ -128,3 +128,71 @@ jobs:
 
       - name: Build Tauri app (compile check, no bundle)
         run: npm run tauri -- build --no-bundle
+
+  # The LaTeX writer's output compiled with pdfLaTeX and LuaLaTeX (#78),
+  # beside the build, as TeX Live takes a while to install.
+  latex:
+    name: LaTeX engines
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Install system dependencies and TeX Live
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            nasm \
+            texlive-latex-recommended \
+            texlive-latex-extra \
+            texlive-plain-generic \
+            texlive-luatex \
+            texlive-lang-japanese \
+            lmodern
+
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: swift-shifter
+
+      # tauri's generate_context! embeds ui/dist.
+      - name: Build frontend
+        run: |
+          npm ci
+          npm run build
+
+      # The tests that compile LaTeX, by name: the suite as a whole isn't
+      # run in CI. A new one is to be added here.
+      - name: Compile LaTeX output with each engine
+        working-directory: swift-shifter
+        run: >
+          cargo test --bin swift-shifter --
+          raw_html_in_latex_output_keeps_the_main_texts_ids_and_copies_its_images
+          our_latex_compiles
+          quotes_nested_past_the_latex_list_limit_compile
+          quotes_nested_thirty_deep_keep_a_readable_line
+          typst_math_latex_compiles
+          typst_math_symbols_have_latex_glyphs
+          colon_equals_is_one_symbol_in_html_and_compiles_in_latex
+          colon_equals_is_defined_for_latex_beside_the_documents_own
+          typst_operators_and_strings_are_spaced_as_typst_sets_them
+          script_characters_with_scripts_compile_in_latex
+          unbraced_and_verbatim_text_in_math_compiles_in_latex
+          negated_relations_and_variation_selectors_get_latex_names
+          colon_equals_is_defined_for_nested_math_and_provided_commands
+          notes_inside_notes_are_typeset_in_order
+          notes_where_latex_cant_set_them_are_set_after
+          cjk_documents_keep_the_spaces_beside_english_punctuation

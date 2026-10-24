@@ -2784,10 +2784,30 @@ mod tests {
         );
     }
 
-    /// Asserts that tectonic (XeLaTeX) compiles `tex` to a PDF, and returns
-    /// what it printed. Skipped, returning `None`, where tectonic isn't
-    /// installed or can't download its bundle.
+    /// The TeX Live engines our LaTeX is compiled with, besides tectonic
+    /// (XeLaTeX) (#78).
+    const LATEX_ENGINES: [&str; 2] = ["pdflatex", "lualatex"];
+
+    /// What the TeX Live engines don't compile yet: (engine, test,
+    /// document, why). Each is to be fixed, or its reason made for good
+    /// (#78).
+    const LATEX_KNOWN_FAILURES: &[(&str, &str, &str, &str)] = &[];
+
+    /// The writer's message stopping pdfLaTeX on non-Latin text, which it
+    /// can't typeset.
+    const NON_LATIN_STOP: &str = "This document has non-Latin text";
+
+    /// Asserts that `tex` compiles to a PDF with each of [`LATEX_ENGINES`],
+    /// each writing into a folder of its own beside it, and with tectonic,
+    /// writing beside it; and returns what tectonic printed. pdfLaTeX is
+    /// instead to stop on non-Latin text, saying so. An engine that isn't
+    /// installed is skipped, but not in CI, which installs the TeX Live
+    /// ones. `None` is returned where tectonic isn't installed or can't
+    /// download its bundle.
     fn assert_latex_compiles(tex: &Path) -> Option<String> {
+        for engine in LATEX_ENGINES {
+            assert_engine_compiles(engine, tex);
+        }
         let Ok(tectonic) = which::which("tectonic") else {
             eprintln!("skipping: tectonic not found");
             return None;
@@ -2819,6 +2839,53 @@ mod tests {
             String::from_utf8_lossy(&output.stdout),
             String::from_utf8_lossy(&output.stderr)
         ))
+    }
+
+    /// Asserts that the TeX Live `engine` compiles `tex`, or stops as the
+    /// writer means it to, unless that's a known failure, which is then
+    /// asserted to fail still.
+    fn assert_engine_compiles(engine: &str, tex: &Path) {
+        let Ok(program) = which::which(engine) else {
+            assert!(
+                std::env::var("CI").as_deref() != Ok("true"),
+                "{engine} isn't installed, and CI compiles our LaTeX with it"
+            );
+            eprintln!("skipping: {engine} not found");
+            return;
+        };
+        let name = tex.file_name().unwrap();
+        let out = tex.with_file_name(engine);
+        std::fs::create_dir_all(&out).unwrap();
+        let output = std::process::Command::new(program)
+            .args(["-interaction=nonstopmode", "-halt-on-error"])
+            .arg("-output-directory")
+            .arg(&out)
+            .arg(name)
+            .current_dir(tex.parent().unwrap())
+            .output()
+            .unwrap();
+        let log = String::from_utf8_lossy(&output.stdout);
+        let source = std::fs::read_to_string(tex).unwrap();
+        let passed = if engine == "pdflatex" && source.contains(NON_LATIN_STOP) {
+            !output.status.success() && log.contains(NON_LATIN_STOP)
+        } else {
+            output.status.success() && out.join(name).with_extension("pdf").is_file()
+        };
+        // The test's thread is named for it.
+        let thread = std::thread::current();
+        let test = thread.name().unwrap_or("").rsplit("::").next().unwrap();
+        let document = name.to_string_lossy();
+        let known = LATEX_KNOWN_FAILURES
+            .iter()
+            .any(|&(e, t, d, _)| e == engine && t == test && d == document);
+        if known {
+            assert!(
+                !passed,
+                "{engine} now compiles {test}'s {document}: take it off LATEX_KNOWN_FAILURES"
+            );
+        } else {
+            assert!(passed, "{engine}: {test}'s {document}\n{log}\n{source}");
+        }
     }
 
     const TRICKY_MARKDOWN: &str = "---\ntitle: Tricky [test] & more\nauthor: [A_B, C#D]\n---\n\n\
