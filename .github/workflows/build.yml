@@ -42,8 +42,7 @@ jobs:
             libayatana-appindicator3-dev \
             librsvg2-dev \
             patchelf \
-            nasm \
-            epubcheck
+            nasm
 
       - name: Install Fedora system dependencies
         if: matrix.name == 'Fedora'
@@ -119,24 +118,20 @@ jobs:
         working-directory: swift-shifter
         run: cargo clippy --all-targets -- -D warnings
 
-      # The EPUB writer's books against the EPUB 3 specification (#79).
-      # Only this test: the suite as a whole isn't run in CI.
-      - name: Check EPUB output with epubcheck
-        if: matrix.name == 'Ubuntu'
-        working-directory: swift-shifter
-        run: cargo test --bin swift-shifter books_pass_epubcheck -- --nocapture
-
       - name: Build Tauri app (compile check, no bundle)
         run: npm run tauri -- build --no-bundle
 
-  # The LaTeX writer's output compiled with pdfLaTeX, XeLaTeX and LuaLaTeX
-  # (#78), beside the build, as TeX Live takes a while to install.
-  latex:
-    name: LaTeX engines
+  # The whole cargo test suite (#108), beside the build, as TeX Live takes
+  # a while to install. With the tools it installs, the LaTeX writer's
+  # output is compiled with each engine (#78) and the EPUB writer's books
+  # are checked with epubcheck (#79); in CI, those tests fail rather than
+  # skip without them.
+  test:
+    name: Tests
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install system dependencies and TeX Live
+      - name: Install system dependencies, TeX Live and epubcheck
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -153,7 +148,8 @@ jobs:
             texlive-lang-cjk \
             texlive-lang-japanese \
             fonts-noto-cjk \
-            lmodern
+            lmodern \
+            epubcheck
 
       - uses: actions/checkout@v4
 
@@ -177,25 +173,8 @@ jobs:
           npm ci
           npm run build
 
-      # The tests that compile LaTeX, by name: the suite as a whole isn't
-      # run in CI. A new one is to be added here.
-      - name: Compile LaTeX output with each engine
+      # The tests that use the system clipboard are macOS's only, so none
+      # run here.
+      - name: Run the tests
         working-directory: swift-shifter
-        run: >
-          cargo test --bin swift-shifter --
-          raw_html_in_latex_output_keeps_the_main_texts_ids_and_copies_its_images
-          our_latex_compiles
-          quotes_nested_past_the_latex_list_limit_compile
-          quotes_nested_thirty_deep_keep_a_readable_line
-          typst_math_latex_compiles
-          typst_math_symbols_have_latex_glyphs
-          colon_equals_is_one_symbol_in_html_and_compiles_in_latex
-          colon_equals_is_defined_for_latex_beside_the_documents_own
-          typst_operators_and_strings_are_spaced_as_typst_sets_them
-          script_characters_with_scripts_compile_in_latex
-          unbraced_and_verbatim_text_in_math_compiles_in_latex
-          negated_relations_and_variation_selectors_get_latex_names
-          colon_equals_is_defined_for_nested_math_and_provided_commands
-          notes_inside_notes_are_typeset_in_order
-          notes_where_latex_cant_set_them_are_set_after
-          cjk_documents_keep_the_spaces_beside_english_punctuation
+        run: cargo test
