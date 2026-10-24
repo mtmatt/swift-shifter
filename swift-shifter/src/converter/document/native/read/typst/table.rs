@@ -142,7 +142,10 @@ impl Reader {
     pub(super) fn section<'a>(&mut self, expr: Expr<'a>, given: &Args<'a>) -> Vec<Cell> {
         let Expr::FuncCall(call) = expr else {
             return match self.resolve(expr) {
-                Name::Part { cells, .. } => cells.to_vec(),
+                Name::Part { cells, skipped, .. } => {
+                    self.count_skips(&skipped);
+                    cells.to_vec()
+                }
                 _ => Vec::new(),
             };
         };
@@ -191,7 +194,10 @@ impl Reader {
                 }
             }
             Expr::Ident(_) | Expr::FieldAccess(_) => match self.resolve(expr) {
-                Name::Part { cells, .. } => return cells.to_vec(),
+                Name::Part { cells, skipped, .. } => {
+                    self.count_skips(&skipped);
+                    return cells.to_vec();
+                }
                 Name::Unknown => return Vec::new(),
                 _ => {}
             },

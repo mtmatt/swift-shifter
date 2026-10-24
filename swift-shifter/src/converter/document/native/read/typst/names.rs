@@ -12,7 +12,7 @@ use typst::syntax::ast::{self, AstNode, Expr};
 use super::signature::{Signature, std_value};
 use super::table::{Cell, TABLE_PARTS};
 use super::wrapper::{Preset, Wrapper, returned_call};
-use super::{Args, MAX_NESTING, Reader, unparenthesized};
+use super::{Args, HeldSkip, MAX_NESTING, Reader, unparenthesized};
 use crate::converter::document::native::typst as native_typst;
 
 /// How deep imports of imports are followed (see [`Reader::module`]).
@@ -43,10 +43,13 @@ pub(super) enum Name {
     /// One of a table's parts ([`TABLE_PARTS`]), made by a call, with the
     /// cells it was made with: `toprule` after `#let toprule =
     /// table.hline(…)` is a line, and `hdr` after `#let hdr =
-    /// table.header([A], [B])` a header of two cells.
+    /// table.header([A], [B])` a header of two cells. The code its cells
+    /// hold that the reader didn't run is counted where it's placed, not
+    /// where it's made, so a part never placed warns of nothing.
     Part {
         part: &'static str,
         cells: Rc<[Cell]>,
+        skipped: Rc<[HeldSkip]>,
     },
     /// An imported file's names: `lib` after `#import "lib.typ"`.
     Module(Module),
@@ -346,6 +349,9 @@ impl Reader {
             ..Reader::default()
         };
         let parsed = typst::syntax::parse(&source);
+        // Where its code is, for the table parts it makes (see `SkipId`).
+        reader.skipped_places = super::skipped_places(&parsed, &source);
+        reader.file = Some(Rc::from(file.as_path()));
         if let Some(markup) = parsed.cast::<ast::Markup>() {
             reader.blocks(markup);
         }
@@ -562,15 +568,17 @@ impl Reader {
                         _ => Name::Opaque,
                     };
                 };
-                let cells = match part {
-                    "header" | "footer" => self.section(call, &Args::default()),
-                    "cell" => vec![self.cell(call, &Args::default())],
+                // What it skips counts where it's placed (see `Name::Part`).
+                let (cells, skipped) = self.holding_skips(|reader| match part {
+                    "header" | "footer" => reader.section(call, &Args::default()),
+                    "cell" => vec![reader.cell(call, &Args::default())],
                     // A line.
                     _ => Vec::new(),
-                };
+                });
                 Name::Part {
                     part,
                     cells: cells.into(),
+                    skipped: skipped.into(),
                 }
             }
             name @ (Expr::Ident(_) | Expr::FieldAccess(_)) => self.resolve(name),
