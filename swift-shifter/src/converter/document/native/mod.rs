@@ -123,13 +123,16 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
     // An EPUB is extracted to a temp folder its images are read from; it
     // must outlive the writing.
     let mut book_dir = None;
+    // What the reader couldn't read, first among the warnings.
+    let mut warnings = Vec::new();
     let mut doc = match from.as_str() {
         "epub" => {
             let book = read::epub::read(input)?;
             book_dir = Some(book.dir);
             book.doc
         }
-        "md" | "txt" | "html" | "typst" => {
+        // tex isn't in `INPUTS` until the LaTeX reader is done (#73).
+        "md" | "txt" | "html" | "typst" | "tex" => {
             let source = std::fs::read(input)
                 .map_err(|e| format!("Failed to read {}: {e}", input.display()))?;
             // Lossy rather than failing on a stray invalid byte; a BOM is dropped.
@@ -139,6 +142,11 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
                 "md" => read::markdown::read(source),
                 "txt" => read::plain::read(source),
                 "typst" => read::typst::read_in(source, input.parent().unwrap_or(Path::new("."))),
+                "tex" => {
+                    let (doc, warning) = read::latex::read(source);
+                    warnings.extend(warning);
+                    doc
+                }
                 _ => read::html::read(source),
             }
         }
@@ -188,7 +196,6 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
     if !matches!(target, "md" | "html" | "epub" | "txt") {
         raw_html_lost += write::raw_html_elements(&doc);
     }
-    let mut warnings = Vec::new();
     if raw_html_lost > 0 {
         warnings.push(Warning {
             one: "raw HTML element kept only its text",

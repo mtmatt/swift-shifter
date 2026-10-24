@@ -46,6 +46,8 @@ typst = "0.15"
 typst-pdf = "0.15"
 typst-layout = "0.15"
 mitex = "0.2"
+# The LaTeX reader's parser, which mitex itself uses.
+mitex-parser = "0.2"
 unicode-math-class = "0.1"
 typst-kit = { version = "0.15", default-features = false, features = ["embedded-fonts", "scan-fonts", "system-files"] }
 chrono = "0.4"
