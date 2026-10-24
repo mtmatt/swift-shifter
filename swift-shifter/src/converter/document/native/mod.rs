@@ -1102,6 +1102,8 @@ pub(crate) fn percent_decode(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::converter::document::binaries::find_pandoc_binary;
+    use crate::test_tools::installed;
 
     #[test]
     fn handles_only_native_pairs() {
@@ -2506,9 +2508,10 @@ mod tests {
     }
 
     /// The text of `pdf`, as pdftotext reads it. `None` where pdftotext
-    /// isn't installed, or there's no PDF (tectonic wasn't run).
+    /// isn't installed (see [`installed`]), or there's no PDF (tectonic
+    /// wasn't run).
     fn pdf_text(pdf: &Path) -> Option<String> {
-        let pdftotext = which::which("pdftotext").ok()?;
+        let pdftotext = installed("pdftotext", which::which("pdftotext").ok())?;
         if !pdf.is_file() {
             return None;
         }
@@ -2526,9 +2529,10 @@ mod tests {
     }
 
     /// What pandoc writes when it reads `tex`, given the writer's
-    /// `options` (`-t markdown`). `None` where pandoc isn't installed.
+    /// `options` (`-t markdown`). `None` where pandoc isn't installed (see
+    /// [`installed`]).
     fn pandoc_read_back(tex: &Path, options: &[&str]) -> Option<String> {
-        let pandoc = crate::converter::document::binaries::find_pandoc_binary()?;
+        let pandoc = installed("pandoc", find_pandoc_binary())?;
         let output = std::process::Command::new(pandoc)
             .args(["-f", "latex"])
             .args(options)
@@ -3001,8 +3005,7 @@ Ref[^code].\n\n\
     /// structure. Skipped where pandoc isn't installed.
     #[test]
     fn pandoc_reads_our_latex_back_with_the_same_structure() {
-        let Some(pandoc) = crate::converter::document::binaries::find_pandoc_binary() else {
-            eprintln!("skipping: pandoc not found");
+        let Some(pandoc) = installed("pandoc", find_pandoc_binary()) else {
             return;
         };
         /// Headings, then counts of tables, code blocks, display math and

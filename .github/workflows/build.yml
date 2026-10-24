@@ -122,16 +122,17 @@ jobs:
         run: npm run tauri -- build --no-bundle
 
   # The whole cargo test suite (#108), beside the build, as TeX Live takes
-  # a while to install. With the tools it installs, the LaTeX writer's
-  # output is compiled with each engine (#78) and the EPUB writer's books
-  # are checked with epubcheck (#79); in CI, those tests fail rather than
-  # skip without them.
+  # a while to install. It installs the tools tests check output with:
+  # TeX Live's engines (#78), epubcheck (#79), pandoc, pdftotext and
+  # pymupdf4llm (#114). In CI, a test fails rather than skip without one.
+  # Not tectonic: it downloads its bundle while the tests run, and TeX
+  # Live's XeLaTeX compiles our LaTeX already.
   test:
     name: Tests
     runs-on: ubuntu-latest
 
     steps:
-      - name: Install system dependencies, TeX Live and epubcheck
+      - name: Install system dependencies and the tools tests check with
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -149,7 +150,12 @@ jobs:
             texlive-lang-japanese \
             fonts-noto-cjk \
             lmodern \
-            epubcheck
+            epubcheck \
+            pandoc \
+            poppler-utils \
+            xvfb
+          # Where the app looks for it first; pinned to the version tested.
+          pipx install --include-deps pymupdf4llm==1.27.2.3
 
       - uses: actions/checkout@v4
 
@@ -174,7 +180,8 @@ jobs:
           npm run build
 
       # The tests that use the system clipboard are macOS's only, so none
-      # run here.
+      # run here. The CLI tests' headless app still starts GTK, which needs
+      # a display: xvfb gives it one.
       - name: Run the tests
         working-directory: swift-shifter
-        run: cargo test
+        run: xvfb-run -a cargo test
