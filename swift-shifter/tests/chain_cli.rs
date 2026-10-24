@@ -1,6 +1,5 @@
 //! End-to-end test of multi-hop chaining through the real CLI.
-//! Skipped when the tools the chain needs are unavailable (e.g. CI without
-//! pandoc / typst / pymupdf4llm).
+//! Skipped where pymupdf4llm, which the chain needs, isn't installed.
 
 mod common;
 
@@ -28,9 +27,9 @@ enum OutputDirFlag {
 fn run_png_to_html_chain(output_dir_flag: OutputDirFlag) {
     // 1. Ask the CLI which tools exist. The chain is png -> pdf -> html
     //    (png has no direct html edge):
-    //   png -> pdf  needs pandoc + a typst PDF engine,
-    //   pdf -> html needs pymupdf4llm (then pandoc).
-    let missing = missing_tools(&["pandoc", "typst", "pymupdf4llm"]);
+    //   png -> pdf  is typeset by the embedded typst,
+    //   pdf -> html needs pymupdf4llm (then the native HTML writer).
+    let missing = missing_tools(&["pymupdf4llm"]);
     if !missing.is_empty() {
         eprintln!("SKIP: png->html chain e2e; missing tools: {missing:?}");
         return;

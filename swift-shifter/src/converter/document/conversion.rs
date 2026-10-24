@@ -1130,12 +1130,16 @@ pub(crate) async fn convert_pdf_with_marker_to_md(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::test_tools::installed;
 
+    /// The text of `pdf`, as pdftotext reads it. `None` where pdftotext
+    /// isn't installed (see [`installed`]).
     fn pdf_text(pdf: &[u8]) -> Option<String> {
+        let pdftotext = installed("pdftotext", which::which("pdftotext").ok())?;
         let dir = tempfile::tempdir().ok()?;
         let path = dir.path().join("out.pdf");
         std::fs::write(&path, pdf).ok()?;
-        let output = std::process::Command::new("pdftotext")
+        let output = std::process::Command::new(pdftotext)
             .arg(&path)
             .arg("-")
             .output()
@@ -1154,8 +1158,7 @@ mod tests {
 
     #[test]
     fn tex_typesets_via_pandoc_with_its_own_files_and_metadata() {
-        let Some(pandoc) = find_pandoc_binary() else {
-            eprintln!("skipping: pandoc not found");
+        let Some(pandoc) = installed("pandoc", find_pandoc_binary()) else {
             return;
         };
         let dir = tempfile::tempdir().unwrap();
