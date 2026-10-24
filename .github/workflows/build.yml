@@ -129,8 +129,8 @@ jobs:
       - name: Build Tauri app (compile check, no bundle)
         run: npm run tauri -- build --no-bundle
 
-  # The LaTeX writer's output compiled with pdfLaTeX and LuaLaTeX (#78),
-  # beside the build, as TeX Live takes a while to install.
+  # The LaTeX writer's output compiled with pdfLaTeX, XeLaTeX and LuaLaTeX
+  # (#78), beside the build, as TeX Live takes a while to install.
   latex:
     name: LaTeX engines
     runs-on: ubuntu-latest
@@ -148,8 +148,11 @@ jobs:
             texlive-latex-recommended \
             texlive-latex-extra \
             texlive-plain-generic \
+            texlive-xetex \
             texlive-luatex \
+            texlive-lang-cjk \
             texlive-lang-japanese \
+            fonts-noto-cjk \
             lmodern
 
       - uses: actions/checkout@v4

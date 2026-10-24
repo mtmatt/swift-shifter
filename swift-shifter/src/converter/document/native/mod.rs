@@ -2785,8 +2785,8 @@ mod tests {
     }
 
     /// The TeX Live engines our LaTeX is compiled with, besides tectonic
-    /// (XeLaTeX) (#78).
-    const LATEX_ENGINES: [&str; 2] = ["pdflatex", "lualatex"];
+    /// (#78).
+    const LATEX_ENGINES: [&str; 3] = ["pdflatex", "xelatex", "lualatex"];
 
     /// What the TeX Live engines don't compile yet: (engine, test,
     /// document, why). Each is to be fixed, or its reason made for good
