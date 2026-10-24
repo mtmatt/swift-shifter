@@ -50,7 +50,7 @@ use finish::{
     FRAME_MARK, HEADING_MARK, LABEL_LINK, MAX_REFERENCE_TEXT, QUOTE_MARK, REFERENCE_TEXT_PER_BYTE,
     quoted_text,
 };
-use names::{Module, Name, Names};
+use names::{Module, Name, Names, PartNames};
 use signature::{Given, std_symbol_text};
 use table::{MAX_GROWN_CELLS, array_items};
 use wrapper::{MAX_UNWRAPPED, Presets, UNWRAPPED_PER_BYTE};
@@ -118,12 +118,11 @@ struct Skips {
     /// How much of each [`Skipped`] kind, and the line of the first.
     tally: [(usize, Option<usize>); Skipped::ALL.len()],
     /// The code counted: each piece once, however often it's read or
-    /// placed in table parts.
+    /// placed in table parts. A table's part made beforehand is read only
+    /// where it's placed (#113), so the code it holds is counted there,
+    /// and not at all if it isn't placed: it needs holding no more, as it
+    /// did while parts were read where they were made.
     counted: HashSet<SkipId>,
-    /// While a table's part made beforehand is read, the code it holds,
-    /// kept with it rather than counted: it's counted where the part is
-    /// placed, and not at all if it isn't (see [`Reader::holding_skips`]).
-    held: Option<Vec<HeldSkip>>,
 }
 
 /// A piece of code the reader didn't run, as it's counted once: where it
@@ -136,8 +135,9 @@ enum SkipId {
     Node(*const SyntaxNode),
 }
 
-/// Code of a kind the reader didn't run, and its line in the input.
-type HeldSkip = (Skipped, SkipId, Option<usize>);
+/// Where each piece of [`Skipped`] code in a file starts: its line and byte,
+/// by its node (see [`skipped_places`]).
+type Places = Rc<HashMap<*const SyntaxNode, (usize, usize)>>;
 
 /// Code the reader doesn't run that would show something (see
 /// [`Reader::skip`]). Imported files show nothing, so what they hold
@@ -260,6 +260,9 @@ struct Reader {
     /// here is the standard library's, if it has one (see
     /// [`Reader::resolve`]).
     names: Names,
+    /// The names the table parts made beforehand keep, in every file read
+    /// (see [`Name::Part`]).
+    part_names: PartNames,
     /// The number `#set enum(start: …)` starts lists at, scoped like the
     /// names.
     enum_start: Option<u64>,
@@ -291,7 +294,7 @@ struct Reader {
     /// The line and the byte each piece of [`Skipped`] code in the file
     /// being read starts at, by its node. Code from elsewhere (a function
     /// imported from another file) has none.
-    skipped_places: HashMap<*const SyntaxNode, (usize, usize)>,
+    skipped_places: Places,
     /// The file being read, canonical, if it's imported; `None` for the
     /// input.
     file: Option<Rc<Path>>,
@@ -598,7 +601,7 @@ impl Reader {
         self.reference_text_left =
             MAX_REFERENCE_TEXT.max(source.len().saturating_mul(REFERENCE_TEXT_PER_BYTE));
         let root = typst::syntax::parse(source);
-        self.skipped_places = skipped_places(&root, source);
+        self.skipped_places = Rc::new(skipped_places(&root, source));
         let blocks = match root.cast::<ast::Markup>() {
             Some(markup) => self.blocks(markup),
             None => Vec::new(),
@@ -632,32 +635,10 @@ impl Reader {
             ),
             None => (SkipId::Node(node), None),
         };
-        self.count_skips(&[(kind, id, line)]);
-    }
-
-    /// Counts `skips`, each piece of code once wherever it's met, or holds
-    /// them for the table's part being made: a part placed here passes
-    /// what it holds on.
-    fn count_skips(&self, skips: &[HeldSkip]) {
         let mut skipped = self.skipped.borrow_mut();
-        if let Some(held) = &mut skipped.held {
-            held.extend_from_slice(skips);
-            return;
+        if skipped.counted.insert(id) {
+            skipped.add(kind, line);
         }
-        for (kind, id, line) in skips {
-            if skipped.counted.insert(id.clone()) {
-                skipped.add(*kind, *line);
-            }
-        }
-    }
-
-    /// Reads with what `read` skips held rather than counted: what it
-    /// returns, and those skips.
-    fn holding_skips<T>(&mut self, read: impl FnOnce(&mut Reader) -> T) -> (T, Vec<HeldSkip>) {
-        let outer = self.skipped.get_mut().held.replace(Vec::new());
-        let out = read(self);
-        let held = std::mem::replace(&mut self.skipped.get_mut().held, outer);
-        (out, held.unwrap_or_default())
     }
 }
 

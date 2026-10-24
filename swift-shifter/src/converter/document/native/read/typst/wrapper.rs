@@ -29,7 +29,9 @@ pub(super) const UNWRAPPED_PER_BYTE: usize = 32;
 /// defines (`#let numhead(..c) = table.header([\#], ..c)`; see
 /// [`Reader::returned`]) or a preset (`table.cell.with(colspan: 2)`).
 /// Called, it calls that with arguments of its own (see
-/// [`Wrapper::arguments`]).
+/// [`Wrapper::arguments`]), read with the names bound where it's called,
+/// not those it was made with: a name bound again in between means its
+/// new value there (#122).
 pub(super) struct Wrapper {
     /// The function as it's written: a closure, or a call to `.with`.
     node: SyntaxNode,

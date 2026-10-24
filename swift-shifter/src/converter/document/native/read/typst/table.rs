@@ -5,7 +5,7 @@ use typst::syntax::ast::{self, AstNode, Expr};
 
 use super::names::Name;
 use super::wrapper::Presets;
-use super::{Args, Reader, join_run, unparenthesized};
+use super::{Args, MAX_NESTING, Reader, join_run, unparenthesized};
 use crate::converter::document::native::ast::{Align, Inline, Table};
 
 /// The parts of a table or grid, called as `table.header(…)` and so on.
@@ -137,17 +137,11 @@ impl Reader {
 
     /// The cells of a table's header or footer, without its lines: those
     /// of a call, given what it's given among `given` (see
-    /// [`Reader::unwrapped`]), or those one made beforehand (`#let th =
-    /// table.header(…)`, placed as `th`) was made with.
+    /// [`Reader::unwrapped`]), or those of one made beforehand (`#let th =
+    /// table.header(…)`, placed as `th`).
     pub(super) fn section<'a>(&mut self, expr: Expr<'a>, given: &Args<'a>) -> Vec<Cell> {
         let Expr::FuncCall(call) = expr else {
-            return match self.resolve(expr) {
-                Name::Part { cells, skipped, .. } => {
-                    self.count_skips(&skipped);
-                    cells.to_vec()
-                }
-                _ => Vec::new(),
-            };
+            return self.part_cells(self.resolve(expr));
         };
         let mut held = Vec::new();
         let (_, args) = self.unwrapped(call, given, &mut held);
@@ -194,16 +188,65 @@ impl Reader {
                 }
             }
             Expr::Ident(_) | Expr::FieldAccess(_) => match self.resolve(expr) {
-                Name::Part { cells, skipped, .. } => {
-                    self.count_skips(&skipped);
-                    return cells.to_vec();
-                }
+                part @ Name::Part { .. } => return self.part_cells(part),
                 Name::Unknown => return Vec::new(),
                 _ => {}
             },
             _ => {}
         }
         vec![self.cell(expr, given)]
+    }
+
+    /// The cells of `part`, a table's header, footer or cell made beforehand
+    /// (see [`Name::Part`]), placed here: its call read here, in the file it
+    /// was made in and with the names bound where it was made; anything
+    /// else has none. Each reading pays for its call out of what
+    /// the reader may spend unwrapping (see
+    /// [`super::wrapper::MAX_UNWRAPPED`]), so that parts placing parts
+    /// twice, again and again, can't multiply it, and is a level as deep as
+    /// calls are read, so that a part placing itself (`#let h =
+    /// table.header(h)`) stops there.
+    fn part_cells(&mut self, part: Name) -> Vec<Cell> {
+        let Name::Part {
+            part,
+            call,
+            dir,
+            file,
+            places,
+            names,
+        } = part
+        else {
+            return Vec::new();
+        };
+        if self.nesting >= MAX_NESTING {
+            return Vec::new();
+        }
+        let Some(left) = self.unwrapping_left.checked_sub(call.len()) else {
+            self.unwrapping_left = 0;
+            return Vec::new();
+        };
+        self.unwrapping_left = left;
+        let Some(expr) = call.cast::<Expr>() else {
+            return Vec::new();
+        };
+        let dir_here = std::mem::replace(&mut self.dir, dir);
+        let file_here = std::mem::replace(&mut self.file, file);
+        let places_here = std::mem::replace(&mut self.skipped_places, places);
+        let kept = self.part_names.borrow()[names].clone();
+        let names_here = self.names.replace(kept);
+        self.nesting += 1;
+        let cells = match part {
+            "header" | "footer" => self.section(expr, &Args::default()),
+            "cell" => vec![self.cell(expr, &Args::default())],
+            // A line.
+            _ => Vec::new(),
+        };
+        self.nesting -= 1;
+        self.names.replace(names_here);
+        self.skipped_places = places_here;
+        self.file = file_here;
+        self.dir = dir_here;
+        cells
     }
 
     /// The cell `expr`, among `given`, makes (see [`Reader::cells`]).
