@@ -2477,7 +2477,7 @@ mod tests {
             "{text}"
         );
         assert_latex_compiles(&tex);
-        if let Some(shown) = pdf_text(&tex.with_extension("pdf")) {
+        if let Some(shown) = pdf_text(&latex_pdf(&tex)) {
             let shown: String = shown.split_whitespace().collect();
             assert!(shown.contains("a≡b,c:=dande∼f"), "{shown}");
         }
@@ -2801,15 +2801,41 @@ mod tests {
 
     /// Asserts that `tex` compiles to a PDF with each of [`LATEX_ENGINES`],
     /// each writing into a folder of its own beside it, and with tectonic,
-    /// writing beside it; and returns what tectonic printed. pdfLaTeX is
-    /// instead to stop on non-Latin text, saying so. An engine that isn't
-    /// installed is skipped, but not in CI, which installs the TeX Live
-    /// ones. `None` is returned where tectonic isn't installed or can't
-    /// download its bundle.
+    /// writing beside it; and returns XeLaTeX's log: TeX Live's, which CI
+    /// has, or else what tectonic printed. pdfLaTeX is instead to stop on
+    /// non-Latin text, saying so. An engine that isn't installed is
+    /// skipped, but not in CI, which installs the TeX Live ones. `None` is
+    /// returned where neither XeLaTeX ran (see [`latex_pdf`]).
     fn assert_latex_compiles(tex: &Path) -> Option<String> {
         for engine in LATEX_ENGINES {
             assert_engine_compiles(engine, tex);
         }
+        let tectonic = tectonic_compiles(tex);
+        let xelatex = tex
+            .with_file_name("xelatex")
+            .join(tex.file_name().unwrap())
+            .with_extension("log");
+        std::fs::read_to_string(xelatex).ok().or(tectonic)
+    }
+
+    /// The PDF of `tex` the text checks read: TeX Live XeLaTeX's, or else
+    /// tectonic's (XeLaTeX too), if either ran.
+    fn latex_pdf(tex: &Path) -> PathBuf {
+        let xelatex = tex
+            .with_file_name("xelatex")
+            .join(tex.file_name().unwrap())
+            .with_extension("pdf");
+        if xelatex.is_file() {
+            xelatex
+        } else {
+            tex.with_extension("pdf")
+        }
+    }
+
+    /// Asserts that tectonic compiles `tex` to a PDF beside it, and returns
+    /// what it printed. `None` where tectonic isn't installed or can't
+    /// download its bundle.
+    fn tectonic_compiles(tex: &Path) -> Option<String> {
         let Ok(tectonic) = which::which("tectonic") else {
             eprintln!("skipping: tectonic not found");
             return None;
@@ -2924,7 +2950,7 @@ Ref[^code].\n\n\
                       [^8]: In cell.\n";
         let (tex, text) = converted(dir.path(), "nested.md", source, "tex");
         assert_latex_compiles(&tex);
-        if let Some(shown) = pdf_text(&tex.with_extension("pdf")) {
+        if let Some(shown) = pdf_text(&latex_pdf(&tex)) {
             let shown: String = shown.split_whitespace().collect();
             for note in [
                 "A1B5.",
@@ -2967,7 +2993,7 @@ Ref[^code].\n\n\
             "{text}"
         );
         assert_latex_compiles(&tex);
-        if let Some(shown) = pdf_text(&tex.with_extension("pdf")) {
+        if let Some(shown) = pdf_text(&latex_pdf(&tex)) {
             let shown: String = shown.split_whitespace().collect();
             // The texts in number order, the head's before the body's.
             for expected in ["1Instrike.2Insup.3Inhead.4Inbody.", "H3", "body4"] {
@@ -2986,7 +3012,7 @@ Ref[^code].\n\n\
                       He said “你好” to me, and `say “hi” — now`.\n\n他说“你好”——“好”。\n";
         let (tex, _) = converted(dir.path(), "mixed.md", source, "tex");
         assert_latex_compiles(&tex);
-        if let Some(shown) = pdf_text(&tex.with_extension("pdf")) {
+        if let Some(shown) = pdf_text(&latex_pdf(&tex)) {
             for line in [
                 "The “raw” data — and “draft” ones… it’s a ‘test’.",
                 "He said “你好” to me, and say “hi” — now.",
