@@ -5,7 +5,11 @@
 
 use std::collections::HashMap;
 
-use super::{Reader, heading_mark, push_inline};
+use typst::foundations::Packed;
+use typst::math::EquationElem;
+use typst::text::{Lang, LocalName, Region};
+
+use super::{EquationRef, Reader, equation_id, heading_mark, push_inline};
 use crate::converter::document::native::ast::{Block, Document, Inline, inline_text};
 use crate::converter::document::native::read::markdown::push_text;
 use crate::converter::document::native::read::walk;
@@ -30,7 +34,8 @@ pub(super) const QUOTE_MARK: char = '\u{3}';
 pub(super) const FRAME_MARK: char = '\u{4}';
 
 /// What references to headings may copy in all, in bytes: the heading's
-/// text they show and the link to it (see [`reference_cost`]). It's this,
+/// text they show and the link to it (see [`reference_cost`]), and so
+/// references to equations and the numbers equations show. It's this,
 /// or [`REFERENCE_TEXT_PER_BYTE`] for each byte of a longer document. Past
 /// it, a reference is its label's text: no short source (a long heading
 /// referred to again and again) makes the reader copy a huge text.
@@ -87,6 +92,7 @@ impl Reader {
         let (_, note_bodies) = Footnotes::collect(&doc);
         let mut texts = HeadingTexts {
             labels: &self.heading_labels,
+            equations: &self.equation_labels,
             unsettled: HashMap::new(),
             settled: HashMap::new(),
             text_left: self.reference_text_left,
@@ -131,6 +137,20 @@ impl Reader {
             }
         });
         walk::resolve_links(&mut doc.blocks, LABEL_LINK, &mut |label, content| {
+            // An equation's, as a heading's, within what references may
+            // copy; past it, its label's text (below).
+            if let Some(equation) = self.equation_labels.get(label) {
+                let id = equation_id(equation.index);
+                let shows_text = content.is_empty();
+                let text_len = equation.text_len();
+                let cost = id.len() + if shows_text { text_len } else { 0 };
+                if spend_on_reference(&mut text_left, cost) {
+                    if shows_text {
+                        *content = vec![Inline::Text(equation.text())];
+                    }
+                    return Some(id);
+                }
+            }
             let heading = self
                 .heading_labels
                 .get(label)
@@ -162,6 +182,8 @@ impl Reader {
 struct HeadingTexts<'a> {
     /// Heading marks by the typst `<label>` on them.
     labels: &'a HashMap<String, usize>,
+    /// Numbered equations by their `<label>`.
+    equations: &'a HashMap<String, EquationRef>,
     /// Headings not settled yet.
     unsettled: HashMap<usize, Vec<Inline>>,
     /// Settled headings.
@@ -197,6 +219,19 @@ impl HeadingTexts<'_> {
                     && shown.is_empty()
                     && let Some(label) = url.strip_prefix(LABEL_LINK)
                 {
+                    // An equation's is settled here, so the heading's id
+                    // is made of the text it shows.
+                    if let Some(equation) = self.equations.get(label) {
+                        let id = equation_id(equation.index);
+                        let cost = id.len() + equation.text_len();
+                        if spend_on_reference(&mut self.text_left, cost) {
+                            *shown = vec![Inline::Text(equation.text())];
+                            *url = format!("#{id}");
+                        } else {
+                            *inline = Inline::Text(format!("@{label}"));
+                        }
+                        continue;
+                    }
                     let text = self.labels.get(label).and_then(|&target| {
                         let settled = self.settle(target, level + 1)?;
                         let (cost, target_depth) = (settled.cost, settled.depth);
@@ -229,9 +264,21 @@ impl HeadingTexts<'_> {
     }
 }
 
+/// What typst calls an equation in references in `lang` (`zh-TW`, say),
+/// English where it's not set: "Equation", as in "Equation 1".
+pub(super) fn equation_supplement(lang: Option<&str>) -> &'static str {
+    let tag = lang.unwrap_or("en");
+    let (lang, region) = tag
+        .split_once('-')
+        .map_or((tag, None), |(lang, region)| (lang, Some(region)));
+    let lang = lang.parse().unwrap_or(Lang::ENGLISH);
+    let region = region.and_then(|region| region.parse::<Region>().ok());
+    <Packed<EquationElem> as LocalName>::local_name(lang, region)
+}
+
 /// Whether what's `left` of what references may copy pays for `cost`
 /// (see [`MAX_REFERENCE_TEXT`]), spending it if so.
-fn spend_on_reference(left: &mut usize, cost: usize) -> bool {
+pub(super) fn spend_on_reference(left: &mut usize, cost: usize) -> bool {
     match left.checked_sub(cost) {
         Some(rest) => {
             *left = rest;
@@ -715,6 +762,39 @@ mod tests {
                 assert!(!output.contains(mark), "{mark:?} in {output:?}");
             }
         }
+    }
+
+    #[test]
+    fn references_copy_a_bounded_amount_of_equation_text() {
+        // A long supplement referred to again and again, in headings and
+        // text: past what references may copy, a reference shows its label.
+        let long = "word ".repeat(20_000);
+        let source = format!(
+            "#set math.equation(numbering: \"(1)\", supplement: [{long}])\n$ x $ <eq>\n\n{}{}\n",
+            "= @eq\n\n".repeat(100),
+            "@eq ".repeat(100)
+        );
+        let doc = read(&source);
+        let texts: Vec<String> = doc
+            .blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::Heading { content, .. } | Block::Paragraph(content) => {
+                    Some(inline_text(content))
+                }
+                _ => None,
+            })
+            .collect();
+        assert!(texts[0].starts_with("word word "), "{}", &texts[0][..40]);
+        assert_eq!(texts[99], "@eq");
+        assert!(
+            texts[100].ends_with("@eq"),
+            "{}",
+            &texts[100][texts[100].len() - 40..]
+        );
+        let budget = MAX_REFERENCE_TEXT.max(source.len() * REFERENCE_TEXT_PER_BYTE);
+        let copied: usize = texts.iter().map(String::len).sum();
+        assert!(copied < budget + 2 * long.len(), "{copied}");
     }
 
     #[test]

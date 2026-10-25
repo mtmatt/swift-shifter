@@ -691,9 +691,13 @@ fn name_path(expr: Expr) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::cell::Cell;
+
+    use super::super::table::PARTS_READ;
     use super::super::tests::{
         TableText, para, paragraph_texts, strings, table_texts, tables_in, text,
     };
+    use super::super::wrapper::{MAX_UNWRAPPED, UNWRAPPED_PER_BYTE};
     use super::super::{read, read_in};
     use crate::converter::document::native::ast::{Align, Block, Table};
     use crate::converter::document::native::write;
@@ -1181,8 +1185,9 @@ mod tests {
         assert!(start.elapsed() < std::time::Duration::from_secs(5));
     }
 
-    /// Parts placing parts twice, again and again, would be read 2^30
-    /// times: what the reader may spend unwrapping bounds it.
+    /// Parts placing parts twice, again and again, would be read 2^31
+    /// times: what the reader may spend unwrapping bounds it, each reading
+    /// paying for its call, the shortest `table.cell[x]`.
     #[test]
     fn parts_placing_parts_twice_stay_bounded() {
         let mut source = String::from("#let c0 = table.cell[x]\n");
@@ -1193,9 +1198,10 @@ mod tests {
             ));
         }
         source.push_str("#table(columns: 1, c30)\n");
-        let start = std::time::Instant::now();
         read(&source);
-        assert!(start.elapsed() < std::time::Duration::from_secs(5));
+        let budget = MAX_UNWRAPPED.max(source.len() * UNWRAPPED_PER_BYTE);
+        let read = PARTS_READ.with(Cell::get);
+        assert!(read <= budget / "table.cell[x]".len(), "{read}");
     }
 
     /// A part made of the one bound before it, 20,000 times over, nests

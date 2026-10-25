@@ -9,7 +9,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{HashSet, VecDeque};
 
 use super::latex_math::{self, Fallbacks};
-use super::{BlockWriter, DocumentIds, Footnotes};
+use super::{BlockWriter, DocumentIds, Footnotes, lone_anchor};
 use crate::converter::document::native::ast::{
     Align, Block, Document, Inline, List, Meta, RawFormat, Table, contains_cjk, inline_text,
 };
@@ -314,6 +314,14 @@ impl Writer {
             }
             Block::FootnoteDefinition { .. } => return None,
             // Raw HTML contributes its text (see the plain writer).
+            // An empty anchor, as the Typst reader puts before a numbered
+            // equation, is where links to its id go.
+            Block::Raw {
+                format: RawFormat::Html,
+                text,
+            } if let Some(id) = lone_anchor(text) => {
+                format!("\\phantomsection\\label{{{}}}", label(&id))
+            }
             Block::Raw {
                 format: RawFormat::Html,
                 text,
@@ -743,9 +751,12 @@ impl Writer {
             Inline::FootnoteRef(name) => out.push_str(&self.footnote_ref(name)),
             Inline::LineBreak => out.push_str("\\newline\n"),
             Inline::SoftBreak => out.push('\n'),
-            Inline::Raw { text, .. } => {
-                out.push_str(&latin_text(&read::html::text_of(text), latin));
-            }
+            // An anchor's opening tag, as text has one, is where links to
+            // its id go.
+            Inline::Raw { text, .. } => match lone_anchor(&format!("{text}</a>")) {
+                Some(id) => out.push_str(&format!("\\phantomsection\\label{{{}}}", label(&id))),
+                None => out.push_str(&latin_text(&read::html::text_of(text), latin)),
+            },
         }
     }
 
@@ -1312,6 +1323,29 @@ mod tests {
         let start = tex.find("\\begin{document}\n").unwrap() + "\\begin{document}\n".len();
         let end = tex.find("\\end{document}").unwrap();
         tex[start..end].trim().to_string()
+    }
+
+    /// An empty anchor alone becomes a label links reach; raw HTML with
+    /// more in it keeps its text.
+    #[test]
+    fn only_a_lone_empty_anchor_becomes_a_label() {
+        let raw = |text: &str| Document {
+            meta: Default::default(),
+            blocks: vec![Block::Raw {
+                format: RawFormat::Html,
+                text: text.into(),
+            }],
+        };
+        let anchor = write(&raw("<a id=\"equation:1\"></a>"));
+        assert!(
+            anchor.contains("\\phantomsection\\label{equation:3a:1}"),
+            "{anchor}"
+        );
+        let more = write(&raw("<a id=\"x\">Important</a><a id=\"y\"></a>"));
+        assert!(
+            more.contains("Important") && !more.contains("\\label"),
+            "{more}"
+        );
     }
 
     #[test]

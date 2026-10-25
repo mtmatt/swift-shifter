@@ -19,6 +19,14 @@ pub(super) const MAX_COLUMNS: usize = 1000;
 /// 1000, [a])`, again and again) makes the reader build huge tables.
 pub(super) const MAX_GROWN_CELLS: usize = 1 << 20;
 
+#[cfg(test)]
+thread_local! {
+    /// How many times the reader has read a part where it's placed on this
+    /// thread (see [`Reader::part_cells`]), for tests to bound it without a
+    /// clock.
+    pub(super) static PARTS_READ: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
 /// What a table holds, in order (see [`Reader::table`]).
 enum Piece {
     Cell(Cell),
@@ -226,6 +234,8 @@ impl Reader {
             return Vec::new();
         };
         self.unwrapping_left = left;
+        #[cfg(test)]
+        PARTS_READ.with(|n| n.set(n.get() + 1));
         let Some(expr) = call.cast::<Expr>() else {
             return Vec::new();
         };
