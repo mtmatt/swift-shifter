@@ -1,3 +1,4 @@
+use crate::converter::tools::Tool;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use tauri::Emitter;
@@ -301,8 +302,7 @@ pub async fn ensure_ffmpeg(app: &tauri::AppHandle) -> Result<(), String> {
 fn get_ffmpeg() -> Result<PathBuf, String> {
     match FFMPEG_PATH.get() {
         Some(Some(p)) => Ok(p.clone()),
-        _ => find_ffmpeg_binary()
-            .ok_or_else(|| "ffmpeg not found. Install it with: brew install ffmpeg".to_string()),
+        _ => Tool::Ffmpeg.require(find_ffmpeg_binary()),
     }
 }
 

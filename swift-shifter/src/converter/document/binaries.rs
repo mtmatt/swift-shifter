@@ -1,4 +1,5 @@
 use crate::converter::document::{PANDOC_PATH, PYMUPDF4LLM_PYTHON};
+use crate::converter::tools::Tool;
 use std::path::PathBuf;
 use tauri::Emitter;
 
@@ -167,6 +168,39 @@ pub async fn ensure_pandoc(app: &tauri::AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Where pipx may keep its venvs: `PIPX_HOME` when it's set; otherwise the
+/// legacy `~/.local/pipx` (and `~\pipx` on Windows), which pipx keeps
+/// using where it exists, then its default under `data_dir`.
+fn pipx_homes(
+    pipx_home: Option<PathBuf>,
+    home: Option<PathBuf>,
+    data_dir: Option<PathBuf>,
+) -> Vec<PathBuf> {
+    if let Some(dir) = pipx_home {
+        return vec![dir];
+    }
+    let mut homes = Vec::new();
+    if let Some(home) = home {
+        homes.push(home.join(".local").join("pipx"));
+        if cfg!(target_os = "windows") {
+            homes.push(home.join("pipx"));
+        }
+    }
+    homes.extend(data_dir);
+    homes
+}
+
+/// pipx's default home: under the user's data directory, which is
+/// `~/.local/share` on Linux and `~/Library/Application Support` on macOS.
+/// On Windows it's `AppData\Local\pipx\pipx`.
+fn pipx_data_dir() -> Option<PathBuf> {
+    if cfg!(target_os = "windows") {
+        dirs::data_local_dir().map(|d| d.join("pipx").join("pipx"))
+    } else {
+        dirs::data_dir().map(|d| d.join("pipx"))
+    }
+}
+
 fn python_has_pymupdf4llm(python: &PathBuf) -> bool {
     crate::process::sync_command(python)
         .args(["-c", "import pymupdf4llm"])
@@ -180,12 +214,13 @@ fn python_has_pymupdf4llm(python: &PathBuf) -> bool {
 pub fn find_pymupdf4llm_python() -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
 
-    // Check pipx venv first — this is the preferred install location
-    // Default PIPX_HOME is ~/.local/pipx (not ~/.local/share/pipx)
-    let pipx_home = std::env::var_os("PIPX_HOME")
-        .map(PathBuf::from)
-        .or_else(|| dirs::home_dir().map(|h| h.join(".local").join("pipx")));
-    if let Some(pipx_home) = pipx_home {
+    // Check pipx venvs first: that's how the install hint installs it.
+    let pipx_homes = pipx_homes(
+        std::env::var_os("PIPX_HOME").map(PathBuf::from),
+        dirs::home_dir(),
+        pipx_data_dir(),
+    );
+    for pipx_home in pipx_homes {
         #[cfg(not(target_os = "windows"))]
         let venv_python = pipx_home
             .join("venvs")
@@ -294,19 +329,19 @@ pub async fn ensure_pymupdf4llm(app: &tauri::AppHandle) -> Result<(), String> {
 pub fn get_pymupdf4llm_python() -> Result<PathBuf, String> {
     match PYMUPDF4LLM_PYTHON.get() {
         Some(Some(p)) => Ok(p.clone()),
-        _ => find_pymupdf4llm_python().ok_or_else(|| {
-            "pymupdf4llm not found — install with: pip install pymupdf4llm".to_string()
-        }),
+        _ => Tool::Pymupdf4llm.require(find_pymupdf4llm_python()),
     }
 }
 
 pub fn get_pandoc() -> Result<PathBuf, String> {
     match PANDOC_PATH.get() {
         Some(Some(p)) => Ok(p.clone()),
-        _ => find_pandoc_binary().ok_or_else(|| {
-            "pandoc not found — install it to enable document conversion".to_string()
-        }),
+        _ => Tool::Pandoc.require(find_pandoc_binary()),
     }
+}
+
+pub fn get_marker() -> Result<PathBuf, String> {
+    Tool::Marker.require(find_marker_binary())
 }
 
 pub fn find_any_binary(names: &[&str]) -> Option<PathBuf> {
@@ -459,4 +494,25 @@ pub async fn install_marker(app: &tauri::AppHandle) -> Result<(), String> {
         "Could not install marker-pdf automatically. Please install pipx or pip and try again."
             .to_string(),
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pipx_venvs_are_looked_for_where_pipx_puts_them() {
+        let home = PathBuf::from("/home/u");
+        let data = PathBuf::from("/home/u/.local/share/pipx");
+
+        // PIPX_HOME, when it's set, is the only place.
+        let set = PathBuf::from("/opt/pipx");
+        let homes = pipx_homes(Some(set.clone()), Some(home.clone()), Some(data.clone()));
+        assert_eq!(homes, [set]);
+
+        // Otherwise the legacy home, then the default under the data directory.
+        let homes = pipx_homes(None, Some(home), Some(data.clone()));
+        assert_eq!(homes.first(), Some(&PathBuf::from("/home/u/.local/pipx")));
+        assert_eq!(homes.last(), Some(&data));
+    }
 }
