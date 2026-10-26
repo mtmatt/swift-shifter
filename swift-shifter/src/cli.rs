@@ -57,18 +57,9 @@ struct ConfigArgs {
     /// Use marker-pdf for PDF conversion when available.
     #[arg(long, global = true)]
     marker: bool,
-    /// Enable Ollama post-processing for PDF conversion.
-    #[arg(long, global = true)]
-    llm: bool,
-    /// Ollama model name.
-    #[arg(long, global = true)]
-    llm_model: Option<String>,
-    /// Ollama base URL (http:// or https://).
-    #[arg(long, global = true)]
-    llm_url: Option<String>,
 }
 
-fn build_config(args: &ConfigArgs) -> Result<Config, String> {
+fn build_config(args: &ConfigArgs) -> Config {
     let mut cfg = Config::default();
     if let Some(d) = &args.output_dir {
         cfg.output_dir = Some(d.clone());
@@ -80,20 +71,7 @@ fn build_config(args: &ConfigArgs) -> Result<Config, String> {
         cfg.avif_quality = q.clamp(1, 100);
     }
     cfg.use_marker_pdf = args.marker;
-    cfg.use_local_llm = args.llm;
-    if let Some(m) = &args.llm_model {
-        cfg.local_llm_model = m.clone();
-    }
-    if let Some(u) = &args.llm_url {
-        let u = u.trim();
-        if !u.starts_with("http://") && !u.starts_with("https://") {
-            return Err(format!(
-                "Invalid --llm-url '{u}': must start with http:// or https://"
-            ));
-        }
-        cfg.local_llm_url = u.to_string();
-    }
-    Ok(cfg)
+    cfg
 }
 
 #[derive(Subcommand)]
@@ -172,7 +150,7 @@ fn run_duration(input: &str) -> i32 {
     }
 }
 
-fn run_doctor(cfg: &Config) -> i32 {
+fn run_doctor() -> i32 {
     println!(
         "{}",
         format_check("ffmpeg", media::find_ffmpeg().as_deref())
@@ -199,14 +177,6 @@ fn run_doctor(cfg: &Config) -> i32 {
         "{}",
         format_check("marker-pdf", document::find_marker_binary().as_deref())
     );
-
-    let rt = tokio::runtime::Runtime::new().expect("failed to create runtime");
-    let ollama = rt.block_on(document::ollama_reachable(&cfg.local_llm_url));
-    if ollama {
-        println!("\u{2713} ollama: reachable at {}", cfg.local_llm_url);
-    } else {
-        println!("\u{2717} ollama: not reachable at {}", cfg.local_llm_url);
-    }
     0
 }
 
@@ -239,7 +209,6 @@ where
     tauri::Builder::default()
         .manage(AppState {
             config: Mutex::new(cfg),
-            ollama_process: Mutex::new(None),
         })
         .setup(move |app| {
             let handle = app.handle().clone();
@@ -380,19 +349,13 @@ pub fn run(context: tauri::Context) -> i32 {
         }
     };
 
-    let cfg = match build_config(&cli.cfg) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("{e}");
-            return 2;
-        }
-    };
+    let cfg = build_config(&cli.cfg);
 
     match cli.command {
         Commands::DetectFormats { input } => run_detect(&input),
         Commands::Merge { inputs } => run_merge(&inputs, &cfg),
         Commands::Duration { input } => run_duration(&input),
-        Commands::Doctor => run_doctor(&cfg),
+        Commands::Doctor => run_doctor(),
         Commands::Convert { format, inputs } => run_convert(context, cfg, format, inputs),
         Commands::Trim { input, start, end } => run_trim(context, cfg, input, start, end),
     }
@@ -408,9 +371,6 @@ mod tests {
             jpeg_quality: None,
             avif_quality: None,
             marker: false,
-            llm: false,
-            llm_model: None,
-            llm_url: None,
         }
     }
 
@@ -419,24 +379,9 @@ mod tests {
         let mut a = cfg_args();
         a.jpeg_quality = Some(200);
         a.avif_quality = Some(0);
-        let cfg = build_config(&a).unwrap();
+        let cfg = build_config(&a);
         assert_eq!(cfg.jpeg_quality, 100);
         assert_eq!(cfg.avif_quality, 1);
-    }
-
-    #[test]
-    fn build_config_rejects_bad_llm_url() {
-        let mut a = cfg_args();
-        a.llm_url = Some("localhost:11434".to_string());
-        assert!(build_config(&a).is_err());
-    }
-
-    #[test]
-    fn build_config_accepts_good_llm_url() {
-        let mut a = cfg_args();
-        a.llm_url = Some("http://localhost:11434".to_string());
-        let cfg = build_config(&a).unwrap();
-        assert_eq!(cfg.local_llm_url, "http://localhost:11434");
     }
 
     fn select(args: &[&str]) -> bool {

@@ -2,7 +2,7 @@
 
 This file provides guidance to AI coding agents (Claude Code, etc.) working in this repository. `CLAUDE.md` is a local symlink to this file.
 
-Swift Shifter is a Tauri v2 menu-bar file converter: a Rust backend doing the conversions, a plain-DOM TypeScript/Vite frontend, and external tools (ffmpeg, pandoc, pymupdf4llm, Calibre, Ollama) for what isn't native yet. typst is linked in for PDF output.
+Swift Shifter is a Tauri v2 menu-bar file converter: a Rust backend doing the conversions, a plain-DOM TypeScript/Vite frontend, and external tools (ffmpeg, pandoc, pymupdf4llm, Calibre) for what isn't native yet. typst is linked in for PDF output.
 
 ## Commands
 
@@ -33,7 +33,7 @@ cargo run -- merge a.pdf b.pdf               # merge >=2 PDFs
 cargo run -- duration clip.mp4               # print duration in seconds
 ```
 
-`convert`/`trim` build a windowless Tauri app to get a real `AppHandle`; the rest run without one. Global flags override `Config::default()` (the saved GUI `config.toml` is never read): `--output-dir`, `--jpeg-quality`, `--avif-quality`, `--marker`, `--llm`, `--llm-model`, `--llm-url`. Output paths print to stdout, errors to stderr, non-zero exit on failure. Any `argv[1]` that isn't a known subcommand launches the GUI as before (`cli::is_cli_invocation` in `src/cli.rs`). Note: `generate_context!()` is called once in `main()` and passed into `cli::run` — it must not appear twice in the binary.
+`convert`/`trim` build a windowless Tauri app to get a real `AppHandle`; the rest run without one. Global flags override `Config::default()` (the saved GUI `config.toml` is never read): `--output-dir`, `--jpeg-quality`, `--avif-quality`, `--marker`. Output paths print to stdout, errors to stderr, non-zero exit on failure. Any `argv[1]` that isn't a known subcommand launches the GUI as before (`cli::is_cli_invocation` in `src/cli.rs`). Note: `generate_context!()` is called once in `main()` and passed into `cli::run` — it must not appear twice in the binary.
 
 To check document→PDF output end to end, run `cargo run -- convert pdf in.md`, then `pdffonts in.pdf` to see which fonts were embedded (e.g. that CJK fonts were) and `pdftotext in.pdf -` to check that the text came through.
 
@@ -43,7 +43,7 @@ Bump the version with `./scripts/bump-version.sh 0.5.0` — it syncs the three v
 
 ### Backend ↔ frontend boundary
 
-The frontend never imports Rust; it calls `#[tauri::command]` functions over Tauri's IPC. The full command surface is the `invoke_handler!` list in `swift-shifter/src/main.rs` — that list is the contract. Adding a backend capability means writing a command there and `invoke`-ing it from `ui/src/`. The backend pushes progress and status to the UI via `app.emit(...)` events (e.g. `convert:progress`, `update:available`, `ffmpeg:failed`, `ollama:status`); the frontend listens for these.
+The frontend never imports Rust; it calls `#[tauri::command]` functions over Tauri's IPC. The full command surface is the `invoke_handler!` list in `swift-shifter/src/main.rs` — that list is the contract. Adding a backend capability means writing a command there and `invoke`-ing it from `ui/src/`. The backend pushes progress and status to the UI via `app.emit(...)` events (e.g. `convert:progress`, `update:available`, `ffmpeg:failed`); the frontend listens for these.
 
 ### The conversion graph (`swift-shifter/src/converter/graph.rs`) — single source of truth
 
@@ -55,7 +55,7 @@ All conversions are edges in one directed graph. `graph::edges()` is the authori
 
 `convert_file` finds the path, then runs each hop; multi-hop chains stage intermediates in a `tempfile::TempDir` (auto-cleaned) and write only the final artifact to `output_dir`, emitting overall `convert:progress` keyed to the original path.
 
-**To add a format pairing, edit `graph.rs`:** add the `Edge`(s) and a `route_hop` arm (+ a `run_single_hop` branch if it's a new `Hop`). Quirks encoded here: HEIC is macOS-only (`sips`); JPEG/`tif`/`typ` normalize via `normalize_ext` (so no jpg→jpg or pointless tif→tiff; `.typ` maps to the `typst` key, and Typst output is written as `.typ` via `target_to_ext`); PDF routing branches on `use_marker_pdf` and the Ollama LLM config; csv→toml is a semantic dead-end (`is_semantically_blocked`) even though csv→json→toml exists structurally, because a top-level array has no TOML form. **Document→PDF is typeset in-process** with typst, which is linked as a library (`document/native/typst/`). There is no typst binary. The one exception is `.tex` input: when a LaTeX engine is installed (tectonic, xelatex, lualatex or pdflatex; see `document/pdf.rs`), pandoc drives it, since LaTeX keeps raw LaTeX that pandoc's typst writer would drop. Otherwise `.tex` goes pandoc → typst source → the embedded typst.
+**To add a format pairing, edit `graph.rs`:** add the `Edge`(s) and a `route_hop` arm (+ a `run_single_hop` branch if it's a new `Hop`). Quirks encoded here: HEIC is macOS-only (`sips`); JPEG/`tif`/`typ` normalize via `normalize_ext` (so no jpg→jpg or pointless tif→tiff; `.typ` maps to the `typst` key, and Typst output is written as `.typ` via `target_to_ext`); PDF routing branches on `use_marker_pdf`; csv→toml is a semantic dead-end (`is_semantically_blocked`) even though csv→json→toml exists structurally, because a top-level array has no TOML form. **Document→PDF is typeset in-process** with typst, which is linked as a library (`document/native/typst/`). There is no typst binary. The one exception is `.tex` input: when a LaTeX engine is installed (tectonic, xelatex, lualatex or pdflatex; see `document/pdf.rs`), pandoc drives it, since LaTeX keeps raw LaTeX that pandoc's typst writer would drop. Otherwise `.tex` goes pandoc → typst source → the embedded typst.
 
 - **md, txt, html → pdf** go through the native typst writer (`native/write/typst.rs`, which also writes `.typ` output) and `native::typeset`. TeX math is converted with `mitex`. Its Typst scope is vendored in `native/typst/mitex/` and served under the virtual `/__shifter__/` path, together with a symbol-rename table for typst 0.15 (`typst/math.rs`). A formula that still fails to compile is shown as TeX code instead of failing the document.
 - **typst → pdf** compiles the file directly (`native::typst_file_to_pdf`, called from `native::convert`), not through the Typst reader. `@preview` packages are downloaded through reqwest into typst's usual cache.
@@ -100,11 +100,11 @@ All conversions are edges in one directed graph. `graph::edges()` is the authori
 
 ### Config and shared state
 
-`config.rs` defines `Config` (persisted as TOML in `dirs::config_dir()/swift-shifter/config.toml`) and `AppState`, a Tauri-managed struct holding `Mutex<Config>` and the optional Ollama child process. Values are clamped on both load and save. **Critical async rule** (see comments in `main.rs`): never hold the `std::sync::Mutex` guard across an `.await` — always `.clone()` the config out of the lock first, then await. `set_config` validates/clamps, persists, and emits `config:updated`.
+`config.rs` defines `Config` (persisted as TOML in `dirs::config_dir()/swift-shifter/config.toml`) and `AppState`, a Tauri-managed struct holding `Mutex<Config>`. A config saved by an older version loads with the settings it no longer knows skipped (`use_local_llm`, `local_llm_*`) and the rest kept. Values are clamped on both load and save. **Critical async rule** (see comments in `main.rs`): never hold the `std::sync::Mutex` guard across an `.await` — always `.clone()` the config out of the lock first, then await. `set_config` validates/clamps, persists, and emits `config:updated`.
 
 ### Windows behavior
 
-Closing the main window hides it rather than quitting (tray app stays resident); real exit goes through the `quit` command / tray, which also kills the spawned Ollama process on `ExitRequested`.
+Closing the main window hides it rather than quitting (tray app stays resident); real exit goes through the `quit` command / tray.
 
 ## Frontend
 

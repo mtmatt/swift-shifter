@@ -21,15 +21,6 @@ pub struct Config {
     /// Falls back to pymupdf4llm if marker is not found on PATH.
     #[serde(default)]
     pub use_marker_pdf: bool,
-    /// Use local LLM (Ollama) for post-processing PDF → EPUB/MD output.
-    #[serde(default)]
-    pub use_local_llm: bool,
-    /// Ollama model name (e.g. gemma4:e2b).
-    #[serde(default = "default_local_llm_model")]
-    pub local_llm_model: String,
-    /// Ollama HTTP base URL.
-    #[serde(default = "default_local_llm_url")]
-    pub local_llm_url: String,
     /// Where clipboard-converted results are sent: "clipboard" (default) or "download" (save to file).
     #[serde(default = "default_clipboard_output_mode")]
     pub clipboard_output_mode: String,
@@ -50,12 +41,6 @@ fn default_avif_quality() -> u8 {
 }
 fn default_max_concurrent() -> usize {
     4
-}
-fn default_local_llm_model() -> String {
-    "gemma4:e2b".to_string()
-}
-fn default_local_llm_url() -> String {
-    "http://localhost:11434".to_string()
 }
 fn default_clipboard_output_mode() -> String {
     "clipboard".to_string()
@@ -89,9 +74,6 @@ impl Default for Config {
             avif_quality: default_avif_quality(),
             max_concurrent: default_max_concurrent(),
             use_marker_pdf: false,
-            use_local_llm: false,
-            local_llm_model: default_local_llm_model(),
-            local_llm_url: default_local_llm_url(),
             clipboard_output_mode: default_clipboard_output_mode(),
             quick_bar_shortcut: default_quick_bar_shortcut(),
             recent_folders: default_recent_folders(),
@@ -101,7 +83,6 @@ impl Default for Config {
 
 pub struct AppState {
     pub config: std::sync::Mutex<Config>,
-    pub ollama_process: std::sync::Mutex<Option<tokio::process::Child>>,
 }
 
 fn config_path() -> Option<PathBuf> {
@@ -115,7 +96,14 @@ pub fn load() -> Config {
     let Ok(text) = std::fs::read_to_string(&path) else {
         return Config::default();
     };
-    sanitize(toml::from_str(&text).unwrap_or_default())
+    parse(&text)
+}
+
+/// The config `text` holds. Settings it doesn't know, an older version's
+/// (`use_local_llm`, `local_llm_*`), are skipped and the rest kept; one it
+/// can't read at all gives the defaults.
+fn parse(text: &str) -> Config {
+    sanitize(toml::from_str(text).unwrap_or_default())
 }
 
 /// Bring a hand-edited or outdated config back into range.
@@ -166,6 +154,28 @@ mod tests {
         let cfg: Config = toml::from_str("jpeg_quality = 80").unwrap();
         assert_eq!(cfg.quick_bar_shortcut, "Control+Shift+Space");
         assert_eq!(cfg.recent_folders, default_recent_folders());
+    }
+
+    /// Regression for #131: a config.toml saved with the local LLM settings
+    /// still loads, those settings skipped and every other one kept.
+    #[test]
+    fn a_config_with_the_removed_llm_settings_keeps_the_rest() {
+        let cfg = parse(
+            "output_dir = \"/out\"\njpeg_quality = 80\nuse_marker_pdf = true\n\
+             use_local_llm = true\nlocal_llm_model = \"gemma4:e2b\"\n\
+             local_llm_url = \"http://localhost:11434\"\n\
+             clipboard_output_mode = \"download\"\nquick_bar_shortcut = \"Alt+KeyK\"\n\
+             recent_folders = [\"/a\"]\n",
+        );
+        assert_eq!(cfg.output_dir.as_deref(), Some("/out"));
+        assert_eq!(cfg.jpeg_quality, 80);
+        assert!(cfg.use_marker_pdf);
+        assert_eq!(cfg.clipboard_output_mode, "download");
+        assert_eq!(cfg.quick_bar_shortcut, "Alt+KeyK");
+        assert_eq!(cfg.recent_folders, ["/a"]);
+        // Saved again, they're gone.
+        let saved = toml::to_string_pretty(&cfg).unwrap();
+        assert!(!saved.contains("llm"), "{saved}");
     }
 
     #[test]
