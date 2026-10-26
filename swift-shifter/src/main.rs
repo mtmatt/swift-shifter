@@ -101,6 +101,8 @@ fn main() {
             // Load persisted config and register managed state
             let cfg = config::load();
             let shortcut = cfg.quick_bar_shortcut.clone();
+            // Every window's native chrome, those opened later too.
+            app.set_theme(cfg.appearance.theme());
             app.manage(AppState {
                 config: std::sync::Mutex::new(cfg),
             });
@@ -413,6 +415,7 @@ fn set_config(
         },
         quick_bar_shortcut: new_config.quick_bar_shortcut.trim().to_string(),
         recent_folders: config::normalize_folders(new_config.recent_folders),
+        appearance: new_config.appearance,
     };
 
     // Swap the live shortcut first: if the OS refuses it, nothing is saved.
@@ -430,6 +433,8 @@ fn set_config(
         }
         return Err(e);
     }
+    // The pages follow on `config:updated` (see `ui/src/appearance.ts`).
+    app.set_theme(validated.appearance.theme());
     *state.config.lock().unwrap() = validated;
     app.emit("config:updated", ()).ok();
     Ok(())

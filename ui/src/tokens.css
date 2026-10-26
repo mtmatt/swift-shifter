@@ -1,6 +1,6 @@
 /* ─── Design tokens — single source of truth ──────────────────────────── */
 :root {
-    color-scheme: dark light;
+    color-scheme: dark;
 
     --bar-h: 36px;
 
@@ -44,32 +44,33 @@
     --warn: #fbbf24;
 }
 
-/* Light theme follows the OS appearance. */
-@media (prefers-color-scheme: light) {
-    :root {
-        --bg: #f7f7f9;
-        --surface: rgba(0, 0, 0, 0.04);
-        --surface-hi: rgba(0, 0, 0, 0.07);
+/* Light theme, as the appearance setting and the system say (each window
+   sets `data-theme`, see `appearance.ts`). */
+:root[data-theme="light"] {
+    color-scheme: light;
 
-        --border: rgba(0, 0, 0, 0.08);
-        --border-hi: rgba(0, 0, 0, 0.16);
+    --bg: #f7f7f9;
+    --surface: rgba(0, 0, 0, 0.04);
+    --surface-hi: rgba(0, 0, 0, 0.07);
 
-        --text: rgba(0, 0, 0, 0.87);
-        --text-2: rgba(0, 0, 0, 0.6);
-        --text-3: rgba(0, 0, 0, 0.4);
+    --border: rgba(0, 0, 0, 0.08);
+    --border-hi: rgba(0, 0, 0, 0.16);
 
-        --accent: #7c3aed;
-        --accent-dim: rgba(124, 58, 237, 0.09);
-        --accent-mid: rgba(124, 58, 237, 0.2);
-        --accent-glow: rgba(124, 58, 237, 0.28);
-        --on-accent: #ffffff;
+    --text: rgba(0, 0, 0, 0.87);
+    --text-2: rgba(0, 0, 0, 0.6);
+    --text-3: rgba(0, 0, 0, 0.4);
 
-        /* A white knob needs an edge to stand out on the light-grey track. */
-        --knob: #ffffff;
-        --knob-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.18), 0 1px 2px rgba(0, 0, 0, 0.22);
+    --accent: #7c3aed;
+    --accent-dim: rgba(124, 58, 237, 0.09);
+    --accent-mid: rgba(124, 58, 237, 0.2);
+    --accent-glow: rgba(124, 58, 237, 0.28);
+    --on-accent: #ffffff;
 
-        --danger: #dc2626;
-        --success: #16a34a;
-        --warn: #b45309;
-    }
+    /* A white knob needs an edge to stand out on the light-grey track. */
+    --knob: #ffffff;
+    --knob-shadow: 0 0 0 0.5px rgba(0, 0, 0, 0.18), 0 1px 2px rgba(0, 0, 0, 0.22);
+
+    --danger: #dc2626;
+    --success: #16a34a;
+    --warn: #b45309;
 }

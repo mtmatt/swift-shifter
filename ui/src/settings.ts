@@ -5,6 +5,9 @@ import { listen } from "@tauri-apps/api/event";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { folderLabel } from "./paths";
 import { recordKeyPress, shortcutKeyNames } from "./shortcut";
+import { followAppearance } from "./appearance";
+
+followAppearance();
 
 // Tab switching (ARIA tabs: only the selected tab is in the Tab order;
 // arrow keys, Home and End move between tabs)
@@ -45,6 +48,7 @@ interface Config {
   clipboard_output_mode: string;
   quick_bar_shortcut: string;
   recent_folders: string[];
+  appearance: string;
 }
 
 const win = getCurrentWindow();
@@ -64,6 +68,7 @@ const markerProgressFill = document.getElementById("marker-progress-fill") as HT
 
 const statusEl = document.getElementById("status") as HTMLElement;
 const clipboardModeSelect = document.getElementById("clipboard-mode") as HTMLSelectElement;
+const appearanceSelect = document.getElementById("appearance") as HTMLSelectElement;
 const saveBtn = document.getElementById("btn-save") as HTMLButtonElement;
 
 const shortcutBtn = document.getElementById("btn-shortcut") as HTMLButtonElement;
@@ -84,6 +89,7 @@ let cfg: Config = {
   clipboard_output_mode: "clipboard",
   quick_bar_shortcut: "Control+Shift+Space",
   recent_folders: [],
+  appearance: "system",
 };
 
 let markerInstalled = false;
@@ -140,6 +146,7 @@ function updateMarkerHint() {
   maxCSlider.value = String(cfg.max_concurrent);
   maxCVal.textContent = String(cfg.max_concurrent);
   clipboardModeSelect.value = cfg.clipboard_output_mode;
+  appearanceSelect.value = cfg.appearance;
   
   markerToggle.checked = cfg.use_marker_pdf;
   markerInstalled = await invoke<boolean>("check_marker").catch(() => false);
@@ -395,6 +402,7 @@ saveBtn.addEventListener("click", async () => {
     max_concurrent: Number(maxCSlider.value),
     use_marker_pdf: markerToggle.checked,
     clipboard_output_mode: clipboardModeSelect.value,
+    appearance: appearanceSelect.value,
     quick_bar_shortcut: quickBarShortcut,
     recent_folders: recentFolders,
   };

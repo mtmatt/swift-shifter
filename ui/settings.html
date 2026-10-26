@@ -12,6 +12,7 @@
             <button class="tab" role="tab" id="tab-engines" data-panel="engines" aria-controls="panel-engines" aria-selected="false" tabindex="-1">engines</button>
             <button class="tab" role="tab" id="tab-output" data-panel="output" aria-controls="panel-output" aria-selected="false" tabindex="-1">output</button>
             <button class="tab" role="tab" id="tab-quick" data-panel="quick" aria-controls="panel-quick" aria-selected="false" tabindex="-1">quick</button>
+            <button class="tab" role="tab" id="tab-appearance" data-panel="appearance" aria-controls="panel-appearance" aria-selected="false" tabindex="-1">theme</button>
         </div>
 
         <div class="content">
@@ -66,6 +67,20 @@
                         <label for="max-c">workers</label>
                         <input type="range" id="max-c" min="1" max="8" value="4" />
                         <span id="max-c-val" class="val">4</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- ── appearance ───────────────────────────────────── -->
+            <div class="panel" id="panel-appearance" role="tabpanel" aria-labelledby="tab-appearance">
+                <div class="group">
+                    <div class="row">
+                        <label for="appearance">theme</label>
+                        <select id="appearance" class="text-input">
+                            <option value="system">follow system</option>
+                            <option value="light">light</option>
+                            <option value="dark">dark</option>
+                        </select>
                     </div>
                 </div>
             </div>
