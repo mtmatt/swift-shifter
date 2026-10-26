@@ -2,11 +2,15 @@
 //! it. It's given no commands and expands no macros, so it only splits the
 //! source's own tokens and pairs braces and environments: which arguments a
 //! command takes is the reader's to say, the parser's own table being
-//! math's. `.tex` input still goes to pandoc until the reader reads what
-//! pandoc does (see `graph::route_hop`).
+//! math's. Verbatim text is cut out before it's parsed (see [`verbatim`]).
+//! `.tex` input still goes to pandoc until the reader reads what pandoc
+//! does (see `graph::route_hop`).
+
+mod verbatim;
 
 use mitex_parser::CommandSpec;
 use mitex_parser::syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
+use verbatim::Verbatim;
 
 use crate::converter::document::native::Warning;
 use crate::converter::document::native::ast::{Block, Document, Inline};
@@ -68,10 +72,15 @@ fn nesting_bound(source: &str) -> usize {
 }
 
 fn read_parsed(source: &str) -> Document {
+    let cut = verbatim::cut(source);
     // Expanding macros, which may never end, would also parse more than
     // `source` holds, past `nesting_bound`.
-    let root = mitex_parser::parse_without_macro(source, CommandSpec::new(Default::default()));
-    let mut reader = Reader::default();
+    let root = mitex_parser::parse_without_macro(&cut.source, CommandSpec::new(Default::default()));
+    let mut reader = Reader {
+        verbatims: cut.verbatims,
+        verbatim_mark: cut.mark,
+        ..Reader::default()
+    };
     reader.flow(pieces(&document_body(&root).unwrap_or(root)));
     reader.end_paragraph();
     level_headings(&mut reader.blocks);
@@ -151,6 +160,11 @@ struct Reader {
     /// Whether the text being read is emphasized: it goes in a run of
     /// [`Inline::Emph`], which nests none.
     emphasized: bool,
+    /// The verbatim text cut out of the source, which placeholders stand
+    /// for (see [`verbatim::cut`]).
+    verbatims: Vec<Verbatim>,
+    /// The command a placeholder is (see [`verbatim::Cut::mark`]).
+    verbatim_mark: String,
 }
 
 impl Reader {
@@ -172,7 +186,12 @@ impl Reader {
                 Piece::Node(node) => match node.kind() {
                     SyntaxKind::ItemCmd => {
                         let name = command_name(&node);
-                        let args = match signature(&name) {
+                        let signature = if name == self.verbatim_mark {
+                            Some(PLACEHOLDER)
+                        } else {
+                            signature(&name)
+                        };
+                        let args = match signature {
                             Some(signature) => {
                                 take_arguments(&mut items, &mut at, &mut unbracketed, signature)
                             }
@@ -243,6 +262,9 @@ impl Reader {
         if let Some(level) = SECTIONS.iter().position(|section| *section == name) {
             return self.heading(level, args);
         }
+        if name == self.verbatim_mark {
+            return self.verbatim(args);
+        }
         match name {
             // `\emph` switches between italic and upright, so inside another
             // it's upright: the reader nests no emphasis, which writers
@@ -303,6 +325,37 @@ impl Reader {
             // Seven of them, so an index fits.
             let level = level as u8 + 1;
             self.blocks.push(Block::Heading { level, content });
+        }
+    }
+
+    /// The verbatim text a placeholder stands for, its index the number in
+    /// its argument (see [`verbatim::cut`]): `\verb`'s inline code, the
+    /// `verbatim` environment's a code block of its own.
+    fn verbatim(&mut self, args: Vec<Vec<Piece>>) {
+        let index = args.iter().flatten().find_map(|piece| match piece {
+            Piece::Token(SyntaxKind::TokenWord, number) => number.parse::<usize>().ok(),
+            _ => None,
+        });
+        match index.and_then(|index| self.verbatims.get(index)).cloned() {
+            // Right after another, it's one with it, as TeX sets them, which
+            // writers can't set apart.
+            Some(Verbatim::Inline(code)) => {
+                self.non_space();
+                // Empty, it shows nothing.
+                if code.is_empty() {
+                    return;
+                }
+                let run = self.run();
+                match run.last_mut() {
+                    Some(Inline::Code(before)) => before.push_str(&code),
+                    _ => run.push(Inline::Code(code)),
+                }
+            }
+            Some(Verbatim::Block(code)) => {
+                self.end_paragraph();
+                self.blocks.push(Block::Code { lang: None, code });
+            }
+            None => {}
         }
     }
 
@@ -397,6 +450,14 @@ thread_local! {
     /// `]` on this thread, for tests to bound it without a clock.
     static BRACKET_SCAN_STEPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
+
+/// A verbatim placeholder's: its index (see [`verbatim::Cut::mark`]).
+const PLACEHOLDER: Signature = Signature {
+    star: false,
+    optional: false,
+    unstarred_optional: false,
+    required: 1,
+};
 
 /// `\\`'s: `\\*[1em]`.
 const LINE_BREAK: Signature = Signature {
@@ -985,6 +1046,64 @@ mod tests {
         ];
         for &(source, expected) in cases {
             assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
+    }
+
+    /// `\verb` is inline code and the `verbatim` environment a code block,
+    /// their text as it is, LaTeX's own characters included.
+    #[test]
+    fn verbatim_text_is_code() {
+        let code = |text: &str| Inline::Code(text.into());
+        let block = |text: &str| Block::Code {
+            lang: None,
+            code: text.into(),
+        };
+        let cases: &[(&str, &[Block])] = &[
+            (
+                "a \\verb|x{y}%z| b",
+                &[para(&[text("a "), code("x{y}%z"), text(" b")])],
+            ),
+            // A command of the placeholders' name in the source is no
+            // placeholder (see `verbatim::Cut::mark`).
+            (
+                "\\SwiftShifterVerbatim{0} and \\verb|x|",
+                &[para(&[text("0 and "), code("x")])],
+            ),
+            // What `\iffalse` skips isn't cut, so its `\fi` ends it.
+            ("\\iffalse\\verb|\\fi| shown", &[para(&[text("| shown")])]),
+            (
+                "\\emph{see \\verb!\\emph!}",
+                &[para(&[emph(&[text("see "), code("\\emph")])])],
+            ),
+            (
+                "a\n\\begin{verbatim}\n  {%x}\n\n\\end{y}\n\\end{verbatim}\nb",
+                &[
+                    para(&[text("a")]),
+                    block("  {%x}\n\n\\end{y}"),
+                    para(&[text("b")]),
+                ],
+            ),
+        ];
+        for &(source, expected) in cases {
+            assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
+        // Side by side, it's one; its spaces stay.
+        assert_eq!(
+            read("\\verb|a|\\verb|b| \\verb| c |").0.blocks,
+            [para(&[code("ab"), text(" "), code(" c ")])]
+        );
+        // Back from Markdown as it's read.
+        use crate::converter::document::native::{read::markdown, write};
+        for source in [
+            cases[0].0,
+            cases[3].0,
+            cases[4].0,
+            "\\verb|a|\\verb|b| \\verb| c | \\verb|`|",
+            "a\\verb!!b \\verb|`x`|",
+        ] {
+            let (doc, _) = read(source);
+            let written = write::markdown::write(&doc);
+            assert_eq!(markdown::read(&written).blocks, doc.blocks, "{written}");
         }
     }
 
