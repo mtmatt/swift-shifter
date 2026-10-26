@@ -1,22 +1,15 @@
-//! End-to-end test of image -> PDF through the real CLI (pandoc + typst).
-//! Skipped when pandoc or typst is unavailable.
+//! End-to-end test of image -> PDF through the real CLI, typeset by the
+//! embedded typst: it needs no outside tool.
 
 mod common;
 
-use common::{missing_tools, write_tiny_png};
+use common::write_tiny_png;
 use std::process::Command;
 
 /// A relative input path with spaces and parentheses in the file name, no
-/// `--output-dir`: the PDF must land next to the image. pandoc runs from a
-/// staging dir, so this covers both the relative-path and escaping cases.
+/// `--output-dir`: the PDF must land next to the image.
 #[test]
 fn image_to_pdf_handles_relative_path_and_awkward_name() {
-    let missing = missing_tools(&["pandoc", "typst"]);
-    if !missing.is_empty() {
-        eprintln!("SKIP: image->pdf e2e; missing tools: {missing:?}");
-        return;
-    }
-
     let dir = tempfile::tempdir().expect("tempdir");
     write_tiny_png(&dir.path().join("my pic (1).png"));
 

@@ -122,19 +122,25 @@ jobs:
         run: npm run tauri -- build --no-bundle
 
   # The whole cargo test suite (#108), beside the build, as TeX Live takes
-  # a while to install. With the tools it installs, the LaTeX writer's
-  # output is compiled with each engine (#78) and the EPUB writer's books
-  # are checked with epubcheck (#79); in CI, those tests fail rather than
-  # skip without them.
+  # a while to install. It installs the tools tests check output with:
+  # TeX Live's engines (#78), epubcheck (#79), pandoc, pdftotext and
+  # pymupdf4llm (#114). In CI, a test fails rather than skip without one.
+  # Not tectonic: it downloads its bundle while the tests run, and TeX
+  # Live's XeLaTeX compiles our LaTeX already. On the Ubuntu its tools are
+  # known to install on, as `ubuntu-latest` moves to Ubuntu 26. Past half an
+  # hour, a run is stuck: a slow mirror once took that long for a tenth of
+  # its packages.
   test:
     name: Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     steps:
-      - name: Install system dependencies, TeX Live and epubcheck
+      - name: Install system dependencies and the tools tests check with
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          # A download the mirror stalls on is tried again, not waited on.
+          sudo apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=60 \
             libwebkit2gtk-4.1-dev \
             libgtk-3-dev \
             libayatana-appindicator3-dev \
@@ -149,7 +155,12 @@ jobs:
             texlive-lang-japanese \
             fonts-noto-cjk \
             lmodern \
-            epubcheck
+            epubcheck \
+            pandoc \
+            poppler-utils \
+            xvfb
+          # Where the app looks for it first; pinned to the version tested.
+          pipx install --include-deps pymupdf4llm==1.27.2.3
 
       - uses: actions/checkout@v4
 
@@ -174,7 +185,8 @@ jobs:
           npm run build
 
       # The tests that use the system clipboard are macOS's only, so none
-      # run here.
+      # run here. The CLI tests' headless app still starts GTK, which needs
+      # a display: xvfb gives it one.
       - name: Run the tests
         working-directory: swift-shifter
-        run: cargo test
+        run: xvfb-run -a cargo test

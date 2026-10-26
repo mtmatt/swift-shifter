@@ -3,14 +3,16 @@
 use std::process::Command;
 
 /// The `needed` tools that `swift-shifter doctor` doesn't report as found
-/// (a line starting with "✓"). Tests skip themselves when this is non-empty.
+/// (a line starting with "✓"). Tests skip themselves when this is non-empty,
+/// except in CI, which installs them: there a missing one fails the test.
+#[allow(dead_code)] // each test crate compiles this module; not all need it
 pub fn missing_tools(needed: &[&str]) -> Vec<String> {
     let doctor = Command::new(env!("CARGO_BIN_EXE_swift-shifter"))
         .arg("doctor")
         .output()
         .expect("failed to run doctor");
     let report = String::from_utf8_lossy(&doctor.stdout);
-    needed
+    let missing: Vec<String> = needed
         .iter()
         .filter(|tool| {
             !report
@@ -18,7 +20,12 @@ pub fn missing_tools(needed: &[&str]) -> Vec<String> {
                 .any(|l| l.starts_with('\u{2713}') && l.contains(**tool))
         })
         .map(|tool| tool.to_string())
-        .collect()
+        .collect();
+    assert!(
+        missing.is_empty() || std::env::var("CI").as_deref() != Ok("true"),
+        "{missing:?} not installed, and CI runs this test with them"
+    );
+    missing
 }
 
 /// Write a minimal valid 1x1 PNG.

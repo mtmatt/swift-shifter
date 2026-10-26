@@ -10,6 +10,8 @@ mod hotkey;
 mod process;
 mod quick;
 mod recent;
+#[cfg(test)]
+mod test_tools;
 mod tray;
 
 use serde::{Deserialize, Serialize};

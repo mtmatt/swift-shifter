@@ -1121,6 +1121,8 @@ pub(crate) fn percent_decode(text: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::converter::document::binaries::find_pandoc_binary;
+    use crate::test_tools::installed;
 
     #[test]
     fn handles_only_native_pairs() {
@@ -3037,9 +3039,10 @@ mod tests {
     }
 
     /// The text of `pdf`, as pdftotext reads it. `None` where pdftotext
-    /// isn't installed, or there's no PDF (tectonic wasn't run).
+    /// isn't installed (see [`installed`]), or there's no PDF (tectonic
+    /// wasn't run).
     fn pdf_text(pdf: &Path) -> Option<String> {
-        let pdftotext = which::which("pdftotext").ok()?;
+        let pdftotext = installed("pdftotext", which::which("pdftotext").ok())?;
         if !pdf.is_file() {
             return None;
         }
@@ -3057,9 +3060,10 @@ mod tests {
     }
 
     /// What pandoc writes when it reads `tex`, given the writer's
-    /// `options` (`-t markdown`). `None` where pandoc isn't installed.
+    /// `options` (`-t markdown`). `None` where pandoc isn't installed (see
+    /// [`installed`]).
     fn pandoc_read_back(tex: &Path, options: &[&str]) -> Option<String> {
-        let pandoc = crate::converter::document::binaries::find_pandoc_binary()?;
+        let pandoc = installed("pandoc", find_pandoc_binary())?;
         let output = std::process::Command::new(pandoc)
             .args(["-f", "latex"])
             .args(options)
@@ -3508,8 +3512,27 @@ Ref[^code].\n\n\
         if let Some(back) = pandoc_read_back(&tex, &["-t", "native"]) {
             let first = back.split("\n, ").next().unwrap();
             assert!(first.contains("Str \"B\""), "{back}\n{text}");
-            assert!(back.contains("Str \"Inner\""), "{back}");
+            // A pandoc older than 3.9.0.1 (Ubuntu's, in CI) drops the text
+            // of `\footnotetext`, the notes inside notes among it; the PDF
+            // above shows them.
+            if pandoc_reads_footnotetext(dir.path()) {
+                assert!(back.contains("Str \"Inner\""), "{back}");
+            }
         }
+    }
+
+    /// Whether the pandoc installed reads the text of `\footnotetext`, as
+    /// it does from 3.9.0.1 on.
+    fn pandoc_reads_footnotetext(dir: &Path) -> bool {
+        let probe = dir.join("footnotetext.tex");
+        std::fs::write(
+            &probe,
+            "\\documentclass{article}\n\\begin{document}\n\
+             A\\footnotemark\\footnotetext{Probe}\n\\end{document}\n",
+        )
+        .unwrap();
+        pandoc_read_back(&probe, &["-t", "native"])
+            .is_some_and(|back| back.contains("Str \"Probe\""))
     }
 
     /// Regression for #44: a note in a place that can't hold its text, a
@@ -3553,7 +3576,14 @@ Ref[^code].\n\n\
                 "He said “你好” to me, and say “hi” — now.",
                 "他说“你好”——“好”。",
             ] {
-                assert!(shown.contains(line), "{line} in {shown}");
+                // Ubuntu's pdftotext (poppler 24.02, in CI) gives a CJK
+                // line's closing `。` a line of its own: what's checked is
+                // the spaces, not where it breaks lines.
+                let unbroken = shown.replace('\n', "");
+                assert!(
+                    shown.contains(line) || unbroken.contains(line),
+                    "{line} in {shown}"
+                );
             }
         }
     }
@@ -3562,8 +3592,7 @@ Ref[^code].\n\n\
     /// structure. Skipped where pandoc isn't installed.
     #[test]
     fn pandoc_reads_our_latex_back_with_the_same_structure() {
-        let Some(pandoc) = crate::converter::document::binaries::find_pandoc_binary() else {
-            eprintln!("skipping: pandoc not found");
+        let Some(pandoc) = installed("pandoc", find_pandoc_binary()) else {
             return;
         };
         /// Headings, then counts of tables, code blocks, display math and
