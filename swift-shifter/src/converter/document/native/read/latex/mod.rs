@@ -74,6 +74,7 @@ fn read_parsed(source: &str) -> Document {
     let mut reader = Reader::default();
     reader.flow(pieces(&document_body(&root).unwrap_or(root)));
     reader.end_paragraph();
+    level_headings(&mut reader.blocks);
     Document {
         blocks: reader.blocks,
         ..Document::default()
@@ -239,6 +240,9 @@ impl Reader {
     /// The command `name`, given its required arguments (see [`signature`]),
     /// or, unknown, the groups right after it.
     fn command(&mut self, name: &str, args: Vec<Vec<Piece>>) {
+        if let Some(level) = SECTIONS.iter().position(|section| *section == name) {
+            return self.heading(level, args);
+        }
         match name {
             // `\emph` switches between italic and upright, so inside another
             // it's upright: the reader nests no emphasis, which writers
@@ -275,6 +279,30 @@ impl Reader {
                     self.flow(group);
                 }
             }
+        }
+    }
+
+    /// A sectioning command's heading, at `level` in [`SECTIONS`] (see
+    /// [`level_headings`]), its argument its text: a block of its own, after
+    /// the paragraph before it. Its star (unnumbered) and short title (the
+    /// table of contents') show nothing; one showing nothing is none.
+    fn heading(&mut self, level: usize, args: Vec<Vec<Piece>>) {
+        self.end_paragraph();
+        let Some(arg) = args.into_iter().next() else {
+            return;
+        };
+        // Set in its own font, emphasized or not: the emphasis around it
+        // holds again after it.
+        let emphasized = std::mem::take(&mut self.emphasized);
+        let in_argument = std::mem::replace(&mut self.in_argument, true);
+        self.flow(arg);
+        self.in_argument = in_argument;
+        self.emphasized = emphasized;
+        let content = trimmed(std::mem::take(&mut self.inlines));
+        if !content.is_empty() {
+            // Seven of them, so an index fits.
+            let level = level as u8 + 1;
+            self.blocks.push(Block::Heading { level, content });
         }
     }
 
@@ -357,6 +385,9 @@ const ESCAPED: [&str; 7] = ["\\%", "\\&", "\\#", "\\$", "\\_", "\\{", "\\}"];
 struct Signature {
     star: bool,
     optional: bool,
+    /// Whether it takes its optional argument only without its star, as
+    /// `\section` its short title.
+    unstarred_optional: bool,
     required: usize,
 }
 
@@ -371,6 +402,7 @@ thread_local! {
 const LINE_BREAK: Signature = Signature {
     star: true,
     optional: true,
+    unstarred_optional: false,
     required: 0,
 };
 
@@ -385,7 +417,42 @@ fn signature(name: &str) -> Option<Signature> {
         }),
         "\\par" | "\\" => Some(Signature::default()),
         _ if ESCAPED.contains(&name) => Some(Signature::default()),
+        _ if SECTIONS.contains(&name) => Some(Signature {
+            star: true,
+            optional: true,
+            unstarred_optional: true,
+            required: 1,
+        }),
         _ => None,
+    }
+}
+
+/// The sectioning commands, from the top level down.
+const SECTIONS: [&str; 7] = [
+    "\\part",
+    "\\chapter",
+    "\\section",
+    "\\subsection",
+    "\\subsubsection",
+    "\\paragraph",
+    "\\subparagraph",
+];
+
+/// `blocks`' headings, read at their command's level in [`SECTIONS`],
+/// risen so that the top one a document uses is level 1, as `\section` is
+/// in an article and `\chapter` in a book; past 6, they're 6.
+fn level_headings(blocks: &mut [Block]) {
+    let levels = blocks.iter().filter_map(|block| match block {
+        Block::Heading { level, .. } => Some(*level),
+        _ => None,
+    });
+    let Some(top) = levels.min() else {
+        return;
+    };
+    for block in blocks {
+        if let Block::Heading { level, .. } = block {
+            *level = (*level - top + 1).min(6);
+        }
     }
 }
 
@@ -406,13 +473,15 @@ fn take_arguments(
     unbracketed: &mut usize,
     signature: Signature,
 ) -> Vec<Vec<Piece>> {
+    let mut starred = false;
     if signature.star {
         *at = past_spaces(items, *at);
         if let Some(Piece::Token(SyntaxKind::TokenAsterisk, _)) = items.get(*at) {
             *at += 1;
+            starred = true;
         }
     }
-    if signature.optional {
+    if signature.optional && !(starred && signature.unstarred_optional) {
         *at = past_spaces(items, *at);
         // The first `]` past it closes it, a primed one (`]'`) too (see
         // `push_pieces`), but not one in a group: groups are nodes of their
@@ -862,6 +931,89 @@ mod tests {
             .unwrap()
             .join()
             .unwrap();
+    }
+
+    fn heading(level: u8, content: &[Inline]) -> Block {
+        Block::Heading {
+            level,
+            content: content.to_vec(),
+        }
+    }
+
+    fn para(content: &[Inline]) -> Block {
+        Block::Paragraph(content.to_vec())
+    }
+
+    /// Each row: the blocks the source reads as.
+    #[test]
+    fn sectioning_commands_are_headings() {
+        let cases: &[(&str, &[Block])] = &[
+            // A block of its own, between paragraphs.
+            (
+                "a \\section{B} c",
+                &[
+                    para(&[text("a")]),
+                    heading(1, &[text("B")]),
+                    para(&[text("c")]),
+                ],
+            ),
+            // Its short title shows nothing; its text is inline.
+            (
+                "\\section [Short] {Long \\emph{one}}",
+                &[heading(1, &[text("Long "), emph(&[text("one")])])],
+            ),
+            // Nor does its star, after which it takes no short title.
+            ("\\section* {A}", &[heading(1, &[text("A")])]),
+            (
+                "\\section*[] body",
+                &[heading(1, &[text("[")]), para(&[text("] body")])],
+            ),
+            // An empty line in it is a space; one showing nothing is none.
+            (
+                "\\section{a\n\nb}\\section{ }",
+                &[heading(1, &[text("a b")])],
+            ),
+            // Set in its own font, inside emphasis too.
+            (
+                "\\emph{a \\section{B} c}",
+                &[
+                    para(&[emph(&[text("a")])]),
+                    heading(1, &[text("B")]),
+                    para(&[emph(&[text("c")])]),
+                ],
+            ),
+        ];
+        for &(source, expected) in cases {
+            assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
+    }
+
+    /// The top level a document uses is level 1, and the levels under it
+    /// follow, as far as 6.
+    #[test]
+    fn heading_levels_start_at_the_top_one_used() {
+        let levels = |source: &str| -> Vec<u8> {
+            read(source)
+                .0
+                .blocks
+                .into_iter()
+                .filter_map(|block| match block {
+                    Block::Heading { level, .. } => Some(level),
+                    _ => None,
+                })
+                .collect()
+        };
+        let below = "\\section{x}\\subsection{x}\\subsubsection{x}\\paragraph{x}\\subparagraph{x}";
+        assert_eq!(levels(below), [1, 2, 3, 4, 5]);
+        assert_eq!(
+            levels(&format!("\\chapter{{x}}{below}")),
+            [1, 2, 3, 4, 5, 6]
+        );
+        assert_eq!(
+            levels(&format!("\\part{{x}}\\chapter{{x}}{below}")),
+            [1, 2, 3, 4, 5, 6, 6]
+        );
+        assert_eq!(levels("\\subsection{x}\\section{x}"), [2, 1]);
     }
 
     /// Macros aren't expanded: one that expands forever doesn't hang it.
