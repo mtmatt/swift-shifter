@@ -1,0 +1,106 @@
+\begin{figure*}[t]
+  \centering
+  \tikzstyle{large} = [circle, fill=white, text=black, draw, thick, scale=1, minimum size=0.8cm, inner sep=1.5pt]
+  \tikzstyle{plain} = [circle, fill=white, text=black, draw, thick, scale=1, minimum size=0.5cm, inner sep=1.5pt]
+  \tikzstyle{small} = [circle, fill=white, text=black, draw, thick, scale=1, minimum size=0.2cm, inner sep=1.5pt]
+  \tikzstyle{black} = [circle, fill=gray, text=black, draw, thick, scale=1, minimum size=0.2cm, inner sep=1.5pt]
+  \tikzmath{\xunit = 0.8; \yunit = 0.8; \dx = 1.0; \dy = 0.4; \cx=0.8; }
+
+  \begin{minipage}[m]{.96\textwidth}
+      \vspace{0pt}
+      \centering
+      \begin{tikzpicture}
+          % vertices
+          \node[small,label=below:$u_{12}$] (u12) at (0 + 1 * \dx, 1 - 1 * \dy) {};
+          \node[small,label=below:$u_{13}$] (u13) at (0 + 2 * \dx, 1 - 2 * \dy) {};
+
+          \node[small,label={[shift={(-0.5, -0.1)}]$u_{21}$}] (u21) at (4, 1) {};
+          \node[small,label=below:$u_{23}$] (u23) at (4 + 2 * \dx, 1 - 2 * \dy) {};
+
+          \node[small,label={[shift={(-0.5, -0.1)}]$u_{31}$}] (u31) at (8, 1) {};
+          \node[small,label=below:$u_{32}$] (u32) at (8 + 1 * \dx, 1 - 1 * \dy) {};
+
+          \node[small,label=above:$x_{12}$] (x12) at (2.6, 3) {};
+          \node[small,label=above:$x_{12}'$] (x12p) at (2.6 - \cx, 3.2) {};
+          \node[small,label=above:$y_{12}$] (y12) at (3.4, 3) {};
+          \node[small,label=above:$y_{12}'$] (y12p) at (3.4 + \cx, 3.2) {};
+
+          \node[small,label=above:$x_{23}$] (x23) at (6.6, 3) {};
+          \node[small,label=above:$x_{23}'$] (x23p) at (6.6 - \cx, 3.2) {};
+          \node[small,label=above:$y_{23}$] (y23) at (7.4, 3) {};
+          \node[small,label=above:$y_{23}'$] (y23p) at (7.4 + \cx, 3.2) {};
+
+          %edges
+          \draw (u12)--(x12);
+          \draw (u13)--(x12);
+          \draw (u21)--(x12);
+          \draw (u23)--(x12);
+          \draw (u12)--(y12);
+          \draw (u13)--(y12);
+          \draw (u21)--(y12);
+          \draw (u23)--(y12);
+
+          \draw (x12)--(x12p);
+          \draw (y12)--(y12p);
+          \draw (x23)--(x23p);
+          \draw (y23)--(y23p);
+
+          \draw (x12p)--(u12);
+          \draw (y12p)--(u21);
+
+          \draw (u21)--(x23);
+          \draw (u23)--(x23);
+          \draw (u31)--(x23);
+          \draw (u32)--(x23);
+          \draw (u21)--(y23);
+          \draw (u23)--(y23);
+          \draw (u31)--(y23);
+          \draw (u32)--(y23);
+
+          \draw (x23p)--(u23);
+          \draw (y23p)--(u32);
+
+          \draw (u12)--(u13);
+          \draw (u12)--(u21);
+          \draw (u12)--(u23);
+          \draw (u12)--(u31);
+          \draw (u12)--(u32);
+          \draw (u13)--(u21);
+          \draw (u13)--(u23);
+          \draw (u13)--(u31);
+          \draw (u13)--(u32);
+          \draw (u21)--(u23);
+          \draw (u21)--(u31);
+          \draw (u21)--(u32);
+          \draw (u23)--(u31);
+          \draw (u23)--(u32);
+          \draw (u31)--(u32);
+
+          \node[] at (9, 3.1) {\large $\cdots$};
+          \node[] at (11, 0.4) {\large $\cdots$};
+
+
+          \draw[dashed,rounded corners] (0, 1.5) rectangle (-0.5 + 3 * \dx, 1 - 3.6 * \dy);
+          \draw[dashed,rounded corners] (3.1, 1.5) rectangle (3.5 + 3 * \dx, 1 - 3.6 * \dy);
+          \draw[dashed,rounded corners] (7.1, 1.5) rectangle (7.5 + 3 * \dx, 1 - 3.6 * \dy);
+          \node[] at (0.4, -0.2) {$U_1$};
+          \node[] at (3.5, -0.2) {$U_2$};
+          \node[] at (7.5, -0.2) {$U_3$};
+
+        \draw [decorate,decoration={brace,amplitude=5pt}]
+        (11.5, 1.5) -- (11.5, -0.5) node[midway,xshift=20pt]{$U$};
+
+        \draw [decorate,decoration={brace,amplitude=5pt}]
+        (11.5, 3.5) -- (11.5, 2.5) node[midway,xshift=20pt]{$W$};
+      \end{tikzpicture}
+  \end{minipage}
+%
+  \caption{%
+  A visualization of an auxiliary graph constructed from an instance $(G,k)$ of \probname{Multicolored Clique}.
+  The set $U$ consists of $n(k-1)$ vertices representing the vertices in $G$ and
+  their adjacent colors.
+  The set $W$ consists of $4m$ vertices representing the edges in $G$ replaced by a gadget for 
+  creating odd cycles.
+  }
+  \label{fig:proof-w1-hardness}
+\end{figure*}

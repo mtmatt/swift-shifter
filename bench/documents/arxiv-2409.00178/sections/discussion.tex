@@ -1,0 +1,207 @@
+\section{Implications of the anomaly}
+\label{sec:massless_graviton}
+
+\subsection{The currents}
+
+The anomaly of the last section can be understood in terms of the associated currents $J$ and $\tilde{J}$. 
+These currents are not invariant under linearised diffeomorphisms \eqref{eq:linear_diffeo}, but, from \eqref{eq:J(h)_conservations}, $J$ is left-conserved on-shell and, from \eqref{eq:Jtilde_conserved}, $\tilde{J}$ is left-conserved identically.
+Furthermore, from \eqref{eq:J_right_conserved}, $J$ is right-conserved identically.
+
+From these currents, we can build tensors which are gauge-invariant under \eqref{eq:linear_diffeo}. Namely, the [2,2] curvature bi-form $R$ defined in \eqref{eq:riemann} is left-conserved on-shell,
+\begin{equation}
+    \dd_L^\dag R \doteq 0
+\end{equation}
+as a result of the on-shell left-conservation of $J$ (see \eqref{eq:X_def}). Also, we can build the left-dual curvature from $\tilde{J}$ by
+\begin{equation}\label{eq:Y_def}
+    \star_L R(h) = -2\dd_R \tilde{J}(h)
+\end{equation}
+which is gauge-invariant and left-conserved,
+\begin{equation}
+    \dd_L^\dag (\star_L R) = 0
+\end{equation}
+
+Let us now consider the conserved currents in the gauged theory \eqref{eq:S_electric_gauged} where we have coupled a [2,1] background field $C$ such that the shift \eqref{eq:graviton_shift} is a symmetry for arbitrary $\alpha_{\mu\nu}(x)$.
+In the gauged theory \eqref{eq:S_electric_gauged}, the equations of motion are no longer $G_{\mu\nu}=0$ but rather $\mathbf{G}_{\mu\nu}=0$ where $\mathbf{G}_{\mu\nu}$ is the Einstein tensor constructed from $\ggamma$ (defined in \eqref{eq:ggamma}) rather than $\Gamma$.
+Therefore, those quantities which were conserved on-shell in the ungauged theory will, in general, not be conserved on-shell in the gauged theory. However, in the gauged theory, we can build a [2,1] current
+\begin{equation}
+    \mathbf{J}\indices{_{\mu\nu|}^\rho} = -3 \delta_{\mu\nu\alpha}^{\sigma\rho\beta} \ggamma\indices{_{\sigma\beta|}^\alpha}
+\end{equation}
+which is left-conserved on-shell,
+\begin{equation}\label{eq:improved_J}
+    \dd_L^\dag \mathbf{J} \doteq 0
+\end{equation}
+This `improved' current $\mathbf{J}$ is the natural modification of $J(h)$ in \eqref{JGam} such that it is invariant under the (now gauged) shift symmetry \eqref{eq:graviton_shift}. 
+Similarly, the dual current
+\begin{equation}
+    \tilde{\mathbf{J}} = \star_L \ggamma
+\end{equation}
+is the improvement of \eqref{eq:Jtilde} which is invariant under the gauge symmetry \eqref{eq:graviton_shift}. 
+However, $\tilde{\mathbf{J}}$ is \emph{not} left-conserved in the gauge theory if the background field configuration $C$ is not flat (that is, if $\dd_L C \neq0$), since
+\begin{equation}\label{eq:improved_Jtilde}
+    \dd_L^\dag \tilde{\mathbf{J}} = 3 (-1)^{d-1} \star_L \dd_L C
+\end{equation}
+This is the analogue of the statement that $F-B$ is not closed in Maxwell theory once the electric 1-form symmetry is gauged, as seen at the end of section~\ref{sec:maxwell}. This is a manifestation of the mixed 't Hooft anomaly: gauging the graviton shift \eqref{eq:graviton_shift} explicitly breaks the dual symmetry.
+
+Similarly, there are improved versions of the [2,2] current $R$ and the $[d-2,2]$ current $\star_L R$ in the gauged theory. These are given by replacing $\Gamma$ with $\mathbf{\Gamma}$ in the definition of $R$, i.e.\
+\begin{equation}
+    \mathbf{R} = -2 \dd_R \mathbf{\Gamma}
+\end{equation}
+Again, it follows from \eqref{eq:improved_J} that $\mathbf{R}$ is left-conserved on-shell,
+\begin{equation}\label{eq:XY_anomaly1}
+    \dd_L^\dag \mathbf{R} = 0
+\end{equation}
+and it follows from \eqref{eq:improved_Jtilde} that $\star_L \mathbf{R}$ is \emph{not} left-conserved in the gauged theory. Instead, it satisfies
+\begin{equation}\label{eq:XY_anomaly2}
+    \dd_L^\dag (\star_L \mathbf{R}) = 3(-1)^{d-1} \star_L \dd_L \dd_R C
+\end{equation}
+and so is not left-conserved in the presence of a non-flat background $C$ for the graviton shift symmetry.
+Moreover, $\mathbf{R}$ fails to be traceless on-shell,
+\begin{equation}\label{eq:trace_anom}
+    \mathbf{R}\indices{^\mu_{\nu\mu\sigma}} \doteq \partial^\mu C_{\mu\nu|\sigma} + \partial_\sigma C\indices{_{\nu\mu|}^\mu}
+\end{equation}
+The fact that the improved quantities are not conserved or traceless in the presence of the background gauge field is a signal of the mixed 't Hooft anomaly.
+
+Instead of coupling the [1,1] shift symmetry to a background [2,1] gauge field $C$, we could have coupled the $[d-3,1]$ bi-form symmetry to a background $[d-2,1]$ gauge field $\tilde{C}$ as in \eqref{eq:S_magnetic_gauged}. This can be achieved by adding counterterms to the action involving only the background fields $C$ and $\tilde{C}$.
+The equation of motion in this gauged theory is then
+\begin{equation}
+    G_{\mu\nu} = \frac{1}{d} (\star_L \dd_L \tilde{C})_{(\mu|\nu)}
+\end{equation}
+We find that $\dd_L^\dag \tilde{J} = 0$ still holds in the gauged theory, but $\dd_L^\dag J \neq0$ when the $\tilde{C}$ background field is not flat. In terms of the gauge-invariant bi-forms $R$ and $\star_L R$, this implies that $\dd_L^\dag (\star_L R)=0$ but $\dd_L^\dag R \neq0$ when $\tilde{C}$ is not flat. Again, we see that gauging one symmetry explicitly breaks the other.
+
+
+\subsection{Currents and correlators}
+
+In the free graviton theory, it is straightforward to calculate the current correlators $\ev*{J \tilde{J}}$ or $\ev*{RR}$ and to check that they have the form implied by the anomaly. We fix the de Donder gauge
+\begin{equation}
+    \partial^\mu h_{\mu\nu} - \frac{1}{2}\partial_\nu h\indices{^\mu_\mu} = 0
+\end{equation}
+where the momentum space propagator\footnote{All correlation functions are time-ordered.}
+\begin{equation}
+    \mathcal{G}_{\mu\nu\alpha\beta}(p) \equiv \int \dd[d]{x} e^{ipx} \ev*{h_{\mu\nu}(x) h_{\alpha\beta}(0)} 
+\end{equation}
+can be written as \cite{Hinterbichler:2011tt}
+\begin{equation}
+    \mathcal{G}_{\mu\nu\alpha\beta}(p) = \frac{-i}{p^2} \left( \frac{1}{2} \eta_{\mu\alpha}\eta_{\nu\beta} + \frac{1}{2} \eta_{\mu\beta} \eta_{\nu\alpha} - \frac{1}{d-2} \eta_{\mu\nu} \eta_{\alpha\beta} \right)
+\end{equation}
+The current-current correlator in this gauge is
+\begin{equation}\label{eq:JJ_correlator}
+    \int \dd[d]{x} e^{ipx} \ev*{J_{\mu\nu|\rho}(x) (\star_L \tilde{J})^{\alpha\beta|\gamma}(0)} = \frac{i}{p^2} \left( \frac{1}{2} p_{[\mu} p^{[\alpha} \delta^{\beta]}_{\nu]} \delta^\gamma_\rho + \frac{1}{2} p_{[\mu} \delta_{\nu]}^\gamma p^{[\alpha} \delta^{\beta]}_\rho - \frac{1}{2} \eta_{\rho[\mu} p^{[\alpha} \delta^{\beta]}_{\nu]} p^\gamma \right)
+\end{equation}
+This correlator implies the following correlator involving the gauge invariant [2,2] current $R$:
+\begin{equation}
+\begin{split}\label{eq:XY_correlator}
+    \int \dd[d]{x} e^{ipx} \ev*{R_{\mu\nu|\rho\sigma}(x) R^{\alpha\beta|\gamma\delta}(0)} &= -\frac{4i}{p^2} \bigg( \frac{1}{2} p_{[\mu} p^{[\alpha} \delta^{\beta]}_{\nu]} p_{[\rho} p^{[\gamma} \delta^{\delta]}_{\sigma]} + (\alpha\beta\leftrightarrow\gamma\delta) \\
+    &\qquad\qquad - \frac{1}{d-2} p_{[\mu} \eta_{\nu][\rho} p_{\sigma]} p^{[\alpha} \eta^{\beta][\gamma}p^{\delta]} \bigg)
+\end{split}
+\end{equation}
+which exhibits a $p^{-2}$ pole as a consequence of the masslessness of the graviton.
+The linearised Riemann tensor is traceless on-shell so that on-shell the linearised curvature becomes the linearised Weyl tensor. In the quantum theory, taking a trace of the $\ev*{RR}$ correlator, we find
+\begin{equation}\label{eq:Ricci_correlator}
+    \int \dd[d]{x} e^{ipx} \ev*{\eta^{\mu\rho}R_{\mu\nu|\rho\sigma}(x) R^{\alpha\beta|\gamma\delta}(0)} = -i \left( p^{[\alpha} \delta^{\beta]}_{(\nu} p^{[\gamma} \delta^{\delta]}_{\sigma)} + \frac{1}{d-2} \eta_{\nu\sigma} p^{[\alpha} \eta^{\beta][\gamma}p^{\delta]} \right)
+\end{equation}
+The terms on the right-hand side are polynomial in $p^\mu$. In position space this is a contact term, so the Ricci tensor may not vanish inside a correlator with other insertions of $R$ at the same point in the quantum theory. Away from other insertions, the Ricci tensor vanishes inside any correlation function.
+
+The anomaly is reflected in correlators via Ward identities. It is straightforward to show that 
+\begin{equation}
+    \int\dd[d]{x} e^{ipx} \ev*{ R_{\mu\nu|\rho\sigma}(x) \partial^{[\lambda} R^{\alpha\beta]|\gamma\delta}(0)} = 0
+\end{equation}
+so that $\star_L R$ is left-conserved (equivalently, $R$ is left-closed), whereas
+\begin{equation}
+\begin{split}\label{eq:divX_contact}
+    \int\dd[d]{x} e^{ipx} \ev*{ \partial^{\mu} R_{\mu\nu|\rho\sigma}(x) R^{\alpha\beta|\gamma\delta}(0)} &= -\left(p^{[\alpha} \delta^{\beta]}_\nu p_{[\rho} p^{[\gamma} \delta^{\delta]}_{\sigma]} + (\alpha\beta \leftrightarrow\gamma\delta) \right) \\
+    & \quad + \frac{2}{d-2} \eta_{\nu[\rho} p_{\sigma]} p^{[\alpha} \eta^{\beta][\gamma} p^{\delta]} 
+\end{split}
+\end{equation}
+so $R$ is not left-conserved in general in the quantum theory. We note that the right-hand side of \eqref{eq:divX_contact} is polynomial in the momenta $p^\mu$ and so, as above, in position space this is a contact term. This equation then takes the standard form of a Ward identity in position space. Therefore, in position space, we find that in this correlator $\star_L R$ is left-conserved everywhere, whereas $R$ is only left-conserved away from the other insertions of $R$. That is, the classical left-conservation of both $R$ and $\star_L R$ is incompatible in the quantum theory and one of them fails to be conserved when inserted at the same spacetime point as the other.
+
+In this presentation, it is the dual current $\star_L R$ which is conserved everywhere and the anomaly is seen as the lack of conservation of $R$. As explained in the previous subsection, we can shift the anomaly between $R$ and $\star_L R$ by adding counterterms involving only the background gauge fields. At the level of the correlation functions, this has the effect of changing the contact terms in the $\ev*{RR}$ correlator such that $R$ is conserved everywhere and $\star_L R$ fails to be conserved when inserted at the same point as the other insertion in the correlator. However, the $p^{-2}$ term in the correlator is not affected by the addition of such counterterms and is fixed by the anomaly.
+
+Since the currents $J$ and $\tilde{J}$ can be understood as the Noether currents associated with shifts of the graviton and its dual, it is then natural to see the graviton as a Nambu-Goldstone mode. More precisely, the graviton could be interpreted as the Nambu-Goldstone mode associated with the [1,1] bi-form shift symmetry \eqref{eq:graviton_shift} and the dual graviton could be interpreted as the Nambu-Goldstone mode associated with the $[d-3,1]$ bi-form shift symmetry \eqref{eq:D_shift}.
+This is the gravitational analogue of viewing the photon as the Nambu-Goldstone mode for a 1-form shift symmetry \cite{Gaiotto2015GeneralizedSymmetries}.
+
+\subsection{Implications of the 't Hooft anomaly in theories with bi-form currents}
+
+We have seen that the free graviton theory, which describes a massless spin-2 particle, has bi-form currents $J$ and $\tilde{J}$ with correlator given by \eqref{eq:JJ_correlator} (modulo gauge transformations) which implies that the gauge-invariant currents $R$, $\star_L R$ have correlator \eqref{eq:XY_correlator}.
+These correlation functions express the 't Hooft anomaly. 
+We now \emph{reverse} our reasoning to consider a theory (e.g.\ a condensed matter system or a field theory) with a [2,1] bi-form current $J$ and $[d-2,1]$ bi-form current $\tilde{J}$ which are left-conserved and with a mixed 't Hooft anomaly described by the anomaly polynomial \eqref{eq:anomaly_poly}. Given the RG invariance of 't Hooft anomalies, we can use the anomaly to learn about the IR dynamics of such a theory.
+
+
+In particular, arguments of this type have been used in~\cite{Delacretaz:2019brr, Hinterbichler2023GravitySymmetries, Hinterbichler:2024cxn} to demonstrate the presence of a gapless mode in the IR spectrum of theories with certain mixed 't Hooft anomalies. In those works, anomalous conservation equations analogous to \eqref{eq:improved_J} and \eqref{eq:improved_Jtilde} were shown to be sufficient to fix the correlator of the currents, revealing a $p^{-2}$ pole which corresponds to a massless mode. 
+The results of~\cite{Weinberg:2020nsn, Distler:2020fzr} then imply that this massless mode has spin-two. These results do not rely on the specifics of the theory, and will apply to any theory with such a mixed 't Hooft anomaly.
+
+There is a subtlety in applying this argument to the anomaly in \eqref{eq:improved_Jtilde} since the currents $J$ and $\tilde{J}$ are not gauge-invariant. 
+We can, however, consider a general theory which has conserved currents which are [2,2] and $[d-2,2]$ bi-forms $X$ and $Y$ that are observable, with $X$ satisfying the same conservation conditions as $R$ and $Y$ satisfying the same conservation conditions as $\star_L R$:
+\begin{equation}\label{eq:XY_conservation}
+    \dd_L^\dag X \doteq 0\qc \dd_L^\dag Y = 0\qc \dd_R^\dag X \doteq 0\qc \dd_R^\dag Y \doteq 0
+\end{equation}
+and where $X$ is traceless on-shell.
+We suppose that the global symmetries generated by $X$ and $Y$ have a mixed 't Hooft anomaly of the same form as that considered above, for example in \eqref{eq:XY_anomaly2} and \eqref{eq:trace_anom}.
+This type of structure was studied in~\cite{Hinterbichler2023GravitySymmetries} and is sufficient to fix the $p^{-2}$ term in the $\ev*{X Y}$ correlator in any theory where this anomaly structure is present.
+The set-up used in that work was slightly different as only a subset of the graviton shift symmetries of the form \eqref{eq:alpha=divLambda} were gauged and a [2,2] background gauge field was employed. However, it is clear that the methods developed there (see also \cite{Delacretaz:2019brr}) will apply equally here.
+The result is that the non-local part of the correlator is precisely of the form \eqref{eq:XY_correlator}. This does not fix terms polynomial in $p^\mu$ in the correlator. In position space, these are contact terms and they depend on whether the anomaly appears in the non-conservation of $X$ or $Y$ when both currents are inserted at the same spacetime point.
+The salient feature of the result is that the correlator has a $p^{-2}$ pole which dictates the IR behaviour of the correlator, and so indicates a massless mode in the IR spectrum. The results of \cite{Weinberg:2020nsn, Distler:2020fzr} then imply that this is necessarily a spin-two mode. 
+
+Furthermore, in a theory with such an anomaly structure, the presence of the massless spin-two mode determines that the low-energy effective theory is the graviton theory with action \eqref{eq:S_FP} at leading order.\footnote{At higher order, only terms built from the linearised Riemann tensor and its derivatives will enter the EFT as these respect the global [1,1] bi-form symmetry.} In this IR gauge theory, one can then identify the [1,1] bi-form and $[d-3,1]$ bi-form shift symmetries and construct the associated (non-gauge-invariant) currents $J$ and $\tilde{J}$ from the graviton. 
+From these, gauge-invariant currents and $\star_L R$ and $R$ can be constructed by \eqref{eq:X_def} and \eqref{eq:Y_def}. Then $X$ and $Y$ are proportional to $R$ and $\star_L R$ in the graviton theory that emerges in the deep IR.\footnote{At higher energies, the dual $[d-2,2]$ current $Y =\star_L R$ will remain unchanged as it is identically left-conserved, but the [2,2] current $X$ will be corrected by higher-order terms.}
+Therefore, given the anomaly of $X$ and $Y$ is present in a given theory, the currents $J$ and $\tilde{J}$ can be constructed in the deep IR despite the fact that they are not gauge-invariant.
+Furthermore, while $X$ and $Y$ were the observables defining the anomaly, their behaviour is completely defined by that of $J$ and $\tilde{J}$.
+It is clear from this discussion that, while not gauge-invariant, the currents $J$ and $\tilde{J}$ contain all the physical information about the gauge-invariant currents $X$ and $Y$. They are, in this sense, the more fundamental quantities as they are the Noether currents associated with the most general global shift symmetries of the graviton and its dual. The gauge-invariant objects $X$ and $Y$ are objects derived from $J$ and $\tilde{J}$.
+
+The form of the correlators resulting from the anomaly between $J$ and $\tilde{J}$ are consistent with those given in \cite{Hinterbichler2023GravitySymmetries}. However, understanding this anomaly from the more general graviton shifts provides a cleaner route to the anomaly and a more natural interpretation of the graviton as a Nambu-Goldstone field.
+
+\section{Discussion \& outlook}
+\label{sec:discussion}
+
+We have found a mixed 't Hooft anomaly in the theory of the free graviton on a flat background spacetime. This is an obstruction to simultaneously gauging the shift symmetry of the graviton and the shift symmetry of the dual graviton. These are $[1,1]$ and $[d-3,1]$ bi-form symmetries respectively. The structure of the anomaly closely parallels the mixed 't Hooft anomaly present between the 1-form and $(d-3)$-form symmetries of Maxwell theory. 
+The graviton can be viewed as a Nambu-Goldstone field for the shift symmetry \eqref{eq:graviton_shift} while the dual graviton can be viewed as a Nambu-Goldstone field for the dual shift symmetry \eqref{eq:D_shift}.
+
+While the Noether currents $J$ and $\tilde{J}$ (defined in \eqref{JGam} and \eqref{eq:Jtilde}) associated with these shift symmetries are not gauge-invariant, we can 
+construct gauge-invariant currents \eqref{eq:X_def} and \eqref{eq:Y_def} from these, which are proportional to the linearised Riemann tensor and its dual. The anomaly is reflected in the current algebra \eqref{eq:divX_contact} and we have related this anomaly to the one found in \cite{Hinterbichler2023GravitySymmetries} which implies that any theory with such an anomaly will have a massless graviton degree of freedom in the IR. 
+
+Our derivation of the mixed 't Hooft anomaly avoids several complications present in \cite{Hinterbichler2023GravitySymmetries} which restrict their analysis to a subset of the most general shift symmetries of the graviton. In particular, the gauging presented here gives direct access to the current algebra of the symmetries and gives a more natural interpretation of the graviton as a Nambu-Goldstone boson. Furthermore, our presentation allows for the anomaly to be understood via the descent procedure with a simple anomaly polynomial \eqref{eq:anomaly_poly}, which closely parallels the higher-form mixed 't Hooft anomaly of Maxwell theory \eqref{eq:anomaly_poly_maxwell}.
+
+To understand the quantum theory further, it is necessary to consider the observables of the theory.
+We now briefly discuss observables in gravity. In General Relativity (GR), there are no local observables but there are extended observables. For an $n$-dimensional submanifold $\mathcal{N}$ of spacetime, the volume of $\mathcal{N}$ with respect to the spacetime metric $g$ is an observable, while for a curve $\mathcal{C}$ in spacetime one defines the gravitational holonomy, for example as the Wilson line operator constructed using the spin connection. For an asymptotically flat spacetime, one can also define the ADM charges \cite{ADM, Abbott1982StabilityConstant} as integrals at spatial infinity and the BMS charges \cite{Bondi:1962px, Sachs:1962wk} as integrals at null infinity.
+
+For linearised gravity, in contrast, there are local observables: the linearised curvature and its derivatives are gauge invariant and so can be regarded as local observables, as can quantities constructed from functions of the curvature and its derivatives.
+
+In this paper, we have focused on gravity linearised about Minkowski space, but much of our discussion generalises to gravity linearised about a spacetime with metric $\bar{g}_{\mu \nu}$; we will suppose that the background metric satisfies the (non-linear) Einstein equation. Linearising GR about this background gives a graviton field $h_{\mu \nu}$ satisfying Einstein's equations linearised about the background with gauge transformations in which \eqref{eq:linear_diffeo} is replaced by 
+\begin{equation}\label{eq:nonlin_diffeo}
+    \delta h_{\mu \nu} = \bar{\nabla}_{\mu} \xi_{\nu} + \bar{\nabla}_{\nu} \xi_{\mu}
+\end{equation}
+where $\bar{\nabla}$ is the Levi-Civita connection for $\bar{g}_{\mu \nu}$.
+For an $n$-dimensional submanifold $\mathcal{N}$ of spacetime with (world-volume) coordinates $\sigma^a$, consider the quantity
+\begin{equation}
+    V_{\mathcal{N}} = \int_{\mathcal{N}} d^n \sigma \sqrt{- \bar{\gamma}} \,\bar{\gamma}^{a b} h_{\mu \nu} \pdv{x^{\mu}}{\sigma^a} \pdv{x^{\nu}}{\sigma^b}
+\end{equation}
+where $\bar{\gamma}_{a b}$ is the pull-back metric
+\begin{equation}
+    \bar{\gamma}_{a b} = \bar{g}_{\mu \nu} \pdv{x^{\mu}}{\sigma^a} \pdv{x^{\nu}}{\sigma^b}
+\end{equation}
+Now $V_{\mathcal{N}}$ is invariant under the gauge transformation \eqref{eq:nonlin_diffeo} provided that $\mathcal{N}$ is an extremal surface for the metric $\bar{g}_{\mu \nu}$, i.e. it is one that extremises the $n$-volume measured with respect to $\bar{g}_{\mu \nu}$; for a curve with $n = 1$ it is a geodesic. Then $V_{\mathcal{N}}$ can be
+regarded as an observable associated with the extremal surface.
+
+Whereas in the non-linear theory the ADM and BMS momentum and angular momentum charges are defined by integrals at infinity, in the linear theory there are momentum and angular momentum charges defined as   integrals over submanifolds of spacetime (which do not need to be at infinity) which define topological operators as they are unchanged under deformations of the submanifolds \cite{Benedetti2023GeneralizedGravitons, Hinterbichler2023GravitySymmetries, Hull:2024xgo}. Moreover there are further magnetic topological charges \cite{HullYetAppear} and gauge-invariant forms for these charges were found and discussed in \cite{Hull:2024mfb,Hull:2024xgo}.
+
+It will be interesting to understand the full set of observables for linearised gravity and the action of the generalised symmetries of the theory on them. 
+Here, we have focused on the symmetries of the graviton theory. In the context of the Landau paradigm, the observables charged under the symmetries will be order parameters which describe how the global symmetries are realised in a given phase (i.e. whether they are spontaneously broken or not). In four-dimensional Maxwell theory, the Wilson line is the order parameter for the electric 1-form symmetry. In a Coulomb phase it has perimeter law behaviour and the symmetry is spontaneously broken, with the photon arising as a Nambu-Goldstone boson. It would be interesting to identify the order parameters in gravity whose long-distance behaviour would describe the spontaneously breaking of the bi-form symmetries in the linear theory.
+
+There has been extensive work on $p$-form generalised symmetries in the past decade. Our results (together with those of \cite{Hinterbichler2023GravitySymmetries, Hinterbichler:2024cxn}) indicate that much of the formalism and structure associated with higher-form symmetries generalises to symmetries with certain bi-form parameters.
+Further generalisations to general symmetries in which the gauge parameters are in arbitrary Lorentz representations should be straightforward and would have applications to higher spin gauge fields in arbitrary Lorentz representations. 
+Such symmetries can be regarded as \emph{multi-form} symmetries.\footnote{That is, the parameter of a general shift symmetry will be a multi-form, which is a tensor with multiple sets of anti-symmetric indices. The multi-form calculus of \cite{Medeiros2003ExoticDuality} will be useful here.}
+However, one important difference with the higher-form symmetries is the following.
+A $p$-form current can be integrated over a $p$-surface to give a topological operator, but a multi-form current cannot be directly integrated in this way.
+However, as we have discussed, topological operators can be defined by contracting a multi-form current with a suitable tensor to yield a $p$-form and then integrating. A given multi-form symmetry can in general produce a number of different higher-form currents by contracting with different tensors.
+
+
+The symmetries of the linear graviton theory discussed here do not appear to have a generalisation to the non-linear Einstein theory. Of course, a quantum theory of gravity is expected to have no global symmetries \cite{Banks:2010zn, Harlow:2018tng}, but this is not the case for the linearised quantum theory. The study of this system led us to currents corresponding to these symmetries and to an understanding of their 2-point correlation functions.
+This was then used to study the possibility of the emergence of a graviton in a matter system, following arguments in \cite{Hinterbichler2023GravitySymmetries}.
+We argued that an arbitrary matter system with a pair of currents with the properties and 2-point function discussed here must necessarily have a gapless (massless) spin-two state. 
+It would be interesting to understand whether an interacting graviton could emerge in such a scenario.
+The possibility of the emergence of gravity from a non-gravitational system is of considerable interest; see e.g.~\cite{Verlinde:2016toy}.
+
+
+\paragraph{Acknowledgements.}
+CH is supported by the STFC Consolidated Grants ST/T000791/1 and ST/X000575/1.
+MLH is supported by a President's Scholarship from Imperial College London.
+UL gratefully acknowledges a Leverhulme Visiting Professorship to Imperial College as well as the hospitality of the theory group at Imperial. 

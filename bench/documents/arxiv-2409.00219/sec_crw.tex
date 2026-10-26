@@ -1,0 +1,404 @@
+\section{Brief review of $\sCRW$ and dualizability results} \label{sec:crw}
+
+
+Throughout this paper we assume that $\KK$ is an algebraically closed field of characteristic $0$. Geometrically-minded readers might find some comfort in taking $\KK = \CC$, but they should be warned that the analytical properties of $\CC$ do not carry over to this context -- it is all and only algebra from now on. In this section we will review the main results of the previous paper, prove that $\bh_2 \sCRW$ has duals, and then define the symplectic derived stacks which we will need in the next section.
+
+\subsection{The basics}
+
+Recall Theorem B of \cite{Riva2024}, from which we know that there exists a symmetric monoidal $(\infty,3)$-category $\sCRW$ with the following properties:
+\begin{enumerate}
+	\item its objects are symplectic derived stacks $(X, \omega_X)$ over $\KK$ (see \cite{PTVV2013}, for example);
+	\item its $1$-morphisms $X \to Y$ are Lagrangian spans $X \leftarrow L \to Y$ (see \cite{Calaque2015}, for example), which compose via (derived) pullbacks;
+	\item the $2$-morphisms $L \Rightarrow L'$ form the $\infty$-category $\QCoh^{\ZZ_2}(L \cap L')$ of $\ZZ_2$-graded quasi-coherent sheaves on the derived intersection $L \cap L' := L \times_{X \times Y} L'$; these compose via a push-pull formula (see \cite[Section 1.2.1]{Riva2024});
+	\item the symmetric monoidal product is given by
+	\begin{equation*}
+		(X, \omega_X) \odot (Y, \omega_Y) = (X \times Y, \pi_X^\ast \omega_X + \pi_Y^\ast \omega_Y)
+	\end{equation*}
+	where $\pi_X$ and $\pi_Y$ are the canonical projections from $X \times Y$.
+\end{enumerate}
+
+The structure of the $2$- and $3$-morphisms, and especially their composition, is complicated. Fortunately, the bulk of this paper will only require us to work with a concrete class of derived stacks, namely those which are \emph{affine}. An arbitrary derived stack over $\KK$ is a sheaf of spaces on $\sCAlg^\rmc_{\KK}$, the $\infty$-category of connective (i.e. with vanishing positive cohomology) cdgas over $\KK$, satisfying descent for \'etale morphisms. The affine derived stacks are those which are completely determined by a single cdga: there is a fully faithful functor (the Yoneda embedding)
+\begin{equation*}
+	\Spec : (\sCAlg_\KK^{\rmc})^\opp =: \dAff \to \dSt_\KK
+\end{equation*}
+and we define the subcategory of affine stacks
+\begin{equation*}
+	\dAff_\KK := \im \Spec \simeq (\sCAlg_\KK^{\rmc})^\opp
+\end{equation*}
+to be the essential image of $\Spec$. In particular we have
+\begin{equation*}
+	\Map_{\dSt_\KK}(\Spec A, \Spec B) \simeq \Map_{\sCAlg_\KK^{\rmc}}(B, A)
+\end{equation*}
+for any $A, B \in \sCAlg_\KK^\rmc$. The advantage of working with affine stacks is that maps of cdgas can be constructed directly if one has an explicit model for them, and this will be essential to us in \Cref{sec:bMF} and \Cref{sec:functor}. Note also that all of the examples of cdgas in the paper are obtained from polynomial algebras or exterior algebras with easily defined concrete differentials, so that maps between them are simply polynomial maps in a finite number of variables.
+
+\subsection{$2$-dualizability in $\sCRW$}
+
+In this subsection we will prove a dualizability result which will help us calculate some field theories later on.
+
+\begin{thm} \label{thm:2-dual-crw}
+	Every object $X$ of $\sCRW$ is $2$-dualizable: there is a dual $X^\diamond$ with (co)evaluation maps $\eta : \ast \to X \odot X^\diamond$ and $\veps : X^\diamond \odot X \to \ast$, and $\eta$ and $\veps$ are part of an infinite chain of left and right adjoints:
+	\begin{gather*}
+		\dotsb \dashv \eta^{LL} \dashv \eta^L \dashv \eta \dashv \eta^R \dashv \eta^{RR} \dashv \dotsb, \\
+		\dotsb \dashv \veps^{LL} \dashv \veps^L \dashv \veps \dashv \veps^R \dashv \veps^{RR} \dashv \dotsb.
+	\end{gather*}
+\end{thm}
+
+It will be enough to prove the existence of the dual $X^\diamond$ (together with $\eta$ and $\veps$) and then prove that all $1$-morphisms in $\sCRW$ have both left and right adjoints. We start with duals:
+
+\begin{prp} \label{prp:duals}
+	The dual $(X, \omega)^\diamond$ of a derived symplectic stack $(X, \omega)$ is $(X, -\omega)$, with (co)evaluation maps given by the diagonal $\Delta_X$ read as a Lagrangian span between $\ast$ and $X \times X$.
+\end{prp}
+
+\begin{proof}
+	By construction, the symmetric monoidal homotopy $1$-category $\bh_1 \sCRW$ admits a symmetric monoidal functor from $\bh_1 \Lag_{(\infty,1)}^0$, the homotopy $1$-category of the $(\infty,1)$-category of ($0$-shifted) symplectic derived stacks and Lagrangian correspondences defined in \cite[Section 14]{Haugseng2018}. This functor is the identity on objects and sends equivalence classes of Lagrangian spans to ``quasicoherent Morita classes'' of Lagrangian spans: two Lagrangian spans $L, M$ between $X$ and $Y$ are equivalent if there are quasicoherent sheaves $Q, Q' \in \QCoh^{\ZZ_2}(L \times_{X \times Y} M)$ such that
+	\begin{equation*}
+		\pi_{L,L, \ast} (\pi_{L,M}^\ast Q \otimes \pi_{M,L}^\ast Q') \simeq \cO_{L \times_{X \times Y} L}, \quad \pi_{M,M, \ast} (\pi_{M,L}^\ast Q' \otimes \pi_{L,M}^\ast Q) \simeq \cO_{M \times_{X \times Y} M},
+	\end{equation*}
+	where the $\pi$'s are the appropriate projections from the triple products $L \times M \times L$ and $M \times L \times M$ -- see the push-pull formula in \cite{Riva2024}. This equivalence relation is coarser than the usual equivalence of spans: if $L$ and $ M$ are equivalent spans between $X$ and $Y$ (so in particular $L \simeq M$) then we can pick $Q = Q' = i_\ast \cO_{L} \simeq i_\ast \cO_{M}$, the pushforward of the structure sheaf on the diagonal $L$ along the map $i : L \to L \times_{X \times Y} L \simeq L \times_{X \times Y} M$. Therefore the functor is well-defined, as claimed.
+	
+	Since symmetric monoidal functors carry dualizability data to dualizability data and since dualizable objects of a symmetric monoidal $\infty$-category are detected within its homotopy category, the result will follow if every object of $\Lag_{(\infty,1)}^0$ is dualizable. This is proven in \cite[Proposition 14.16]{Haugseng2018}, so we're done.
+\end{proof}
+
+\begin{prp} \label{prp:adjoints}
+	If $f = (X \leftarrow L \rightarrow Y)$ is a Lagrangian span representing a $1$-morphism in $\sCRW$ then $f^\dagger = (Y \leftarrow L \rightarrow X)$, the same span but read backwards, is canonically both a left and right adjoint for $f$.
+\end{prp}
+
+\begin{proof}
+	We will only show that $f$ is left adjoint to $f^\dagger$; the other claim follows since we have an equivalence of spaces
+	\begin{equation*}
+		\Map_{\sCRW}(f,f') \simeq \QCoh^{\ZZ_2}(L \cap L')^\simeq \simeq \QCoh^{\ZZ_2}(L' \cap L)^\simeq \simeq \Map_{\sCRW}(f',f)
+	\end{equation*}
+	(with $\sC^\simeq$ denoting the core, or the space of objects, of an $\infty$-category $\sC$) for any $1$-morphism $f' = (X \leftarrow L' \rightarrow Y)$, so the unit and counit maps for one adjunction can be reflected to become the counit and unit maps for the opposite adjunction.
+	
+	One of the equivalent definition of an adjunction $f \dashv f^\dagger$ is that there is an equivalence of mapping spaces
+	\begin{equation*}
+		\Map_{\sCRW}(f \circ g, h) \simeq \Map_{\sCRW}(g, f^\dagger \circ h)
+	\end{equation*}
+	natural in $g$ and $h$, where $g$ is a Lagrangian span $W \leftarrow K \rightarrow X$ and $h$ is a Lagrangian span $W \leftarrow M \rightarrow Y$. Indeed, there are natural equivalences
+	\begin{equation*}
+		\QCoh^{\ZZ_2}((K \times_X L) \times_{W \times Y} M) \simeq \QCoh^{\ZZ_2}(P) \simeq \QCoh^{\ZZ_2}(K \times_{W \times X} (L \times_Y M))
+	\end{equation*}
+	of $\infty$-categories (and hence of their cores) since both derived stacks $(K \times_X L) \times_{W \times Y} M$ and $K \times_{W \times X} (L \times_Y M)$ are canonically and uniquely identified with the limit $P$ of the following diagram of spans:
+	\begin{equation*}
+		\begin{tikzcd}
+			& Y & \\
+			M \ar[ur] \ar[d] & & L \ar[ul] \ar[d] \\
+			W & & X \\
+			& K \ar[ul] \ar[ur] &
+		\end{tikzcd}
+	\end{equation*}
+	This concludes the proof.
+\end{proof}
+
+The equivalence
+\begin{equation*}
+	\Map_{\sCRW}(f \circ g, h) \simeq \Map_{\sCRW}(g, f^\dagger \circ h)
+\end{equation*}
+can be used to compute the (co)units of the adjunction $f \dashv f^\dagger$. To do so we set $g = \id_X$ and $h = f$: then the unit $\eta$ is obtained as the image of $\id_f$ under the equivalence, namely
+\begin{equation*}
+	\Map_{\sCRW}(f, f) \simeq \Map_{\sCRW}(\id_X, f^\dagger \circ f), \quad \id_f \mapsto \eta.
+\end{equation*}
+Since $\id_f = i_\ast \cO_{L}$, the pushforward of the structure sheaf on $L$ along the inclusion $i : L \to L \times_{X \times Y} L$ of the diagonal of $L$, we see that $\eta$ must be the same sheaf $i_\ast \cO_{L}$ over the same stack $L \times_{X \times Y} L$ but considered as a $2$-morphism $\id_X \to f^\dagger \circ f$. Similarly the counit $\veps$ is $i_\ast \cO_L$, this time seen as a $2$-morphism $f \circ f^\dagger \to \id_Y$.
+
+\subsection{The affine part} \label{sec:affine-part}
+
+It will be helpful to spell out the various products, compositions, and units in $\sCRW$ in the case where everything is affine. In particular we have
+\begin{equation*}
+	\QCoh^{\ZZ_2}(\Spec A) \simeq \Mod_A^{\ZZ_2};
+\end{equation*}
+see the construction of $\QCoh^{\ZZ_2}$ in \cite[Section 3.1.3]{Riva2024}. We omit the mention of the symplectic forms for simplicity, but the reader should know that every diagram below comes equipped with the extra data of those forms, together with various nullhomotopies when discussing the Lagrangian condition.
+
+If we have two composable spans
+\begin{equation*}
+	\begin{tikzcd}[column sep = tiny]
+		& \Spec R \ar[dl] \ar[dr] & & & \Spec R' \ar[dl] \ar[dr] \\
+		\Spec A & & \Spec B & \Spec B & & \Spec C
+	\end{tikzcd}
+\end{equation*}
+then their composite is given by the derived pullback over $\Spec B$, or equivalently by the span
+\begin{equation*}
+	\begin{tikzcd}[column sep = tiny]
+		& \Spec (R \otimes_B R') \ar[dl] \ar[dr] & \\
+		\Spec A & & \Spec C.
+	\end{tikzcd}
+\end{equation*}
+It follows from \cite[Theorem 4.4]{Calaque2015} that this span is again Lagrangian. The unit for this composition is the diagonal span
+\begin{equation*}
+	\begin{tikzcd}[column sep = tiny]
+		& \Spec A \ar[dl, equal] \ar[dr, equal] & \\
+		\Spec A & & \Spec A.
+	\end{tikzcd}
+\end{equation*}
+both of whose legs are the identity map. In terms of the underlying algebra map of the morphism $\Spec A \to \Spec A \times \Spec A$, this span is given by the multiplication map $A \otimes_\KK A \to A$. 
+
+If we have two parallel Lagrangian spans
+\begin{equation*}
+	\begin{tikzcd}[row sep = small, column sep = tiny]
+		& \Spec R \ar[dl] \ar[dr] & \\
+		\Spec A & & \Spec B \\
+		& \Spec S \ar[ul] \ar[ur] & 
+	\end{tikzcd}
+\end{equation*}
+then their derived intersection is $\Spec (R \otimes_{AB} S)$, where $AB = A \otimes_\KK B$, and thus the $\infty$-category of $2$-morphisms between them is 
+\begin{equation} \label{eqn:cat-of-2-morphisms}
+	\QCoh^{\ZZ_2}(\Spec (R \otimes_{AB} S)) \simeq \Mod^{\ZZ_2}_{R \otimes_{AB} S}.
+\end{equation}
+
+The vertical push-pull composition is given as follows: let $X$ and $Y$ be two composable $2$-morphisms:
+\begin{equation*}
+	\begin{tikzcd}[column sep = small]
+		& \Spec R \ar[d, "X", Rightarrow] \ar[dl] \ar[dr] & \\
+		\Spec A & \Spec S \ar[d, "Y", Rightarrow] \ar[l] \ar[r] & \Spec B \\
+		& \Spec T \ar[ul] \ar[ur] &
+	\end{tikzcd}
+\end{equation*}
+This means that $X \in \Mod^{\ZZ_2}_{R \otimes_{AB} S}$ and $Y \in \Mod^{\ZZ_2}_{S \otimes_{AB} T}$. Then their composite is obtained by first passing the modules $X$ and $Y$ to the triple intersection
+\begin{equation*}
+	\Spec R \cap \Spec S \cap \Spec T \simeq \Spec (R \otimes_{AB} S \otimes_{AB} T)
+\end{equation*}
+via the functors
+\begin{equation*}
+	- \otimes_{R \otimes_{AB} S} (R \otimes_{AB} S \otimes_{AB} T) \quad \text{and} \quad - \otimes_{S \otimes_{AB} T} (R \otimes_{AB} S \otimes_{AB} T),
+\end{equation*}
+then tensoring the resulting modules together, and finally restricting along the map $R \otimes_{AB} T \to R \otimes_{AB} S \otimes_{AB} T$. After some simplifications we see that the composite is
+\begin{multline*}
+	(X \otimes_{R \otimes_{AB} S} (R \otimes_{AB} S \otimes_{AB} T)) \otimes_{R \otimes_{AB} S \otimes_{AB} T} (Y \otimes_{S \otimes_{AB} T} (R \otimes_{AB} S \otimes_{AB} T) \\
+	\simeq (X \otimes_{{AB}} T) \otimes_{R \otimes_{AB} S \otimes_{AB} T} (Y \otimes_{AB} R) \simeq X \otimes_S Y
+\end{multline*}
+considered as an $(R \otimes_{AB} T)$-module. The unit for this composition is $S \in \Mod^{\ZZ_2}_{S \otimes_{{AB}} S}$ considered as an algebra over $S \otimes_{{AB}} S$ via the multiplication map.
+
+The horizontal composition is given as follows: let $X$ and $X'$ be two $2$-morphism sharing a $0$-dimensional boundary component:
+\begin{equation*}
+	\begin{tikzcd}[row sep = small, column sep = small]
+		& \Spec R \ar[dd, "X", Rightarrow] \ar[dl] \ar[dr] & & \Spec R' \ar[dd, "X'", Rightarrow] \ar[dl] \ar[dr] & \\
+		\Spec A & & \Spec B & & \Spec C \\
+		& \Spec S \ar[ul] \ar[ur] & & \Spec S' \ar[ul] \ar[ur] &
+	\end{tikzcd}
+\end{equation*}
+Then their composite is obtained first by passing to the intersection of the pullbacks
+\begin{align*}
+	(\Spec R \times_{\Spec B} \Spec R') & \cap (\Spec S \times_{\Spec B} \Spec S') \\
+	& \simeq \Spec (R \otimes_B R') \cap \Spec (S \otimes_B S') \\
+	& \simeq \Spec ((R \otimes_B R') \otimes_{AC} (S \otimes_B S')) \\
+	& \simeq \Spec ((R \otimes_{AB} S) \otimes_{B} (R' \otimes_{BC} S'))
+\end{align*}
+and then by tensoring. After some simplifications we see that the composite is
+\begin{equation*}
+	(X \otimes_B (R' \otimes_{BC} S')) \otimes_{(R \otimes_{AB} S) \otimes_{B} (R' \otimes_{BC} S')} (X' \otimes_B (R \otimes_{AB} S)) \simeq X \otimes_B X'
+\end{equation*}
+in the category of $((R \otimes_{AB} S) \otimes_{B} (R' \otimes_{BC} S'))$-modules. The unit for this composition is $B \in \Mod^{\ZZ_2}_{B}$.
+
+\subsection{$2$-dimensional TFTs associated to affine symplectic derived stacks}
+
+By \Cref{thm:2-dual-crw} we know that every symplectic derived stack $(X, \omega)$ is $2$-dualizable, i.e. fully dualizable in $\bh_2 \sCRW$. Each one of these determines a family of $2$-dimensional oriented topological field theories
+\begin{equation*}
+	\cZ_{(X, \omega), \tau} : \mathrm{Bord}_{0,1,2}^{\mathrm{or}} \to \bh_2 \sCRW
+\end{equation*}
+parametrized by the trivializations $\tau : S_{(X, \omega)} \simeq \id_{(X, \omega)}$ of the Serre automorphism, which is a $1$-morphism arising from the evaluation, coevaluation, and braiding morphisms of $(X, \omega)$. This can be seen by combining two statements:
+\begin{enumerate}
+	\item the oriented extended $2$-dimensional cobordism hypothesis
+	\begin{equation*}
+		\Fun^\otimes(\Bord_{0,1,2}^{\mathrm{or}}, \sC) \simeq (\sC^{\mathrm{fd}})^{\mathrm{SO}(2)},
+	\end{equation*}
+	which classifies functors out of $\Bord_{0,1,2}^{\mathrm{or}}$ as (homotopy) fixed points of the $\mathrm{SO}(2)$-action on the space of fully dualizable objects in $\sC$;
+	\item the computation of \cite[Corollary 4.4]{HV2019} which provides an identification
+	\begin{equation*}
+		(\sC^{\mathrm{fd}})^{\mathrm{SO}(2)} \simeq \{\text{fully dualizable object $x \in \sC$ } + \text{ trivialization $\lambda_x : S_x \cong \id_x$}\}. 
+	\end{equation*}
+\end{enumerate}
+We direct the reader to \cite{SP2009} for an extended treatment of both the unoriented and the oriented extended $2$-dimensional cobordism hypothesis, and to \cite{Pstragowski2014,Pstragowski2022} for another proof of the oriented case and a considerable simplification of the dualizability data. In particular, thanks to the work of Pstragowski we are guaranteed that several coherence identities that relate the higher adjoints of a fully dualizable object (the \emph{swallowtail identities}, for example) are automatically satisfied up to replacing some (co)unit morphisms by isomorphic ones. We also refer the reader to \cite[Section 2.3]{BCFR2023} for more details about these equations and especially for the accompanying pictures, which are very helpful when trying to understand how to relate the algebra with the cobordisms.
+
+In this subsection we will prove that $S_{(X, \omega)}$ admits a canonical equivalence $\tau^\mathrm{can} : S_{(X, \omega)} \simeq \id_{(X, \omega)}$ which we can use as our preferred trivialization. Then we will compute the values of $\cZ_{(X, \omega), \tau^{\mathrm{can}}}$, when $X = \Spec A$ is affine, on all closed manifolds of dimension up to $2$. Note that we will denote this field theory by $\cZ_A$ since its values on closed $1$- and $2$-manifolds only depend on $A$ and not on $\omega$, as can be seen from the computations.
+
+The process for computing the field theory with an arbitrary, non-affine $X$ is completely analogous but notationally challenging, with one having to replace the local algebras of functions with their global sheaf counterparts and the tensor products and restrictions with pullbacks and pushforwards. We encourage the reader to work out one example for themselves to see the complexity of the final expression and compare it to the affine case. Moreover, as we will see, the field theories induced from the functor that we will construct in \Cref{sec:functor} are associated to such affine stacks, which is another reason to concentrate on this case.
+
+\subsubsection{The Serre automorphism}
+
+Let $\mathbf{C}$ be a symmetric monoidal $2$-category, let $p \in \mathbf{C}$ be a fully dualizable object, let $b : p \otimes p \to p \otimes p$ be the braiding isomorphism of $p$, and let $e : p^\vee \otimes p \to 1$ be the evaluation morphism of $p$ with right adjoint $e^\dagger : 1 \to p^\vee \otimes p$. Then the Serre automorphism is the invertible map
+\begin{equation*}
+	S_p := (\id_p \otimes e) \circ (b \otimes \id_{p^\vee}) \circ (\id_p \otimes e^\dagger).
+\end{equation*}
+Pictorially, the Serre automorphism corresponds to a copy of the interval with a twist in the middle and its trivializations correspond to ways of tightening up the twist until it becomes a straight line -- see \Cref{fig:serre}.
+\begin{figure}[ht]
+	\centering
+	\input{pics/serre.pdf_tex}
+	\hspace{4em}
+	\input{pics/trivializations.pdf_tex}
+	\caption{The Serre automorphism, on the left, and a way to ``tighten the twist'' to a straight line, on the right.}
+	\label{fig:serre}
+\end{figure}
+
+In our case $\mathbf{C} = \bh_2 \sCRW$ and $p = (X, \omega)$ is any symplectic derived stack, and we have:
+
+\begin{prp} \label{prp:serre-trivial}
+	The Serre automorphism in $\bh_2 \sCRW$ admits a canonical trivialization $S_{(X, \omega)} \simeq \id_{(X, \omega)}$.
+\end{prp}
+
+\begin{proof}
+	The formula for the Serre automorphism applied to $p = (X, \omega)$ amounts to taking the limit of the following diagram of derived stacks:
+	\begin{equation*}
+		\begin{tikzcd}[column sep = small]
+			& X \times X \ar[dl, "\pi_1"'] \ar[dr, "\id_X \times i"] & & X \times X \times X \ar[dl, equal] \ar[dr, "\sigma \times \id_X"] & & X \times X \ar[dl, "\id_X \times i"'] \ar[dr, "\pi_1"] & \\
+			X & & X \times X \times X & & X \times X \times X & & X
+		\end{tikzcd}
+	\end{equation*}
+	where $\pi_1$ is the projection on the first factor, $i$ is the diagonal map, and $\sigma$ is the map swapping the two factors in the product. By an argument completely analogous to that in the proof of \cite[Lemma 12.3]{Haugseng2018}, the limit of this diagram is canonically identified with $X$ and the two projection maps, under that identification, are the identity. This represents the identity span among symplectic derived stacks, so $S_{(X, \omega)} \simeq \id_{(X, \omega)}$, as needed.
+\end{proof}
+
+Now trivializations of $S_{(X, \omega)}$ are precisely the automorphisms of $\id_{(X, \omega)}$, namely invertible elements of $\QCoh^{\ZZ_2}(X \times_{X \times X} X)$. If $X = \Spec A$ is affine then 
+\begin{equation*}
+	\QCoh^{\ZZ_2}(X \times_{X \times X} X) \simeq \Mod^{\ZZ_2}_{A \otimes_{A \otimes A} A}
+\end{equation*}
+and so the trivializations correspond to invertible $A \otimes_{A \otimes A} A$-modules. One example is $A \otimes_{A \otimes A} A$ itself considered as a $A \otimes_{A \otimes A} A$-module via the multiplication map, but there might be many other non-trivial ones. From now on, however, we will concentrate on the case where our trivialization is the canonical one from \Cref{prp:serre-trivial}, and we let $\cZ_A$ denote the unique $2$-dimensional oriented field theory associated to $(\Spec A, \omega)$ with that trivialization. 
+
+\subsubsection{The $0$- and $1$-dimensional manifolds} 
+
+From \Cref{prp:duals} we know that $\cZ_A(\cat{pt}^-) = (X, -\omega)$. If $\cat{coev} : \emptyset \to \cat{pt}^+ \sqcup \cat{pt}^-$ and $\cat{ev} : \cat{pt}^- \sqcup \cat{pt}^+ \to \emptyset$ denote the left and right elbow bordisms (see \Cref{fig:elbows}) we get that $\cZ_A(\cat{coev})$ and $\cZ_A(\cat{ev})$ are given by reading the Lagrangian span
+\begin{equation*}
+	\ast \leftarrow X \xlra{i} X \times X,
+\end{equation*}
+where $i$ is the diagonal map, from left to right for the coevaluation and from right to left for the evaluation. 
+
+\begin{figure}[h!]
+	\centering
+	\input{pics/coelbow.pdf_tex}
+	\hspace{4em}
+	\input{pics/elbow.pdf_tex}
+	\caption{$\cat{coev}$ on the left and $\cat{ev}$ on the right.}
+	\label{fig:elbows}
+\end{figure}
+
+This span also presents $\cZ_A(\cat{coev})$ as the (left and right) adjoint to $\cZ_A(\cat{ev})$ (see \Cref{prp:adjoints}) meaning that up to a canonical braiding isomorphism we can replace all instances of $\cZ_A(\cat{ev}^\dagger)$ (where the symbol $\dagger$ can mean either left or right adjoint) with $\cZ_A(\cat{coev})$, and vice versa for $\cZ_A(\cat{coev})$. We can immediately calculate the value of $\cZ_A$ on the circle:
+\begin{equation*}
+	\cZ_A(S^1) = \cZ_A(\cat{ev}) \circ \cZ_A(\cat{coev}) \simeq X \times_{X \times X} X \simeq \Spec (A \otimes_{A \otimes A} A) \simeq \Spec \HC(A)
+\end{equation*}
+as a span of derived stacks between two copies of the trivial stack $\ast$. Here $\HC(A)$ denotes the Hochschild complex of $A$, which is definitionally the derived tensor product $A \otimes_{A \otimes A} A$. We make the following abbreviations for future use: $A^e := A \otimes A$ and $H := \HC(A)$, so that $H = A \otimes_{A^e} A$.
+
+\subsubsection{The $2$-dimensional manifolds.} The values of the four basic cobordisms -- the saddle, the cosaddle, the cap, and the cocap (or cup), see \Cref{fig:2-bords} -- are either units or counits of one of the adjunctions $\cZ_A(\cat{ev}) \dashv \cZ_A(\cat{coev})$ and $\cZ_A(\cat{coev}) \dashv \cZ_A(\cat{ev})$. 
+
+\begin{figure}[h!]
+	\centering
+	\input{pics/saddle_small.pdf_tex}
+	\hspace{2em}
+	\input{pics/cosaddle.pdf_tex}
+	\hspace{2em}
+	\rotatebox{90}{\input{pics/cap.pdf_tex}}
+	\hspace{2em}
+	\rotatebox{90}{\input{pics/cocap.pdf_tex}}
+	\caption{From left to right: $\cat{sad}$, $\cat{cosad}$, $\cat{cap}$, and $\cat{cocap}$. We omitted the $+$ and $-$ distinguishing the framing on the points since applying $\cZ_A$ nullifies the distinction due to the ambidexterity of adjoints in this $2$-category.}
+	\label{fig:2-bords}
+\end{figure}
+
+More specifically:
+\begin{enumerate}
+	\item[($\eta$)] $\cZ_A(\cat{sad}) : \cZ_A(\cat{coev}) \circ \cZ_A(\cat{ev}) \Rightarrow \cZ_A(\id_{\cat{pt}^+ \sqcup \cat{pt}^-})$ and $\cZ_A(\cat{cap}) : \cZ_A(\emptyset) \Rightarrow \cZ_A(S^1)$ are the units of $\cZ_A(\cat{ev}) \dashv \cZ_A(\cat{coev})$ and $\cZ_A(\cat{coev}) \dashv \cZ_A(\cat{ev})$, respectively;
+	\item[($\veps$)] $\cZ_A(\cat{cosad}) : \cZ_A(\id_{\cat{pt}^+ \sqcup \cat{pt}^-}) \Rightarrow \cZ_A(\cat{coev}) \circ \cZ_A(\cat{ev})$ and $\cZ_A(\cat{cocap}) : \cZ_A(S^1) \Rightarrow \cZ_A(\emptyset)$ are the counits of $\cZ_A(\cat{coev}) \dashv \cZ_A(\cat{ev})$ and $\cZ_A(\cat{ev}) \dashv \cZ_A(\cat{coev})$, respectively.
+\end{enumerate}
+From \Cref{prp:adjoints} and the subsequent discussion we know that these values are given by a single module (or, more generally, sheaf) with differently labelled boundaries. The module is $\cZ_A(\id_{\cat{ev}}) = A$ as an $H$-module via the canonical fold map $H \to A$. To distinguish them during compositions we will use the notation
+\begin{equation*}
+	A^{\cat{sad}} = \cZ_A(\cat{sad}), \, A^{\cat{cap}} = \cZ_A(\cat{cap}), \,  A^{\cat{cosad}} = \cZ_A(\cat{cosad}), \, A^{\cat{cocap}} = \cZ_A(\cat{cocap})
+\end{equation*}
+where each of those is the same $H$-module $A$. We will also set $A^{\cat{ev}} = \cZ_A(\id_\cat{ev})$ and $A^{\cat{coev}} = \cZ_A(\id_\cat{coev})$. Then the value of the pants, seen as a bordism $S^1 \sqcup S^1 \Rightarrow S^1$, is
+\begin{equation*}
+	\cZ_A(\cat{pant}) \simeq \cZ_A(\id_{\cat{ev}}) \cdot \cZ_A(\cat{sad}) \cdot \cZ_A(\id_{\cat{coev}}) \simeq A^{\cat{ev}} \otimes_{A^e} A^{\cat{sad}} \otimes_{A^e} A^{\cat{coev}}
+\end{equation*}
+as an $H \otimes H \otimes H$-module, and the same formula holds for the copants with $\cat{sad}$ replaced by $\cat{cosad}$. These formulas imply that the twice-punctured torus gets assigned the value value
+\begin{align*}
+	\cZ_A(\cat{copant}) \circ \cZ_A(\cat{pant}) & \simeq (A^{\cat{ev}} \otimes_{A^e} A^{\cat{cosad}} \otimes_{A^e} A^{\cat{coev}}) \\
+	& \qquad \otimes_{H \otimes H} (A^{\cat{ev}} \otimes_{A^e} A^{\cat{sad}} \otimes_{A^e} A^{\cat{coev}}) \\
+	& \simeq A \otimes_{A^e} (A \otimes_{A^e} A) \otimes_{H \otimes H} (A \otimes_{A^e} A) \otimes_{A^e} A \\
+	& \simeq A \otimes_{A^e} \HC(H) \otimes_{A^e} A
+\end{align*}
+as an $H \otimes H$-module. We abbreviate $\HC(H) = \HC(\HC(A))$ as $H^2$. Thus the genus $g$ surface is sent to the $\KK$-module
+\begin{align*}
+	\cZ_A(\Sigma_g) & \simeq \cZ_A(\cat{cocap}) \circ (\cZ_A(\cat{copant}) \circ \cZ_A(\cat{pant}))^{\circ g} \circ \cZ_A(\cat{cap}) \\
+	& \simeq A \otimes_{H} (A \otimes_{A^e} H^2 \otimes_{A^e} A)^{\otimes_{H} g} \otimes_{H} A,
+\end{align*}
+where the superscripts ``$\circ g$'' and ``$\otimes_H g$'' denotes the $g$-fold composition and tensor product, respectively, of an object with itself. This computation, together with $\cZ_A(S^1) \simeq \Spec \HC(A)$, concludes the proof of \Cref{thm:mainC}.
+
+\subsubsection{Failure of $3$-dualizability}
+
+We close this subsection on a negative, but expected, note. Suppose that the $2$-dimensional field theory $\cZ_A$ that we just calculated could be extended to a $3$-dimensional fully extended field theory $\conj{\cZ}$ valued in $\sCRW$, i.e. 
+\begin{equation*}
+	\conj{\cZ} : \Bord_{0,1,2,3}^{\mathrm{or}} \to \sCRW
+\end{equation*}
+is a symmetric monoidal functor of $(\infty,3)$-categories such that 
+\begin{equation*}
+	\bh_2 \conj{\cZ} = \conj{\cZ}\vert_{\mathrm{Bord}_{0,1,2}^{\mathrm{or}}} \simeq \cZ_A.
+\end{equation*}
+Then $\conj{\cZ}$ could be dimensionally reduced to a $1$-dimensional field theory
+\begin{equation*}
+	\conj{\cZ}^{\mathrm{red}} = \conj{\cZ}(- \times S^2) : \mathrm{Bord}^{\mathrm{or}}_{0,1} \to \End(\id_\ast) \simeq \Mod_{k}^{\ZZ_2}.
+\end{equation*}
+It is a classical result that such field theories are classified by the $\ZZ_2$-graded cochain complexes which are finite dimensional in both even and odd degree. This does not happen in our cases of interest:
+
+\begin{prp} \label{prp:no-3-tft}
+	If $A$ is a polynomial algebra concentrated in degree $0$ with at least $1$ generator, then $\cZ_A$ cannot be extended to a $3$-dimensional field theory.
+\end{prp}
+
+\begin{proof}
+	A quick calculation shows that if $A = \KK[x_1, \dotsc, x_t]$ then
+	\begin{align*}
+		\conj{\cZ}^{\mathrm{red}}(\cat{pt}^+) = \cZ_A(S^2) & \simeq A \otimes_{\HC(A)} A \\
+		& \simeq \KK[x_1, \dotsc, x_t, y_1, \dotsc, y_t] \otimes_\KK \Lambda(x_1, \dotsc, x_t, y_1, \dotsc, y_t)
+	\end{align*}
+	is an algebra generated by $2t$ generators in degree $0$ and $2t$ generators in degree $-1$, with no differential. (Here $\Lambda(\dotsc)$ denotes the exterior algebra on a set of generators.) So $\cZ(S^2)$ is never a finite dimensional $\ZZ_2$-graded vector space unless $t = 0$, in which case $A = \KK$ and $\Spec A = \ast$ is the unit in $\sCRW$.
+\end{proof}
+We will show later that the cotangent stack of $\KK^n$ is a symplectic derived stack and satisfies 
+\begin{equation*}
+	\bT^\ast \KK^n \simeq \Spec \KK[x_1, \dotsc, x_n, p_{x_1}, \dotsc, p_{x_n}].
+\end{equation*}
+Therefore, by the proposition, the field theories with target $\bT^\ast \KK^n$ for $n \geq 0$ are purely $2$-dimensional and cannot be extended further.
+
+\subsection{Aside: cotangent stacks and affine planes} \label{sec:affine-planes}
+
+Before moving on to the next section we need to define one of the principal objects of interest for our discussion, namely the \emph{affine plane} $\bT^\ast \KK^n$. This is the cotangent stack of the affine $n$-dimensional space $\KK^n = \Spec \KK[x_1, \dotsc, x_n]$. In this last subsection we will review some of the theory of cotangent stacks and the symplectic forms that can be put on them and then specialize to $\bT^\ast \KK^n$.
+
+Fix a derived stack $X$ and consider its \emph{cotangent stack} $\bT^\ast X \in \dSt_{/X}$, defined up to equivalence by
+\begin{equation*}
+	\dSt_{/X}(Y, \bT^\ast X) \simeq \QCoh(Y)(\cO_Y, p^\ast \LL_X)
+\end{equation*}
+for any $p : Y \to X$. This derived stack classifies the sections of $\LL_X \to \cO_X$ or, equivalently, the $1$-forms on $X$; see for example \cite[beginning of Section 2]{Calaque2019}. Note that when $p : \Spec A \to X$ is an affine point of $X$ then
+\begin{align*}
+	\dSt_{/X}(\Spec A, \bT^\ast X) & \simeq \QCoh(\Spec A)(\cO_{\Spec A}, p^\ast \LL_X) \\
+	& \simeq \QCoh(\Spec A)(p^\ast \TT_X, \cO_{\Spec A}) \\
+	& \simeq \Mod_A(p^\ast \TT_X, A),
+\end{align*}
+where $\TT_X := \LL_X^\vee \in \QCoh(X)$ is the dual of the cotangent stack. When $X = \Spec B$ then we set $\TT_B := \TT_{\Spec B} \in \Mod_B$ and we have $\TT_B \simeq \LL_B^\vee$ where $\LL_B$ is the corepresenting object for the functor of $\KK$-linear derivations, $\mathrm{Der}_\KK(B, -) : \Mod_B \to \Spaces$. Moreover
+\begin{align*}
+	\dSt_{/\Spec B}(\Spec A, \bT^\ast (\Spec B)) & \simeq \Mod_A(A \otimes_B \TT_B, A) \\
+	& \simeq \Mod_B(\TT_B, p_\ast A) \\
+	& \simeq \sCAlg_{\KK, B/}(\mathrm{Sym}(\TT_B), p_\ast A) \\
+	& \simeq \dSt_{/\Spec B} (\Spec A, \Spec \mathrm{Sym}(\TT_B))
+\end{align*}
+and so
+\begin{equation*}
+	\bT^\ast (\Spec B) \simeq \Spec \mathrm{Sym}(\TT_B).
+\end{equation*}
+If we further restrict ourselves to $\KK^n := \Spec \KK[x_1, \dotsc, x_n]$ then a simple calculation shows that
+\begin{equation*}
+	\TT_{\KK[x_1, \dotsc, x_n]} \simeq \LL_{\KK[x_1, \dotsc, x_n]}^\vee \simeq \KK[x_1, \dotsc, x_n]^{\oplus n}
+\end{equation*}
+as $\KK[x_1, \dotsc, x_n]$-modules, so
+\begin{align*}
+	\bT^\ast \KK^n & \simeq \Spec \mathrm{Sym}(\TT_{\KK[x_1, \dotsc, x_n]}) \\
+	& \simeq \Spec \mathrm{Sym}(\KK[x_1, \dotsc, x_n]^{\oplus n}) \\
+	& \simeq \Spec \KK[x_1, \dotsc, x_n, p_{x_1}, \dotsc, p_{x_n}],
+\end{align*}
+which in particular is equivalent to $\KK^{2n}$. It is proven in \cite[Theorem 2.2]{Calaque2019} that for any Artin stack $X$ the cotangent stack $\bT^\ast X$ carries a symplectic form $\omega_X := d \lambda_X$, where $\lambda_X$ is a tautological $1$-form on $\bT^\ast X$ coming from the identity map $\bT^\ast X \to \bT^\ast X$ under the equivalence
+\begin{equation*}
+	\dSt_X(\bT^\ast X, \bT^\ast X) \simeq \QCoh(\bT^\ast X)(\cO_{\bT^\ast X}, \pi^\ast \LL_X) \simeq \QCoh(\bT^\ast X)(\cO_{\bT^\ast X}, \LL_{\bT^\ast X})
+\end{equation*}
+(here $\pi : \bT^\ast X \to X$ is the canonical projection). Thanks to the above calculation we can concentrate on the even-dimensional affine planes $\bT^\ast \KK^n \simeq \KK^{2n}$ whose canonical symplectic form is given (globally) by
+\begin{equation*}
+	\omega_n \simeq d \left( \sum_{i = 1}^n x_i \wedge dp_{x_i} \right) \simeq \sum_{i = 1}^n dx_i \wedge dp_{x_i}.
+\end{equation*}
+Therefore $(\KK^{2n}, \omega_n) \in \sCRW$ for every $n \geq 0$. The equivalences
+\begin{equation} \label{eqn:product-of-affine-planes}
+	\bT^\ast \KK^m \times \bT^\ast \KK^n \simeq \KK^{2m} \times \KK^{2n} \simeq \KK^{2(m+n)} \simeq \bT^\ast \KK^{m+n}
+\end{equation}
+send the product form $\omega_m + \omega_n$ to $\omega_{m+n}$, i.e. they are equivalences in of symplectic stacks. Moreover, let $(-)^\diamond : \PreSymp \to \PreSymp$ denote the dualization functor which switches the sign of the symplectic form (see \Cref{prp:duals}). Then we have an equivalence
+\begin{equation} \label{eqn:cotangent-complex-self-dual}
+	\bT^\ast \KK^n \simeq (\bT^\ast \KK^n)^\diamond
+\end{equation}
+in $\sCRW$ given by switching the sign of the ``momentum'' variables: $x_i \mapsto x_i$ and $p_{x_i} \mapsto - p_{x_i}$ for all $i = 1, \dotsc, n$.

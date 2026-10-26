@@ -1,0 +1,42 @@
+\documentclass[a4paper,11pt]{article}
+\usepackage{jheppub} 
+\input{macros}
+\preprint{{Imperial-TP-2024-CH-5}\\ \rightline{{UUITP-24/24}}}
+\title{Generalised symmetries in linear gravity}
+
+\author[a]{Chris Hull,}
+\author[a]{Maxwell L. Hutt,}
+\author[a,b]{Ulf Lindstr\"{o}m}
+
+\affiliation[a]{The Blackett Laboratory, Imperial College London, Prince Consort Road, London, SW7 2AZ, UK}
+\affiliation[b]{Department of Physics and Astronomy, Uppsala University, Box 516, SE-75120 Uppsala, Sweden and Centre for Geometry and Physics, Uppsala University, Box 480, SE-75106 Uppsala, Sweden}
+
+\emailAdd{c.hull@imperial.ac.uk, m.hutt22@imperial.ac.uk, ulf.lindstrom@physics.uu.se}
+
+\abstract{
+Linearised gravity has a global symmetry under which the graviton is shifted by a symmetric tensor satisfying a certain flatness condition. 
+There is also a dual symmetry that can be associated with a global shift symmetry of the dual graviton theory.
+The corresponding conserved charges are shown to satisfy a centrally-extended algebra. We discuss the gauging of these global symmetries, finding an obstruction to the simultaneous gauging of both symmetries which we interpret as a mixed 't Hooft anomaly for the ungauged theory. We discuss the implications of this, analogous to those resulting from a similar structure in Maxwell theory, and interpret the graviton and dual graviton as Nambu-Goldstone modes for these shift symmetries. 
+}
+
+
+\begin{document}
+\maketitle
+\flushbottom
+
+\input{sections/intro}
+\input{sections/maxwell}
+\input{sections/notation}
+\input{sections/graviton_shifts}
+\input{sections/gauging_graviton_shifts}
+\input{sections/dual_symmetries}
+\input{sections/anomalies}
+\input{sections/discussion}
+
+\appendix
+\input{sections/app_quantisation}
+
+\bibliographystyle{JHEP}
+\bibliography{references}
+
+\end{document}

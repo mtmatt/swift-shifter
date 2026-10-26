@@ -1,0 +1,95 @@
+\section{Odd Cycle Cuts} \label{sec:oct:cut}
+In order to extend the ``antler'' framework of~\cite{DonkersJ24} to \PrbOCTLong (\PrbOCT), 
+we define a problem-specific decomposition which we term \emph{\Occs} (\occs). Our decompositions have three parts --- a bipartite induced subgraph $X_B$, a vertex separator $X_C$ (which we call the \emph{head}), and a remainder $X_R$.  
+
+% \begin{problem}{\PrbOCTLong (\PrbOCT)}
+%     \Input & A graph $G$ and an integer $k$.\\
+%     \Prob & Is there a set $S \subseteq V(G)$ of size at most $k$ such that
+%     $G - S$ is bipartite?
+% \end{problem}
+% \bmpr{I don't think it's worth stating the decision version of the problem, since our algorithms don't work on the decision version of the problem. The introduction already defines what the corresponding optimization problem for OCT asks for, and the preliminaries also give a definition of what an odd cycle transversal is. Since the threshold~$k$ on solution size is never important for us, only membership in an optimal solution, I think we can omit this problem definition box to avoid confusion while at the same time saving space.}
+
+\begin{definition}[\Occ]
+    Given a graph $G$, a partition $(X_B, X_C, X_R)$ of $V(G)$ is an \emph{\Occ (\occ)}
+    if (1) $G[X_B]$ is bipartite,
+    (2) there are no edges between $X_B$ and $X_R$, and
+    (3) $X_C \cup X_B \neq \emptyset$.
+\end{definition}
+
+% The condition (2) is equivalent to saying that $X_C$ separates $X_B$ from $X_R$.
+% Also notice that from condition (1) $G[X_B]$ is necessarily bipartite.
+We say $|X_C|$ is the \emph{width} of an \occ, and 
+observe that $X_C$ hits all odd cycles in $G - X_R$.
+% and an \occ is \emph{empty} if $X_B=X_C=\emptyset$.
+%It is clear to see that $|X_C|$ upper-bounds the OCT solution size of $G[X_C \cup X_B]$.
+We denote the minimum size of an OCT in $G$ by $\oct(G)$.
+
+\begin{observation}
+    If $(X_B, X_C, X_R)$ is an \occ in $G$, then $|X_C| \geq \oct(G[X_C \cup X_B])$.
+\end{observation}
+
+%
+Analogous to $z$-antlers \cite{DonkersJ24}, here we define a \emph{\tocc}
+as a special case of an \occ.
+%
+For a graph $G$, a set $X_C \subseteq V(G)$ and an integer $z$,
+an \emph{$X_C$-certificate} of order $z$ is a subgraph~$H$ of~$G$
+such that $X_C$ is an optimal OCT of $H$,
+and for each component $H'$ of $H$ we have $|X_C \cap V(H')| \leq z$. Throughout the paper, and starting with the following definition, we will use the convention of referring to a \tocc as $(A_B, A_C, A_R)$ to emphasize its stronger guarantees compared to an arbitrary \occ~$(X_B, X_C, X_R)$.
+
+\begin{definition}[($z$-)\tocc] \label{def:zocc}
+    An \occ $(A_B,A_C,A_R)$ of a graph $G$ is \emph{tight}
+    when $|A_C| = \oct(G[A_C \cup A_B])$.
+    Furthermore, $(A_B, A_C, A_R)$ is a \tocc of order $z$ (equivalently, \emph{$z$-tight OCC})
+    if $G[A_C \cup A_B]$ contains an $A_C$-certificate of order $z$.
+\end{definition}
+
+Note this definition naturally implies $\oct(G) = |A_C| + \oct(G[A_R])$: the union of~$A_C$ with a minimum OCT in~$G[A_R]$ forms an OCT for~$G$ (since~$A_C$ separates~$A_B$ from~$A_R$) for which the requirement~$|A_C| = \oct(G[A_C \cup A_B])$ guarantees optimality. The main result of this section is that assuming a graph $G$ has a \zocc, there exists a \zocc $(A_B,A_C,A_R)$
+such that the number of components in $G[A_B]$ is bounded in terms of $z$ and $|A_C|$.
+%
+This is an extension of \cite[Lemma 4.6]{DonkersJ24}, and we defer its proof to \Cref{sec:proofs:oct:cut}.
+
+\begin{restatable}{lemma}{restatenumcomponents}[$(\bigstar)$]
+    \label{lem:num_components}
+    Let $(A_B,A_C,A_R)$ be a \zocc in a graph $G$ for some $z \geq 0$.
+    There exists a set $A_B' \subseteq A_B$ such that $(A_B',A_C, A_R \cup A_B \setminus A_B')$
+    is a \zocc in $G$ and $G[A_B']$ has at most $z^2|A_C|$ components.
+\end{restatable}
+
+Finally, we introduce the notion of an \emph{imposed separation problem} whose solutions naturally correspond to odd cycle transversals of
+specific subgraphs. 
+
+\begin{definition} \label{def:imposed:separation:problem}
+	Let $(X_B, X_C, X_R)$ be an OCC of $G$, and let $f_B \colon X_B \rightarrow \{0, 1\}$ be a proper $2$-coloring of $G[X_B]$. Let $C_1, C_2 \subseteq X_C$ be two disjoint subsets of $X_C$ and let $f_{C} \colon C_1 \rightarrow \{0, 1\}$ be a (not necessarily proper) $2$-coloring of the vertices in $C_1$. Based on this $4$-tuple of objects $(C_1, C_2, f_C, f_B)$, we define three (potentially overlapping) subsets $A, R, N \subseteq X_B$.
+  	\begin{enumerate}
+		\item Let $A$ be the set of vertices $v_b \in X_B$ with a neighbor $v_c \in C_1$ such that $f_B(v_b) = f_C(v_c)$.
+		\item Let $R$ be the set of vertices $v_b \in X_B$ with a neighbor $v_c \in C_1$ such that $f_B(v_b) \neq f_C(v_c)$.
+		\item Finally, let $N := N_G(C_2) \cap X_B$.
+	\end{enumerate} 
+	We refer to the problem of finding a smallest $\{A, R, N\}$-separator in $G[X_B]$ as \emph{the $\{A, R, N\}$-separation problem imposed onto $G[X_B]$ by $(C_1, C_2, f_C, f_B)$}.
+\end{definition}
+
+To see the connection between solutions and OCTs, one may let $C_1$ and $f_B$ in this definition correspond to $W$ and $c$ respectively in \cref{lem:AR-separation}, while the color classes of $f_C$ correspond to the sets $W_0$ and $W_1$ respectively. As shown below in \cref{lem:tight:occ:cut:optimal:ARN:separator}, we can recognize parts of tight OCCs as optimal solutions to specific imposed separation problems.
+
+Although \cref{def:imposed:separation:problem} requires $f_B$ and $f_C$ to be colorings of $X_B$ and $C_1$ respectively, we sometimes abuse the notation by providing colorings whose domains are supersets of these intended domains. In these cases, one may interpret the definition of the imposed separation problem as if given the restrictions of these colorings to their respective intended domains.
+
+One important role of these separation problems is to allow us to characterize intersections of two OCCs when at least one is tight. Specifically, in \cref{lem:tight:occ:cut:optimal:ARN:separator}, we show that the intersection of one OCC's head with the other OCC's bipartite part forms an optimal solution to a specific $3$-way separation problem, which is even optimal for a corresponding $2$-way problem.
+
+\begin{restatable}{lemma}{lemOCCARNSeparators}[$(\bigstar)$] \label{lem:tight:occ:cut:optimal:ARN:separator}
+	Let $(X_B, X_C, X_R)$ be a (not necessarily tight) OCC in the graph $G$ and let $(A_B, A_C, A_R)$ be a tight OCC in $G$. Let $f_X \colon X_B \rightarrow \{0, 1\}$ and $f_A \colon A_B \rightarrow \{0, 1\}$ be proper $2$-colorings of $G[X_B]$ and $G[A_B]$ respectively. Let $A$, $R$ and $N$ be the three sets to be separated in the separation problem imposed onto $G[X_B]$ by $(X_C \cap A_B, X_C \cap A_R, f_A, f_B)$ and let their names correspond to their roles as defined in \cref{def:imposed:separation:problem}. Then, $A_C \cap X_B$ is both a minimum-size $\{A, R\}$-separator and a minimum-size $\{A, R, N\}$-separator in $G[X_B]$.
+\end{restatable}
+
+
+This will prove to be a useful property in \Cref{sec:reduce:occ} by which we are able to recognize part of a tight OCC $(A_B, A_C, A_R)$ in an arbitrary graph. We complement it with the statement below, indicating that the intersection $A_C \cap X_B$ is even bounded in size.
+
+\begin{lemma} \label{lem:small:occ:intersection}
+	Let $(X_B, X_C, X_R)$ be a (not necessarily tight) OCC in the graph $G$ and let $(A_B, A_C, A_R)$ be a tight OCC in $G$. Then $|A_C \cap X_B| \leq |X_C|$.
+\end{lemma}
+\begin{proof}
+	Suppose for contradiction that $|A_C \cap X_B| > |S|$. Then, $A_C' := (A_C \setminus X_B) \cup (X_C \cap (A_B \cup A_C))$ is a subset of $A_B \cup A_C$ that is strictly smaller than $A_C$. Now, showing that $A_C'$ is an OCT of $G[A_B \cup A_C]$ contradicts the assumption that $A_C$ is a smallest such OCT by virtue of $(A_B, A_C, A_R)$ being a tight OCC.
+	
+	To show that $A_C'$ is an OCT of $G[A_B \cup A_C]$, we let $F$ be an arbitrary odd cycle in this graph and show that it intersects $A_C'$. First, if $F$ intersects $X_C$, it intersects $A_C'$ in particular, since $X_C \cap (A_B \cup A_C) \subseteq A_C'$.
+	
+	Otherwise, since $X_C$ separates $X_B$ and $X_R$ in $G$, $F$ is completely contained in either $G[X_B]$ or $G[X_R]$. The former is not possible, since $G[X_B]$ is bipartite by assumption, so $F$ lives in $G[X_R]$. Furthermore, since $F$ was assumed to live in $G[A_B \cup A_C]$ and $G[A_B]$ is bipartite, $F$ intersects $A_C$. In particular, as we found $F$ to live in $G[X_R]$, it intersects $A_C \cap X_R$ which is a subset of $A_C'$ by construction. Hence, $F$ intersects $A_C'$ in any case.
+\end{proof}
+

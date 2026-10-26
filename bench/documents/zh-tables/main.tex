@@ -1,0 +1,81 @@
+% Written for Swift Shifter's benchmark (#150); part of the repository,
+% under its licence (GPL-3.0-or-later).
+\documentclass[11pt]{ctexart}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{hyperref}
+
+\title{檔案格式轉換工具比較報告}
+\author{Swift Shifter 測試文件}
+\date{2026 年 10 月}
+
+\begin{document}
+\maketitle
+
+\section{背景}
+
+文件轉換常見的工具有 Pandoc、LibreOffice 與各種 PDF extractor。本報告比較它們在
+三種情境下的表現\footnote{數字為示範用，並非實測結果。}，並列出選用時要注意的事項。
+
+\subsection{評估項目}
+
+\begin{enumerate}
+  \item 文字正確率：輸出的文字和原文相比，有多少字元相同。
+  \item 結構保留：標題、清單、表格是否保留為對應的結構。
+  \item 數學公式：公式能否轉成可以編譯的 \LaTeX{}。
+  \begin{itemize}
+    \item 行內公式，例如 $e^{i\pi} + 1 = 0$；
+    \item 獨立公式與編號。
+  \end{itemize}
+  \item 速度：每頁平均處理時間。
+\end{enumerate}
+
+\section{結果}
+
+表~\ref{tab:accuracy} 列出各工具的文字正確率，表~\ref{tab:speed} 則是速度。
+
+\begin{table}[h]
+  \centering
+  \caption{文字正確率（\%）}
+  \label{tab:accuracy}
+  \begin{tabular}{lrrr}
+    \toprule
+    工具 & 單欄論文 & 雙欄論文 & 中英混排 \\
+    \midrule
+    Pandoc        & 98.2 & 97.5 & 96.1 \\
+    LibreOffice   & 95.4 & 90.3 & 92.8 \\
+    PDF extractor & 93.0 & 81.7 & 88.4 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{table}[h]
+  \centering
+  \caption{每頁處理時間（毫秒）}
+  \label{tab:speed}
+  \begin{tabular}{l|c|c}
+    \hline
+    工具 & 中位數 & 第 95 百分位 \\
+    \hline
+    Pandoc        & 12  & 40  \\
+    LibreOffice   & 180 & 620 \\
+    PDF extractor & 95  & 310 \\
+    \hline
+  \end{tabular}
+\end{table}
+
+\subsection{觀察}
+
+\begin{description}[style=nextline]
+  \item[雙欄排版] PDF extractor 的閱讀順序最容易出錯：左右兩欄的行常被交錯合併。
+  \item[中英混排] 中文與英文之間的空白，各工具處理方式不同，影響文字比對分數。
+  \item[表格] 有框線的表格比 \texttt{booktabs} 風格的表格容易辨識。
+\end{description}
+
+\section{結論}
+
+沒有一種工具在所有情境都最好。若來源是 \LaTeX{}，直接轉換原始碼最可靠；
+只有 PDF 時，需要能判斷欄位與閱讀順序的工具。更多資訊見
+\url{https://github.com/mtmatt/swift-shifter}。
+
+\end{document}

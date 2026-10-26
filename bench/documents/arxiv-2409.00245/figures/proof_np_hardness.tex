@@ -1,0 +1,59 @@
+\begin{figure*}[t]
+  \centering
+  \tikzstyle{large} = [circle, fill=white, text=black, draw, thick, scale=1, minimum size=0.8cm, inner sep=1.5pt]
+  \tikzstyle{plain} = [circle, fill=white, text=black, draw, thick, scale=1, minimum size=0.4cm, inner sep=1.5pt]
+  \tikzstyle{small} = [circle, fill=white, text=black, draw, thick, scale=1, minimum size=0.2cm, inner sep=1.5pt]
+  \tikzstyle{black} = [circle, fill=gray, text=black, draw, thick, scale=1, minimum size=0.2cm, inner sep=1.5pt]
+  \tikzmath{\xunit = 0.6; \yunit = 1.0; }
+
+  \begin{minipage}[m]{.30\textwidth}
+    \vspace{0pt}
+    \centering
+    \begin{tikzpicture}
+        % vertices
+        \node[plain,label=below:$v_i$] (a2) at (2 * \xunit, 1 * \yunit) {};
+        \node[plain,label=below:$\overline{v_i}$] (a3) at (4 * \xunit, 1 * \yunit) {};
+        \node[plain] (b1) at (3 * \xunit, 2 * \yunit) {};
+        
+        \draw (b1)--(a2)--(a3)--(b1);
+    \end{tikzpicture}
+  \end{minipage}
+  \hfill
+  %
+  \begin{minipage}[m]{.66\textwidth}
+      \vspace{0pt}
+      \centering
+      \begin{tikzpicture}
+          % vertices
+          \node[plain,dotted,label=below:$s_{1}$] (s1) at (1 * \xunit, 0) {};
+          \node[plain,dotted,label=below:$s_{2}$] (s2) at (5 * \xunit, 0) {};
+          \node[plain,dotted,label=below:$s_{3}$] (s3) at (9 * \xunit, 0) {};
+          \node[plain] (a1) at (0 * \xunit, 1 * \yunit) {};
+          \node[plain] (a2) at (2 * \xunit, 1 * \yunit) {};
+          \node[plain] (a3) at (4 * \xunit, 1 * \yunit) {};
+          \node[plain] (a4) at (6 * \xunit, 1 * \yunit) {};
+          \node[plain] (a5) at (8 * \xunit, 1 * \yunit) {};
+          \node[plain] (a6) at (10 * \xunit, 1 * \yunit) {};
+          \node[plain] (b1) at (3 * \xunit, 2 * \yunit) {};
+          \node[plain] (b2) at (7 * \xunit, 2 * \yunit) {};
+          
+          \draw (a1)--(a2)--(a3)--(a4)--(a5)--(a6);
+          \draw (a1)--(s1)--(a2);
+          \draw (a3)--(s2)--(a4);
+          \draw (a5)--(s3)--(a6);
+          \draw (a2)--(b1)--(a3);
+          \draw (a4)--(b2)--(a5);
+          
+          % \draw (u23)--(u32);
+          % \draw (u31)--(u32);
+      \end{tikzpicture}
+  \end{minipage}
+%
+  \caption{%
+  Gadgets used for the proof of \Cref{lem:lb-oct-reduction}.
+  The left shows a \emph{variable gadget}, including two vertices representing literals.
+  The right shows a \emph{clause gadget}, where $s_1$, $s_2$, $s_3$ are connected to
+  corresponding literals.
+  }
+  \label{fig:proof-np-hardness}
+\end{figure*}

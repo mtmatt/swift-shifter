@@ -1,0 +1,76 @@
+\documentclass[prl,showpacs,twocolumn,unsortedaddress,floatfix,showkeys,aps,10pt]{revtex4-1}
+%\usepackage{newtxtext,newtxmath}
+\usepackage{physics}
+\usepackage{subdepth}
+\usepackage[version=4]{mhchem}
+\usepackage{amsmath}
+\usepackage{mathrsfs} 
+\usepackage{amssymb}
+\usepackage{graphicx}
+\usepackage[normalem]{ulem}
+\usepackage[unicode=true, pdfusetitle, bookmarks=true, bookmarksnumbered=false, bookmarksopen=false, breaklinks=true, pdfborder={0 0 0}, backref=false, colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue]{hyperref}
+\allowdisplaybreaks
+\newcommand{\smalldiv}{\raisebox{-0.2ex}{\resizebox{!}{1.6ex}{\kern0.1em/\kern0.1em }}}
+
+
+\begin{document}
+
+\title{(Un)physical consequences of ``Quantum Measurements of Time''}
+
+% done alphabetically (change if necessary)
+
+\author{Will Cavendish}
+\email{willcavendish@johnbellinstitute.org}
+\affiliation{John Bell Institute for the Foundations of Physics, New York, NY 10003, United States}
+
+\author{Siddhant Das}
+\email{Siddhant.Das@physik.uni-muenchen.de}
+\affiliation{Arnold Sommerfeld Center for Theoretical Physics (ASC), Fakult\"at f\"ur Physik, Ludwig-Maximilians-Universit\"at M\"unchen, Theresienstr.\ 37, D-80333 M\"unchen, Germany}
+
+\author{Markus N\"oth}
+\email{noeth@math.lmu.de}
+\affiliation{Mathematisches Institut, Ludwig-Maximilians-Universit\"at M\"unchen, Theresienstr.\ 39, D-80333 M\"unchen, Germany}
+
+\author{Ali Ayatollah Rafsanjani}
+\email{aliayat@physics.sharif.edu}
+\affiliation{Department of Physics, Sharif University of Technology, Tehran, Iran, School of Physics, Institute for Research in Fundamental Sciences (IPM), Tehran, Iran}
+
+\date{August 8, 2024}
+
+\maketitle
+%\normalem
+
+In \cite{MS}, Maccone and Sacha (hereafter, MS) claim ``to provide a general prescription for quantum measurements of the time at which an arbitrary event happens (the time of arrival being a specific instance).'' In this comment, we note that the empirical predictions of MS's ``Quantum Clock Proposal'' (QCP) are paradoxical when viewed as a solution to the quantum arrival-time problem (see \cite{Allcock1,Bogdan,MUGA1} for details on the standard formulation of the problem).
+
+
+First, the empirical predictions of the QCP are dramatically different from those of other well-known proposals in the literature. Plotting the time-of-arrival (ToA) distributions for a free Gaussian wave packet with experimentally feasible parameters yields nearly indistinguishable distributions for Kijowski's distribution $\Pi_{\text{K}}$, the quantum flux distribution $\Pi_{\text{F}}$, and a semi-classical distribution $\Pi_{\text{SC}}$. The QC ToA distribution \(\Pi_{\text{QC}}\), on the other hand, is visibly different over a wide range of values of the ``regularization parameter'' \(T\) present in its definition, \cite[Eq.\ (6)]{MS} and \cite[Eq.\ (14)]{Roncallo}. Such differences are apparent even with parameters comparable to those examined by MS and Roncallo in \cite{Roncallo}. Indeed, redrawing Fig.\ 3 from \cite{Roncallo} with $\smash{p_0\approx 1\kern0.1em\hbar\smalldiv\sigma_0}$ rather than $\smash{p_0=7\kern0.1em\hbar\smalldiv\sigma_0}$ yields a graph similar to Fig.\ \ref{fig1}.
+
+As Fig.\ \ref{fig1} shows, $\Pi_{\textrm{QC}}$ decreases pointwise with increasing $T$. In fact, letting $\smash{T\to \infty}$ as suggested in \cite{MS} typically causes $\Pi_{\textrm{QC}}$ to \emph{vanish}, not only for Gaussian wave packets but for \emph{all} wave functions \(\psi\) for which \(\smash{\braket{p}{\psi}\!|_{p=0}\ne 0}\). This is a dense set of wave functions that includes Gaussians. In particular, the denominator of $\Pi_{\text{QC}}$ diverges like \(\ln T \) \cite{dollard1969scattering}. This happens in \(\mathbb{R}^d\) for any \(d\) whenever the detector has codimension \(1\), e.g., for planar detection surfaces for \(\mathbb{R}^3\). Despite MS's insistence that this is a strength rather than a flaw of the QCP \cite{MS}, it means that the proposal is typically trivial and therefore empirically inadequate.
+
+\begin{figure}[!ht]
+    \centering
+    \includegraphics[width=\columnwidth]{Fig1.pdf}
+    \caption{Time of arrival distributions for freely moving \ce{Ca^+} ions (mass \(\smash{m\approx 6.655\times 10^{-26}}\) kg) prepared in a Gaussian wave packet \cite[Eq.\ (17)]{Roncallo} of width \(\smash{\sigma_0=30\text{ nm}}\) and velocity \(\smash{p_0/m=5\text{ cm}/\text{s}}\approx 0.94\,\hbar/(m\sigma_0)\) for a flight distance \(\smash{|x_0|=1\text{ mm}}\). Kijowski's distribution (K) is, as is typical, nearly identical to the semi-classical (SC) and quantum flux (F) distributions. The quantum clock distribution (QC) is also drawn for select choices of the parameter \(T\) denominated in the legend.}
+    \label{fig1}
+\end{figure}
+
+Fig.\ \ref{fig1} also shows that the QCP is empirically implausible even when $T$ is finite and is ``given by the total duration of the experiment'' \cite{Roncallo}. This is because the probability of arrival during some fixed interval $[t_1,t_2]$ depends on $T$ even for $\smash{T\gg t_2}$, i.e., it depends on the future time at which the experiment will conclude. While there may be an interpretation of the QCP that makes this seem less bizarre, it shows that \(\Pi_{\text{QC}}\) is not comparable to the ToA proposals surveyed in \cite{Roncallo}.
+
+\begin{figure}
+    \centering
+    \includegraphics[width=\columnwidth]{Fig2.pdf}
+    \caption{Non-detection probabilities for the Gaussian wave packet for \(\smash{|x_0|=10\kern0.1em\sigma_0}\), \(\smash{p_0=7\hbar/\sigma_0}\), and \(\smash{D=[-\Delta L/2,\Delta L/2]}\) vs.\ nondimensionalized cutoff time \(T\) for different proposals.}
+    \label{NAComp}
+\end{figure}
+
+A final comment concerns MS's operator \(\Pi_{\text{na}}\) \cite[Eq.\ (3)]{MS}, which determines the \emph{non}-arrival probability
+$$
+\mathbb{P}_{\text{QC}}(\text{na}\kern0.1em|\kern0.1em\psi)= 1-\frac{1}{T}\int_{-T/2}^{T/2}dt\int_Ddx~|\psi(x,t)|^2.
+$$
+As Fig.\ \ref{NAComp} shows, this probability behaves very differently from \(\smash{\mathbb{P}_{\text{K / F / SC}}(\text{na}\,|\,\psi)= \int_T^{\infty}\!\!dt\,\Pi_{\text{\text{K / F / SC}}}(t)}\). Indeed, for any given $\psi$, the non-arrival probability for the F, K, and SC proposals decrease monotonically as a function of the cutoff $T$. This makes intuitive sense for laboratory arrival time experiments, because extending the duration of the experiment allows the particle to be detected over a longer period. In contrast, the QCP non-arrival probability approaches \(1\) for large \(T\). Applied to standard laboratory arrival time experiments, this would predict that a particle prepared in any state is almost certain \emph{not} to arrive if $T$ is sufficiently large. An elementary application of the long-time asymptotics \cite{dollard1969scattering} implies that this is the case for \emph{all} wave functions.
+
+From the above considerations, it is evident that the QCP cannot be a solution to the arrival-time problem as is commonly understood.
+
+\bibliography{thebibliography}
+
+\end{document}

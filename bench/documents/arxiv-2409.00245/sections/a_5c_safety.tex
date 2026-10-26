@@ -1,0 +1,155 @@
+\section{Safety proofs of \refreduction}
+To prove the two safety lemmas from \cref{sec:reduce:occ}, we first introduce the two main ingredients that the proofs of these statements share. First, we show that the reduction ``preserves'' the structure of odd cycles in the graph.
+
+\begin{lemma} \label{lem:odd:cycle:preservation}
+	Let~$G$ be a graph, let $(X_B, X_C, X_R)$ be an OCC in it and let~$G'$ be the graph obtained by running \refreduction with these input parameters. Let $Y \subseteq V(G) \cap V(G')$ be arbitrary. Then, there is a closed odd walk~$F$ in~$G$ with $V(F) \cap V(G) \cap V(G') = Y$ if and only if there is a closed odd walk~$F'$ in~$G'$ with $V(F') \cap V(G) \cap V(G') = Y$.
+\end{lemma}
+\begin{proof}
+	Let $B^\ast \subseteq X_B$ be the set that is marked in step~\ref{itm:shrink:mark:b:star} of the reduction.
+	
+	For one direction of the proof, let $F$ be a closed odd walk in $G$ such that $V(F) \cap V(G) \cap V(G') = Y$. If~$V(F) = Y$, then $F$ is completely contained in $V(G) \cap V(G')$, meaning that it is also a closed odd walk in $G'$. Suppose therefore that $V(F) \neq Y$. Consider any subwalk $\widehat{F}$ of $F$ such that $\widehat{F}$ is contained in $G - V(G') = G[X_B \setminus B^\ast]$, but such that the preceding vertex $u$ and succeeding vertex $v$ are in $V(G) \cap V(G')$. As all neighbors of $X_B \setminus B^\ast$ in $G$ are in $X_C \cap B^\ast$, $u$ and $v$ are in particular in this latter set.
+	
+	Since $G[X_B \setminus B^\ast]$ connects $u$ and $v$ with $\widehat{F}$ in $G$, the subgraph~$G' - V(G)$ connects $u$ and $v$ with a path $\widehat{F}'$ of the same parity as $\widehat{F}$, due to step~\ref{itm:shrink:loop} of \refreduction. We can use $\widehat{F}'$ as a replacement for $\widehat{F}$ in $G'$. Since $\widehat{F}$ was chosen as an arbitrary subwalk of $F$ that is contained in $G - V(G')$ and that connects two vertices from $V(G) \cap V(G')$, such a replacement exists for all these subwalks of $F$. Hence, we can obtain a closed odd walk $F'$ in $G'$ from $F$ by copying it and replacing all such subwalks in $G - V(G')$ by a replacement walk of the same parity. This yields a closed odd walk $F'$ in $G'$ with $V(F') \cap V(G) \cap V(G') = V(F) \cap V(G) \cap V(G') = Y$.
+	
+	The proof for the other direction is mostly analogous. Let $F'$ be a closed odd walk in $G'$ with $V(F') \cap V(G) \cap V(G') = Y$. Let $\widehat{F}'$ be an arbitrary subwalk of $F'$ in $G' - V(G)$ that connects two vertices $u$ and $v$ from $V(G') \cap V(G)$. Due to step~\ref{itm:shrink:loop} of \refreduction, this subwalk can only exist in $G' - V(G)$ if $G[X_B \setminus B^\ast]$ connects $u$ and $v$ with a path $\widehat{F}$ of the same parity as $\widehat{F}'$. Similar to the previous paragraph, $\widehat{F}$ can serve as a replacement for $\widehat{F}'$ when constructing a closed odd walk $F$ in $G$ from $F'$. Doing so for all such subwalks $\widehat{F}'$ yields a closed odd walk $F$ in $G$ with $V(F) \cap V(G) \cap V(G') = V(F') \cap V(G) \cap V(G') = Y$.
+\end{proof}
+
+The lemma below formalizes the idea that no minimum-size OCT of the graph $G'$ constructed by \refreduction contains vertices that were newly added to the construction. For ease of use in later proofs, the statement is more general than required, but to capture this original idea, one may think of $H$ as being $G'$ and $P_1$ and $P_2$ being two newly added paths in step~\ref{itm:shrink:loop} of the algorithm connecting two vertices $u$ and $v$ with the same parity.
+
+\begin{lemma} \label{lem:new:vertices:not:optimal}
+	Let $H$ be a graph and let $P_1$ and $P_2$ be two internally vertex-disjoint paths of the same parity that connect the same endpoints $u$ and $v$ and whose internal vertices all have degree $2$ in $H$. If $S$ is a minimum-size OCT of $H$, then $S \cap (V(P_1) \cup V(P_2)) \subseteq {u, v}$. 
+\end{lemma}
+\begin{proof}
+	\newcommand{\Vint}{V_{\text{int}}}
+	Equivalently, we prove that $S$ does not contain internal vertices from $P_1$ and $P_2$. To this end, we let $\Vint(P)$ denote the set of internal vertices of a path $P$, so that e.g. $\Vint(P_1) = V(P_1) \setminus \{u, v\}$. Now, suppose for contradiction that $S \cap (\Vint(P_1) \cup \Vint(P_2)) \neq \emptyset$. We distinguish two cases.
+	
+	Suppose that $|S \cap (\Vint(P_1) \cup \Vint(P_2))| \geq 2$. Since the internal vertices of $P_1$ and $P_2$ all have degree $2$, every odd cycle in $H$ that intersects $P_1$ or $P_2$ in particular contains $u$. Hence, we can construct a smaller OCT of $H$ as $(S \setminus (\Vint(P_1) \cup \Vint(P_2))) \cup \{u\}$. This contradicts the optimality of $S$.
+	
+	Suppose that $|S \cap (\Vint(P_1) \cup \Vint(P_2))| = 1$. Assume w.l.o.g.~that $S$ contains one vertex from $\Vint(P_1)$ and let $p_1$ be this vertex. Since $S$ is an OCT of $H$, but it does not contain vertices from $\Vint(P_2)$, there are no odd cycles in $H - S$ that intersect $\Vint(P_2)$. In particular, there are no odd cycles in $H - (S \setminus \{p_1\})$ that intersect $\Vint(P_2)$, because no odd cycle in $H$ can contain vertices from both $\Vint(P_1)$ and $\Vint(P_2)$. But every odd cycle in $H$ that intersects $P_1$ can be transformed into one that intersects $P_2$, by simply replacing the subpath $P_1$ by $P_2$. Hence, there are also no odd cycles in $H - (S \setminus \{p_1\})$ that intersect $\Vint(P_1)$ or $p_1$ in particular. As such, $S \setminus \{p_1\}$ is a strictly smaller OCT of $H$, contradicting the optimality of $S$.
+\end{proof}
+
+Using these two lemmas, we can prove the safety of our reduction.
+
+\lemForwardSafety*
+\begin{proof}
+	Let~$G$ be a graph, let $(X_B, X_C, X_R)$ be an OCC in it and let~$G'$ be the graph obtained by running \refreduction with these input parameters. Let~$B^\ast \subseteq X_B$ be the set that is marked in step~\ref{itm:shrink:mark:b:star} of the reduction and let~$Q_{u, v, p}$ be the set of newly added vertices for a given choice of~$u$,~$v$ and~$p$ in step~\ref{itm:shrink:loop}. We allow such a set to be empty if $G[X_B \setminus B^\ast]$ does not connect $u$ and $v$ with a path of parity $p$.
+	
+	Now suppose there is a $z$-tight OCC $(A_B, A_C, A_R)$ in $G$. Then, by \cref{lem:marked:tight:occ}, there is in particular a $z$-tight OCC $(A_B^\ast, A_C^\ast, A_R^\ast)$ in $G$ with $|A_C^\ast| = |A_C|$ and $A_B^\ast \cap X_B \subseteq B^\ast$. To prove the forward safety of the reduction, we use this tight OCC in $G$ to construct a tight OCC $(A_B', A_C', A_R')$ in $G'$ with the same width and order.
+	
+	We start the construction of this tight OCC by setting $A_C' := A_C^\ast$. Next, we construct~$A_B'$ and initialize it as $A_B^\ast \cap V(G')$. Then, for every $u, v \in ((A_B \cup A_C) \setminus X_R) \cap V(G')$ and every $p \in \{\text{even, odd}\}$, we add $Q_{u,v,p}$ to~$A_B'$. Finally, we simply set $A_R' := V(G') \setminus (A_B' \cup A_C')$.
+	
+	To show that this construction yields a tight OCC in $G'$ with the same width and order as $(A_B, A_C, A_R)$, we show that the following four properties hold:
+	%
+	\begin{enumerate} [(i)]
+		\item \label{itm:reduced:occ:1} $G'[A_B']$ is bipartite.
+		\item \label{itm:reduced:occ:2} There are no edges between $A_B'$ and $A_R'$.
+		\item \label{itm:reduced:occ:3} $|A_C'| = |A_C|$.
+		\item \label{itm:reduced:occ:4} $(A_B', A_C', A_R')$ has a certificate of order $z$.
+	\end{enumerate}
+	%
+	The first two properties show that $(A_B', A_C', A_R')$ is an OCC. Together with properties \textbf{(\ref{itm:reduced:occ:3})} and \textbf{(\ref{itm:reduced:occ:4})}, they show that it is even a tight OCC whose width and order are equal to those of $(A_B, A_C, A_R)$.\bmpr{The formatting of the counters looks different. In the LIPICS style, the roman numbers seem printed in grey in the original enumeration, but they become boldface black when referencing them. My suggestion would be to avoid manually formatting the referencing, leaving the job to the $\mathsf{cref}$ command or similar.} 
+	%
+	%
+	%
+	\proofsubparagraph{(\ref{itm:reduced:occ:1}) To prove: $G[A_B']$ is bipartite.} Suppose for contradiction that $G'[A_B']$ is not bipartite. Then, it contains an odd cycle $F'$. By invocation of  \cref{lem:odd:cycle:preservation} with $Y = V(F') \cap V(G) \cap V(G')$, there exists a closed odd walk $F$ in $G$ with $V(F) \cap V(G) \cap V(G') = Y$. Note that $Y$ cannot be empty as this would imply the odd cycle $F'$ to live in $G' - V(G)$, which is bipartite by construction.
+	
+	Now, because $Y \subseteq A_B' \cap V(G)$, it follows from the construction of $A_B'$ that $Y \subseteq A_B^\ast$. Then, since $V(F) \cap V(G) \cap V(G') \subseteq A_B^\ast$, the entirety of $F$ is contained in $A_B^\ast$: otherwise, $F$ must intersect $A_C^\ast$, but $A_C^\ast$ is contained in $V(G')$, of which the intersection with $V(F)$ was established to be a subset of $A_B^\ast$. Since $F$ is a closed odd walk in $G[A_B^\ast]$, this contradicts the fact that $(A_B^\ast, A_C^\ast, A_R^\ast)$ is an OCC, which requires that $G[A_B^\ast]$ is bipartite.
+	%
+	%
+	%
+	\proofsubparagraph{(\ref{itm:reduced:occ:2}) To prove: There are no edges between $A_B'$ and $A_R'$.} Suppose for contradiction that there is an edge $\{b, r\}$ for $b \in A_B'$ and $r \in A_R'$. If $\{b, r\}$ also exists in $E(G)$, then $b$ and $r$ also exist in $V(G)$. By construction of $(A_B', A_C', A_R')$, it follows that $b \in A_B^\ast$ and $r \in A_R^\ast$. This contradicts the assumption that there are no edges between $A_B^\ast$ and $A_R^\ast$, which follows from $(A_B^\ast, A_C^\ast, A_R^\ast)$ being an OCC.
+	
+	Hence, $\{b, r\}$ does not exist in $E(G)$. By construction of $G'$ every newly added edge has at least one newly added vertex as endpoint. If $b$ and $r$ are both newly added during the reduction, then the fact that they are adjacent implies that they live in the same set $Q_{u,v,p}$ for some $u$, $v$ and $p$. By construction of $(A_B', A_C', A_R')$, every such set is either completely added to $A_B'$ or to $A_R'$. This means that $b$ and $r$ are either both in $A_B'$ or both in $A_R'$, contradicting the assumption that $b \in A_B'$ and $r \in A_R'$.
+	
+	Hence, exactly one of $b$ and $r$ is in $V(G)$. Assume w.l.o.g.~that $b \in V(G)$. By construction of $(A_B', A_C', A_R')$ and the fact that $b \in A_B'$, it follows that $b \in A_B^\ast$. Furthermore, since $r$ is in $V(G') \setminus V(G)$ and it is adjacent to $b$, there exist $v \in X_C \cup B^\ast$ and $p \in \{\text{even}, \text{odd}\}$ for which~$r \in Q_{b,v,p}$. Next, recall that $A_R' \setminus V(G)$ contains exactly the sets $Q_{u', v', p'}$ for which at least one of $u', v'$ is in $A_R^\ast$. Since, $r \in Q_{b,v,p}$ and $b \notin A_R^\ast$, the fact that $r \in A_R' \setminus V(G)$ implies that~$v \in A_R^\ast$.
+	
+	Because $Q_{b,v,p}$ is non-empty (it contains $r$), $b$ and $v$ are connected in $G$ by the subgraph $G[X_B \setminus B^\ast]$ with some path $P$. However, since $A_C^\ast$ separates $A_B^\ast (\ni b)$ and $A_R^\ast (\ni v)$ and is itself disjoint from $X_B \setminus B^\ast$, $b$ and $v$ live in different components of $G[X_B \setminus B^\ast]$. a subset of $B^\ast$, no such component can exist. This contradicts the existence of $P$.
+	%
+	%
+	%
+	\proofsubparagraph{(\ref{itm:reduced:occ:3}) To prove: $|A_C'| = |A_C|$.} By construction of $A_C'$ and $A_C^\ast$, we have $A_C' = A_C^\ast$ and $|A_C^\ast| = |A_C|$.
+	%
+	%
+	%
+	\proofsubparagraph{(\ref{itm:reduced:occ:4}) To prove: $(A_B', A_C', A_R')$ has a certificate of order $z$.} Let $D^\ast$ be an order-$z$ certificate of $(A_B^\ast, A_C^\ast, A_R^\ast)$ and let $D_1^\ast, \ldots, D_q^\ast$ be the connected components of $D^\ast$. From this certificate, we derive an order-$z$ certificate $D'$ of $(A_B', A_C', A_R')$ with connected components $D_1', \ldots, D_q'$. We explain how to construct an arbitrary such component $D_i'$, such that $D'$ is constructed simply as the disjoint union of all such components.
+	
+	We start by explaining how to construct an arbitrary such component $D_i'$ from $D_i^\ast$. First, we define its vertex set $V(D_i')$. We initialize this vertex set as $V(D_i^\ast) \cap V(G) \cap V(G')$. Next, for every pair $u$ and $v$ from this set and for every $p \in \{\text{even}, \text{odd}\}$ we add $Q_{u,v,p}$ to $V(D_i')$. This concludes the construction of $V(D_i')$. Now, we define $D_i'$ to be the subgraph of $G'$ induced by this vertex set, i.e.: $D_i' := G'[V(D_i')]$.
+	
+	We briefly argue that this construction ensures that $D_i'$ is a connected subgraph. Starting from the connected subgraph $D_i^\ast$, the construction starts with the removal of the vertices of $X_B \setminus B^\ast$. However, for each path through these deleted vertices, we insert a corresponding path via some $Q_{u, v, p}$ to provide the same connections. As all such paths we insert are themselves connected and adjacent to at least one vertex of $D_i^\ast \setminus (X_B \setminus B^\ast)$, this yields connectivity for the resulting subgraph $D_i'$.
+	
+	Also note that this construction ensures that the subgraphs $D_1', \ldots, D_q'$ have pairwise disjoint vertex sets. As such, we can obtain the certificate $D'$ simply as their disjoint union, so that $D_1', \ldots, D_q'$ are indeed the connected components of the certificate. It remains to show that $D'$ is an order-$z$ certificate of $(A_B', A_C', A_R')$. For this, we need to show that:
+	\begin{itemize}
+		\item $D'$ is a subgraph of $G[A_B' \cup A_C']$,
+		\item $A_C'$ is a smallest OCT of $D'$, and
+		\item for every $i \in [q]$, $D_i'$ has an OCT of size at most $z$.
+	\end{itemize}
+	The first property trivially holds by construction. The remainder of the proof is used to show that the other two properties also hold.
+	
+	\begin{claim}
+		$A_C'$ is a smallest OCT of $D'$.
+	\end{claim}
+	\begin{claimproof}
+		Clearly, $A_C'$ is an OCT of $D'$ since $D' - A_C'$ is a subgraph of $A_B'$, which is bipartite by property \textbf{(\ref{itm:reduced:occ:1})}. We prove the optimality of $A_C'$ by contradiction, so suppose that $S'$ is a strictly smaller OCT of $D'$.
+		
+		Since the newly added vertices in $V(G') \setminus V(G)$ come in pairs that form degree-$2$ paths connecting the same endpoints, \cref{lem:new:vertices:not:optimal} implies that $S'$ does not contain any of these vertices. Hence, $S' \subseteq V(G)$. We know that $S'$ is not an OCT of $G[A_B^\ast \cup A_C^\ast]$, because $A_C^\ast$ is a smallest OCT of this induced subgraph and $|S'| < |A_C'| = |A_C^\ast|$.
+		
+		Therefore, $G[A_B^\ast \cup A_C^\ast] - S'$ contains an odd cycle $F$. Let $Y := V(F) \cap V(G) \cap V(G')$. By \cref{lem:odd:cycle:preservation}, $G'$ contains a closed odd walk $F'$ with $V(F') \cap V(G) = Y$. This implies the existence of an odd cycle $F''$ with $V(F'') \subseteq V(F')$. We proceed by showing that $F''$ lives in $G'[A_B' \cup A_C'] - S'$.
+		
+		Clearly, $F''$ does not contain vertices from $S'$: since $S' \subseteq V(G) \cap V(G')$, these vertices would have to be in $Y$, but $Y$ is disjoint from $S'$ by its definition. It remains to show that $F'$ does not contain vertices from $A_R'$. 
+		
+		Suppose for contradiction that $F''$ contains a vertex $r \in A_R'$. First note that $Y$ is disjoint from $A_R'$\rfar{@Bart: this place used to contain a comment of yours that the argument was hard to follow. Is the updated argument any better?} as it is a subset of $(A_B^\ast \cup A_C^\ast) \cap V(G) \cap V(G')$. This means that $r$ cannot be in $V(G') \cap V(G)$, as this would cause it to be in both $A_R'$ and in $V(F'') \cap V(G) \cap V(G') \subseteq Y$, which are disjoint sets.
+		
+		As such, $r$ is in $V(G') \setminus V(G)$, meaning that there are some $u, v \in X_C \cup B^\ast$ and $p \in \{\text{even}, \text{odd}\}$ for which $r \in Q_{u, v, p}$.		
+		%Because $V(F') \cap V(G) = Y$ and $Y$ is disjoint from $A_R'$ by its definition\bmp{[I don't follow this argument. We defined~$Y$ as those vertices from~$V(G) \cap V(G')$ used on walk~$F$ in~$G[A_B^\ast \cup A_C^\ast] - S'$. So the definition of~$Y$ was in terms of things in~$G$, rather than things like~$A'_R$ in~$G'$. Can we make the narrative tighter? Do we mean: if~$r \in Y$, then~$r$ belongs to~$V(G) \cap V(G')$, but we have~$A'_R \cap V(G) \cap V(G') = A^\ast_R \cap V(G) \cap V(G')$ by construction, so that~$r$ would belong to~$A^\ast_R$ which contradicts~$r \in Y$ with~$Y$ the vertices of~$V(G) \cap V(G')$ visited by walk~$Y$ in~$G[A_B^\ast \cup A_C^\ast] - S'$, since that walk avoids~$A_R^\ast$?]}, we find $r \notin Y$. As such, $r$ is in $V(G') \setminus V(G)$, meaning that there are some $u, v \in X_C \cup B^\ast$ and $p \in \{\text{even, odd}\}$ for which $r \in Q_{u,v,p}$.
+		By construction, any cycle in $G'$ that contains a vertex from $Q_{u,v,p}$, also contains $u$ and $v$. In particular: $u, v \in V(F'')$. This means that $u, v \in Y$, which in turn implies that $u, v \in A_B^\ast \cup A_C^\ast$. By construction of $A_B'$, it follows that $Q_{u, v, p} \subseteq A_B'$, which contradicts the assumption that $r \in A_R'$.
+	\end{claimproof}
+	
+	\begin{claim}
+		For every $i \in [q]$, $D_i'$ has an OCT of size at most $z$.
+	\end{claim}
+	\begin{claimproof}
+		For every $i \in [q]$, the graph~$D_i' - A_C'$ is a subgraph of the bipartite graph $G'[A_B']$, witnessing that $A_C' \cap V(D_i')$ is an OCT of $D_i'$. By construction of $D_i'$ we have~$A_C' \cap V(D_i') = A_C^\ast \cap V(D_i^\ast)$, the size of which is at most $z$ by the fact that $D^\ast$ is an order-$z$ certificate of $(A_B^\ast, A_C^\ast, A_R^\ast)$. 
+	\end{claimproof}
+	%
+	This concludes the proof of \cref{lem:forward:safety}.
+\end{proof}
+
+%
+%
+%
+%
+%
+
+\lemBackwardSafety*
+\begin{proof}
+	As in the previous proof, let~$G$ be a graph, let $(X_B, X_C, X_R)$ be an OCC in it and let~$G'$ be the graph obtained by running \refreduction with these input parameters. Let~$B^\ast \subseteq X_B$ be the set that is marked in step~\ref{itm:shrink:mark:b:star} of the reduction. Now, let $S'$ be a smallest OCT of $G'$. 
+	
+	Since the vertices of $V(G') \setminus V(G)$ come in pairs that form degree-$2$ paths connecting the same endpoints, \cref{lem:new:vertices:not:optimal} implies that $S'$ does not contain any of these newly added vertices. Hence, $S' \subseteq V(G) \cap V(G')$. It remains to prove that $S'$ is a smallest OCT of $G$.
+	
+	To see that $S'$ is an OCT of $G$, suppose for contradiction that $G - S'$ contains an odd cycle $F$. Then, by invocation of  \cref{lem:odd:cycle:preservation} with $Y = V(F) \cap V(G) \cap V(G')$, there is a closed odd walk $F'$ in $G'$ with $V(F') \cap V(G) \cap V(G') = Y$. This set is disjoint from $S'$ by definition of $F$. Since $S' \subseteq V(G) \cap V(G')$ and $V(F') \cap V(G) \cap V(G)$ is disjoint from $S'$, the walk~$F'$ does not contain vertices from $S$. Now, the assumption that $S'$ is an OCT of $G'$ is contradicted by $F'$ being a closed odd walk in $G' - S'$.
+	
+	To prove that $S'$ is even a smallest OCT of $G$, we start by proving the following claim about smallest OCTs in $G$.
+	
+	\begin{claim} \label{clm:optimal:oct:exists:with:untouched:vertices}
+		There is a minimum-size OCT $S$ of $G$ with $S \subseteq V(G) \cap V(G')$. 
+	\end{claim}
+	\begin{claimproof}
+		Let $T$ be an arbitrary minimum-size OCT of $G$. We show how to modify $T$ into an OCT $S$ of $G$ that is at most as large as $T$ with $S \subseteq V(G) \cap V(G')$. To this end, let $f \colon V(G) \setminus T \rightarrow \{0,1\}$ be a proper $2$-coloring of $G - T$ and let $f_X \colon X_B \rightarrow \{0,1\}$ be a proper $2$-coloring of $G[X_B]$. Consider now the separation problem imposed onto $G[X_B]$ by $(X_C \setminus T, \emptyset, f, f_B)$. Let $A, R, N$ be the three sets to be separated in this problem and let their names correspond to their role as in \cref{def:imposed:separation:problem}. 
+		
+		First we show that $T \cap X_B$ is an $\{A, R, N\}$-separator of size at most $|X_C|$ in $G[X_B]$. Because $N = \emptyset$, it suffices to show that $T \cap X_B$ is an $\{A, R\}$-separator in $G[X_B]$. By invoking \cref{lem:AR-separation} on $G[(X_C \setminus T) \cup X_B]$ with $W_0 = f^{-1}(0) \cap X_C$, $W_0 = f^{-1}(1) \cap X_C$ and $c = f_X$, we see that the coloring $f$ (restricted to $G[(X_C \setminus T) \cup (X_B \setminus T)]$) serves as a witness that $T \cap X_B$ is indeed an $\{A, R\}$-separator in $G[X_B]$.
+		
+		We prove $T \cap X_B$ to be of size at most $|X_C|$ by contradiction, so suppose that $|T \cap X_B| > |X_C|$. Then $T' := (T \setminus X_B) \cup X_C$ is a strictly smaller set than $T$. To see that $T'$ is also an OCT of $G$, we consider an arbitrary odd cycle $F$ in $G$ and show that it intersects $T'$. If $F$ lives in $G[X_R]$, then it intersects $T \cap X_R = T' \cap X_R$. Otherwise, since $G[X_B]$ is bipartite, $F$ intersects $X_C$, which in turn is a subset of $T'$.
+		
+		Having established that there is an $\{A, R, N\}$-separator of size at most $|X_C|$, it follows from \cref{lem:marked:separators:for:all:ARN}, that there is a minimum-size $\{A, R, N\}$-separator $T^\ast \subseteq B^\ast$. In particular, $T^\ast$ is an $\{A,R\}$-separator.
+		
+		Now, we invoke \cref{lem:AR-separation} on the graph $G[(X_C \setminus T) \cup X_B]$ with $W_0 = f^{-1}(0) \cap X_C$, $W_0 = f^{-1}(1) \cap X_C$, $c = f_X$ and with the sets $A$ and $R$ in this lemma coinciding with the sets $A$ and $R$ obtained from the imposed separation problem defined in the first paragraph this proof (\cref{clm:optimal:oct:exists:with:untouched:vertices}). From this, we obtain that $G[(X_C \setminus T) \cup (X_B \setminus T^\ast)]$ has a proper $2$-coloring in which the vertices from $X_C \setminus T$ receive the same color as in $f$. 
+		
+		Then, the invocation of \cref{lem:separated:colorings:make:bipartite} on $G - ((T \setminus X_B) \cup T^\ast)$ with $V_L = X_R \setminus T$, $V_0 = X_C \setminus T$, $V_R = X_B \setminus T^\ast$ and $f_L = f_R = f$ yields that $G - ((T \setminus X_B) \cup T^\ast)$ is bipartite. As such, $S := (T \setminus X_B) \cup T^\ast$ is an OCT of $G$.
+		
+		It remains to show that $|S| \leq |T|$. Equivalently, we show that $|T^\ast| \leq |T \cap X_B|$. Recall that $T \cap X_B$ was shown to be an $\{A, R, N\}$-separator in $G[X_B]$. Since $T^\ast$ was shown to be such a separator of minimum size, it follows that $|T^\ast| \leq |T \cap X_B|$.
+	\end{claimproof}
+	%
+	Now, showing that there is no smaller OCT of $G$ than $S'$ can be done using arguments that have mostly been used before. 
+	
+	Suppose for contradiction that $S$ is a strictly smaller OCT of $G$ than $S'$. By \cref{clm:optimal:oct:exists:with:untouched:vertices}, we can assume w.l.o.g.~that $S \subseteq V(G) \cap V(G')$. As $S'$ was defined to be a smallest OCT of $G'$, the strictly smaller set $S$ is not an OCT of $G'$ so there exists an odd cycle $F'$ in $G' - S$. By \cref{lem:odd:cycle:preservation}, there is a closed odd walk $F$ in $G$ with $V(F) \cap V(G') = V(F') \cap V(G)$. These intersections are disjoint from $S$ by definition of $F'$, so the closed odd walk $F$ lives in $G - S$. This contradicts the assumption that $S$ is an OCT of $G$.
+\end{proof}

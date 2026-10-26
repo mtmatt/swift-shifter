@@ -1,0 +1,169 @@
+\documentclass[12pt]{article}
+\usepackage[margin=1.25in]{geometry}
+\usepackage[english]{babel}
+\setcounter{tocdepth}{2} % contents depth only up to subsections
+\usepackage[nottoc]{tocbibind} % Includes "References" in the table of contents
+\usepackage{etoolbox}
+\usepackage{textcomp}
+\usepackage{amsmath}
+\usepackage{amsthm}
+\usepackage{thmtools}
+\usepackage{amssymb}
+\usepackage{bbm}
+\usepackage{graphicx}
+\usepackage{tikz}
+\usepackage{mathtools}
+\usepackage[shortlabels]{enumitem}
+\usepackage{hyperref}
+\usetikzlibrary{cd}
+\usepackage{cleveref}
+% \usepackage[utf8]{inputenc}
+%\usepackage[T2A]{fontenc}
+%\usepackage[small,nohug]{diagrams}
+%\diagramstyle[labelstyle=\scriptstyle]
+
+
+% square brackets for matrices environment
+\makeatletter
+\newenvironment{sqcases}{%
+  \matrix@check\sqcases\env@sqcases
+}{%
+  \endarray\right.%
+}
+\def\env@sqcases{%
+  \let\@ifnextchar\new@ifnextchar
+  \left\lbrack
+  \def\arraystretch{1.2}%
+  \array{@{}l@{\quad}l@{}}%
+}
+\makeatother
+
+% allow big matrices
+\setcounter{MaxMatrixCols}{20}
+
+% hyperlinks color setup
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    pdftitle={Zhizhin 2nd Year Paper},
+    }
+    
+% shorthands
+\newcommand{\N}{\ensuremath{\mathbb N}}
+\newcommand{\R}{\ensuremath{\mathbb R}}
+\newcommand{\C}{\ensuremath{\mathbb C}}
+\newcommand{\Z}{\ensuremath{\mathbb Z}}
+\newcommand{\F}{\ensuremath{\mathbb F}}
+\newcommand{\Q}{\ensuremath{\mathbb Q}}
+\newcommand{\T}{\ensuremath{\mathbb T}}
+\newcommand{\A}{\ensuremath{\mathbb A}}
+\newcommand{\E}{\ensuremath{\mathcal E}}
+\newcommand{\defeq}{\vcentcolon=}
+\renewcommand{\P}{\ensuremath{\mathcal P}}
+\renewcommand{\O}{\ensuremath{\mathcal{O}}}
+\newcommand{\y}{\ensuremath{\mathbf y}}
+\DeclareMathOperator{\im}{im}
+\DeclareMathOperator{\Mat}{Mat}
+\DeclareMathOperator{\rk}{rk}
+\DeclareMathOperator{\tr}{tr}
+\DeclareMathOperator{\supp}{supp}
+\DeclareMathOperator{\Spec}{Spec}
+\DeclareMathOperator{\id}{id}
+\DeclareMathOperator{\am}{a.m.}
+\DeclareMathOperator{\gm}{g.m.}
+\DeclareMathOperator{\diam}{diam}
+\DeclareMathOperator{\Ann}{Ann}
+\DeclareMathOperator{\codim}{codim}
+\DeclareMathOperator{\Supp}{Supp}
+\DeclareMathOperator{\Sym}{Sym}
+\DeclareMathOperator{\trdeg}{trdeg}
+\DeclareMathOperator{\Vol}{Vol}
+\DeclareMathOperator{\MVol}{MVol}
+\DeclareMathOperator{\Ker}{Ker}
+\DeclareMathOperator{\Hom}{Hom}
+\DeclareMathOperator{\Conv}{Conv}
+\DeclareMathOperator{\GL}{GL}
+\renewcommand{\char}{\ensuremath{\operatorname{char}}}
+\newcommand*\circled[1]{\tikz[baseline=(char.base)]{
+            \node[shape=circle,draw,inner sep=2pt] (char) {#1};}}
+\newcommand{\citestacks}[1]{\cite[\href{https://stacks.math.columbia.edu/tag/#1}{Tag #1}]{stacks-project}}
+            
+% theorems style
+\theoremstyle{definition}
+\newtheorem{theorem}{\textbf{Theorem}}[section]
+\newtheorem{example}[theorem]{\textbf{\sc{Example}}}
+\newtheorem*{example*}{\textbf{\sc{Example}}}
+\newtheorem{claim}[theorem]{\textbf{\sc{Claim}}}
+\crefname{claim}{Claim}{Claims}
+\newtheorem*{claim*}{\textbf{\sc{Claim}}}
+\crefname{claim*}{Claim}{Claims}
+\newtheorem{notation}[theorem]{\textbf{\sc{Notation}}}
+\crefname{notation}{Notation}{Notations}
+\newtheorem{lemma}[theorem]{\textbf{\sc{Lemma}}}
+\crefname{lemma}{Lemma}{Lemmas}
+\newtheorem{remark}[theorem]{\textbf{\sc{Remark}}}
+\newtheorem{corollary}[theorem]{\textbf{\sc{Corollary}}}
+\crefname{corollary}{Corollary}{Corollaries}
+\renewcommand\qedsymbol{$\blacksquare$}
+\theoremstyle{plain}
+\newtheorem{definition}[theorem]{Definition}
+
+% section heading style
+\usepackage{sectsty}
+\sectionfont{\centering\sc}
+\makeatletter
+\def\@seccntformat#1{\csname the#1\endcsname.\ }
+\makeatother
+
+% affilation footnote fix
+\makeatletter
+\let\@fnsymbol\@arabic
+\makeatother
+
+% autoref (sub)subsection name
+\addto\extrasenglish{
+\renewcommand{\subsectionautorefname}{section}
+\renewcommand{\subsubsectionautorefname}{section}
+}
+
+
+\title{
+  \sc{Irreducibility of Toric Complete Intersections}
+  }
+\author{
+  \sc{Andrey Zhizhin\thanks{National Research University Higher School of Economics, Russian Federation}}
+  }
+\date{July 2024\\
+Moscow}
+\begin{document}
+\maketitle
+
+
+\begin{abstract}    
+    We develop an approach to study the irreducibility of generic complete intersections in the algebraic torus defined by equations with fixed monomials and fixed linear relations on coefficients. Using our approach we generalize the irreducibility theorems of Khovanskii from \cite{Khovanskii2016} to fields of arbitrary characteristic. Also we get a combinatorial sufficient conditions for irreducibility of engineered complete intersections (notion introduced in \cite{Esterov2024}). As an application we give a combinatorial condition of irreducibility for some critical loci and Thom-Bordmann strata:  $f = f'_x = 0$, $f'_x = f'_y = 0$, $f = f'_x = f'_{xx} = 0$, where f is a generic Laurent polynomial with a prescribed monomial set.
+\end{abstract}
+\pagebreak
+
+\begin{center}
+    {\bfseries Acknowledgements} 
+\end{center}
+I would like to thank my advisor Alexander Esterov for all the gentle guidance and peristent discussions that formed my whole understanding of the Newton Polytope Theory. I am also grateful to Vlad Safronov for reviewing and discussing some parts of my work which in particular resulted in a much more general formulation of \autoref{cor:ECI_simpler_poly}.
+The study has been funded within the framework of the HSE University Basic Research Program.
+
+\tableofcontents
+
+%sections
+\include{introduction}
+\include{preliminaries}
+\include{general}
+\include{khovanskii}
+%\include{critical}
+\include{engineered}
+
+
+% bibliography
+\bibliographystyle{bibstyle}
+\bibliography{bibliography} %Import the bibliography file
+
+\end{document}

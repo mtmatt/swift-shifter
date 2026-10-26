@@ -1,0 +1,56 @@
+\section{Introduction} \label{sec:intro}
+
+In \cite{KRS2009} Kapustin, Rozansky, and Saulina studied the Rozansky-Witten field theory, a $3$-dimensional topological sigma model introduced in \cite{RW1997} with target space a holomorphic symplectic manifold, using path integral techniques. Their results later led them to conjecture the existence of a symmetric monoidal $3$-category $\cRW$ formed from these theories by varying the target, i.e. a $3$-category whose objects are holomorphic symplectic manifolds and whose $2$-categories of morphisms are the defects determined by the field theory -- see \cite{KR2010} for extended details and parts of the construction. Motivated by this conjecture and by the ``semi-classical'' results of \cite{CHS2022} on AKSZ models obtained using $\infty$-categorical machinery, in \cite{Riva2024} we constructed a symmetric monoidal $(\infty,3)$-category $\sCRW$  of \emph{commutative Rozansky-Witten models} with the aim of approximating $\cRW$ with the machinery of derived algebraic geometry over a field $\KK$. The construction of $\sCRW$ is general enough that it could be tweaked and applied to other geometric objects -- such as analytic or smooth stacks -- provided that they come with a good theory of symplectic structures and quasicoherent sheaves; different choices of geometric objects might lead to more accurate approximations to the desired $3$-category $\cRW$.
+
+Another source of motivation for our previous work was the paper \cite{BCR2023} of Brunner, Carqueville, and Roggenkamp and its sequel \cite{BCFR2023} with Fragkos. In the first paper the authors describe a concrete model for a $2$-categorical truncation $\bMF$\footnote{In \cite{BCR2023} this $2$-category was simply called $\mc{C}$.} of $\cRW$ spanned by the affine planes, namely those symplectic manifolds of the form $\bT^\ast \CC^n$ for some $n \geq 0$. The $1$-morphisms in $\bMF$ can be thought of as families of Lagrangian submanifolds of $\bT^\ast \CC^n$ where each member of the family is the graph of a polynomial $1$-form on $\CC^n$, and the $2$-morphisms are chain homotopy equivalence classes of matrix factorizations associated to those polynomials. Moreover, they show that $\bMF$ has duals (namely that all objects are dualizable (\cite{BCR2023}), that all $1$-morphisms have adjoints (\cite{BCFR2023})) and explicitly exhibit all of the fully extended oriented field theories with target $\bMF$. 
+
+If $\sCRW$ really is a decent approximation to $\cRW$ then we should expect the behavior of $\bMF$ to carry over to a $2$-categorical truncation of $\sCRW$. In this paper we confirm this prediction:
+\begin{mainthm}[\Cref{thm:main}] \label{thm:mainA}
+	Fix an algebraically closed field $\KK$ of characteristic $0$. Then there exists a symmetric monoidal $2$-functor
+	\begin{equation*}
+		\fe : \bMF \to \bh_2 \sCRW
+	\end{equation*}
+	with target the homotopy $2$-category of $\sCRW$. The image lands in the subcategory of $\bh_2 \sCRW$ spanned by the cotangent stacks of the form $\bT^\ast \KK^{n}$ for $n \geq 0$, and in fact $\fe$ is surjective on those objects.
+\end{mainthm}
+
+Since $\bMF$ has duals, the image of $\fe$ lands in the largest subcategory of $\bh_2 \sCRW$ with duals. Early on in the paper we prove that this is all of $\bh_2 \sCRW$:
+
+\begin{mainthm}[\Cref{thm:2-dual-crw}] \label{thm:mainB}
+	The symmetric monoidal $2$-category $\bh_2 \sCRW$ has duals for all objects and adjoints for all $1$-morphisms, so in particular every symplectic derived stack $(X, \omega) \in \bh_2 \sCRW$ is fully dualizable. 
+\end{mainthm}
+
+We can also calculate the topological field theories associated to these fully dualizable objects. The cobordism hypothesis tells us that symmetric monoidal functors
+\begin{equation*}
+	\cZ : \mathrm{Bord}_{0,1,2}^{\mathrm{or}} \to \bh_2 \sCRW
+\end{equation*}
+from the oriented cobordism $2$-category are classified by pairs $((X, \omega), \tau)$, where $\cZ(\cat{pt}^+) = (X, \omega) \in \bh_2 \sCRW$ is a fully dualizable object and $\tau : S_{(X, \omega)} \simeq \id_{(X, \omega)}$ is a trivialization of the Serre automorpshim $S_{(X, \omega)} : (X, \omega) \to (X, \omega)$. In our case there is a canonical trivialization $S_{(X, \omega)} \simeq \id_{(X, \omega)}$ (\Cref{prp:serre-trivial}), and we can use that to compute some field theories:
+
+\begin{mainthm} \label{thm:mainC}
+	Let $\cZ_A$ be the $2$-dimensional oriented topological field theory valued in $\bh_2 \sCRW$ classified by an affine symplectic derived stack $(X = \Spec A, \omega)$ with the canonical trivialization of its Serre automorphism. If for any commutative differential graded algebra $B$ we let $B^e = B \otimes B$ and $\HC(B) = B \otimes_{B^e} B$, then there are equivalences
+	\begin{align*}
+		\cZ_A(S^1) & \simeq \Spec \HC(A), \\
+		\cZ_A(\Sigma_g) & \simeq A \otimes_{\HC(A)} (A \otimes_{A^e} \HC(\HC(A)) \otimes_{A^e} A)^{\otimes_{\HC(A)} g} \otimes_{\HC(A)} A,
+	\end{align*}
+	where the first value is considered as a Lagrangian morphism from the trivial stack $\ast$ to itself and the second value is considered as a $\ZZ_2$-graded vector space.
+\end{mainthm}
+
+The formulas above are consistent with the expectations in the original paper \cite{RW1997} of Rozansky and Witten, where the Rozansky-Witten sigma model was introduced. The case of $\bT^\ast \KK^n$ can be recovered by setting $A = \KK[x_1, \dotsc, x_n, p_{x_1}, \dotsc, p_{x_n}]$. It can be shown that no $\bT^\ast \KK^{n}$ is $3$-dualizable when $n > 0$, so the $2$-dimensional field theories of \Cref{thm:mainC} cannot be upgraded to fully extended $3$-dimensional field theories valued in $\sCRW$ -- see \Cref{prp:no-3-tft}.
+
+Another consequence of the construction of $\fe$ is that the association of $2$-morphisms might not be faithful. The main problem is the failure of reconstructing a matrix factorization from its cochain complex of endomorphisms, thought of as a dg-module over a certain commutative dg-algebra. This is an interesting algebraic problem on its own for which we have no non-trivial guess as to the answer, so we pose it as a question for future consideration:
+\begin{qst}
+	Let $V \in \KK[\undl{x}]$ be a polynomial and let $M, N$ be two matrix factorizations of $V$. By \Cref{prp:end-is-module} the two cochain complexes $\End(M)$ and $\End(N)$ carry a canonical structure of a dg-module over a commutative differential graded algebra $A_{V}$. If $\End(M) \simeq \End(N)$ as $A_{V}$-modules, what is the relationship between $M$ and $N$?
+\end{qst}
+
+\subsubsection*{Outline and notation}
+
+Here is an outline of the paper. In \Cref{sec:crw} we review the results of \cite{Riva2024}, some derived algebra, and we prove \Cref{thm:mainB} by standard $2$-categorical arguments applied to $\bh_2 \sCRW$ and \Cref{thm:mainC} by explicitly computing the Serre automorphism and the values of our field theories. In \Cref{sec:matrix-fact} we describe the $2$-category $\bMF$ and prove the main computational tool needed in the following section, which identifies the endomorphism algebra of the unit matrix factorization of a polynomial $V$ with the algebra of functions on the derived critical locus of the partial derivatives of $V$. Then in \Cref{sec:functor} we prove \Cref{thm:mainA} by explicitly constructing the functor. 
+
+We use $\Mod_\KK$ to denote the $\infty$-category of cochain complexes $X$ over $\KK$, also called \emph{derived $\KK$-modules} or \emph{dg-modules} for short. If $A \in \sCAlg_\KK = \CAlg(\Mod_\KK)$ is a commutative algebra in $\Mod_\KK$, also called a \emph{commutative dg-algebra} or \emph{cdga}\footnote{Note that these are different from the \emph{curved} dgas used in \cite{KR2008}.} for short, then $\Mod_A$ denotes the $\infty$-category of modules over $A$, i.e. dg-modules $M$ equipped with an action map $A \otimes_\KK M \to M$ satisfying associativity and unitality axioms up to cohomology. We can treat any cochain complex $X$ as $\ZZ_2$-graded by summing over the even and odd degrees:
+\begin{equation*}
+	X \leadsto \conj{X}, \quad \conj{X}_0 = \bigoplus_{\text{even } i} X_i, \quad \conj{X}_1 = \bigoplus_{\text{odd } i} X_i.
+\end{equation*}
+We tend to make no notational distinction between $X$ and $\conj{X}$ and instead inform the reader when to treat an object as $\ZZ$-graded or $\ZZ_2$-graded. Then we can talk about $\sCAlg_\KK^{\ZZ_2}$, the $\infty$-category of $\ZZ_2$-graded cdgas, and $\Mod_A^{\ZZ_2}$, the $\infty$-category of $\ZZ_2$-graded derived $A$-modules. The same considerations hold for $\QCoh^{\ZZ_2}(X)$, the $\infty$-category of quasicoherent sheaves of $\ZZ_2$-graded modules over a derived stack $X$. Since everything is done in an $\infty$-categorical context we will often drop the adjective ``derived'' and just speak of $\KK$-modules, $A$-modules, and stacks.
+
+We will try to be consistent with the notation used in \cite{Riva2024}. We use $\bh_k \sC$ to denote a homotopy $k$-category of an $(\infty,n)$-category $\sC$. We only consider the cases $k = 1$ and $k = 2$ in this paper; the first corresponds to the classical homotopy category, and the second has been worked out for complete $2$-fold Segal spaces (and hence for $n$-fold Segal spaces, $n \geq 2$) by Rom\"o in \cite{Romo2023}, and that's enough for us since $\sCRW$ was explicitly constructed as a Segal space. It can be shown that $\mathbf{h}_2 \mathscr{C}$ inherits a symmetric monoidal structure if $\mathscr{C}$ has one. The word ``equivalence'' will denote an equivalence in the appropriate $\infty$-category -- most of the time this will be a quasi-isomorphism of cochain complexes or of dg-modules over some cdga, both of which become isomorphisms in the corresponding homotopy category. We use $\circ$ for composition along a codimension $1$ boundary (e.g. composition of $1$-morphisms and vertical composition of $2$-morphisms) and $\cdot$ for composition along a codimension $2$-boundary (e.g. horizontal composition of $2$-morphisms). Algebras, commutative algebras, and modules are used in the appropriate homotopical/$\infty$-categorical sense -- see \cite{HA2017} for a comprehensive survey.
+
+Finally, we would like to thank Nils Carqueville, Chris Schommer-Pries, and Stephan Stolz for enlightening discussions on this topic, for going through earlier versions of this paper, and for providing many helpful suggestions. We are grateful to the referees for suggesting changes in various parts of the document which greatly improved both the narrative and the overall clarity of the paper. 

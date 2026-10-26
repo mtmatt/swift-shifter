@@ -1,0 +1,43 @@
+\section{Mixed 't Hooft anomaly}
+\label{sec:anomalies}
+
+In sections~\ref{sec:graviton_shifts} and \ref{sec:dual_symmetries} we studied a pair of dual symmetries of the free graviton theory and gave their gauging in eqs.~\eqref{eq:S_electric_gauged} and \eqref{eq:S_magnetic_gauged}, respectively. This required the introduction of background tensor gauge fields $\gaugefield$ and $\gaugefieldtilde$. Let us now introduce both background fields and seek to simultaneously gauge the two symmetries:
+\begin{equation}\label{eq:S_both_gauged}
+    S_{\text{FP}}^{\text{e}+\text{m}} = -\frac{3}{2} \int_{\mathcal{M}} \dd[d]{x} \ggamma(h)\indices{_{\mu\rho|}^{[\mu}} \ggamma(h)\indices{^{\rho\alpha]}_{|\alpha}} + \int_{\mathcal{M}} \Gamma(h) \,\wedgedot\, \gaugefieldtilde
+\end{equation}
+where $\ggamma(h) \equiv \Gamma(h) - \gaugefield$ as before. We recall the field transformations here for convenience:
+\begin{gather}
+    h \to h + \alpha \qc \gaugefield \to \gaugefield + \dd_L \alpha \label{eq:electric_transf_repeat} \\
+    \gaugefieldtilde \to \gaugefieldtilde + \dd_L \tilde{\alpha} \label{eq:magnetic_transf_repeat}
+\end{gather}
+The action \eqref{eq:S_both_gauged} is invariant under the transformation \eqref{eq:magnetic_transf_repeat}. However, while the first term in \eqref{eq:S_both_gauged} is invariant under the transformation \eqref{eq:electric_transf_repeat}, the second term is not and varies by
+\begin{equation}\label{eq:anomaly}
+    \delta S_{\text{FP}}^{\text{e}+\text{m}} = \int_{\mathcal{M}} \dd_L \alpha \,\wedgedot\, \gaugefieldtilde
+\end{equation}
+This variation can be cancelled by adding a counterterm $-\frac{1}{2} \gaugefield \,\wedgedot\, \gaugefieldtilde$ so that the action becomes
+\begin{equation}\label{eq:S_both_gaugedplus}
+     \hat S_{\text{FP}}^{\text{e}+\text{m}} = -\frac{3}{2} \int_{\mathcal{M}} \dd[d]{x} \ggamma(h)\indices{_{\mu\rho|}^{[\mu}} \ggamma(h)\indices{^{\rho\alpha]}_{|\alpha}} + \int_{\mathcal{M}} \ggamma(h) \,\wedgedot\, \gaugefieldtilde
+\end{equation}
+This replaces $\Gamma(h)$ by $\ggamma(h)$ in the second term of eq.~\eqref{eq:S_both_gauged} so that it is invariant under \eqref{eq:electric_transf_repeat}. However, adding this term breaks the magnetic shift symmetry and the resulting action is no longer invariant under \eqref{eq:magnetic_transf_repeat}, transforming as
+\begin{equation}\label{eq:anomalycc}
+    \delta \hat S_{\text{FP}}^{\text{e}+\text{m}} = -\int_{\mathcal{M}} \dd_L \tilde\alpha \,\wedgedot\, {\gaugefield}
+\end{equation}
+There is no counterterm involving the background fields $C$ and $\tilde{C}$ which can be added to make the action invariant under both \eqref{eq:electric_transf_repeat} and \eqref{eq:magnetic_transf_repeat}.
+The impossibility of consistently coupling background gauge fields for both symmetries signals a mixed 't Hooft anomaly between the $[1,1]$ bi-form symmetry associated with the shift \eqref{eq:graviton_shift} and the $[d-3,1]$ bi-form symmetry associated with the dual shift \eqref{eq:D_shift}.
+The anomaly \eqref{eq:anomaly} is analogous to eq.~\eqref{eq:Maxwell_anomaly} in Maxwell theory. The gauge-invariant $(d+2)$-form anomaly polynomial which leads to to eq.~\eqref{eq:anomaly} by descent is\footnote{We note that the contraction of indices involved in the $\wedgedot$ product implies that the anomaly inflow Lagrangian $\gaugefield \,\wedgedot\, \dd_L \gaugefieldtilde$ depends explicitly on the background Minkowski metric and that unavoidable metric dependence means that the $(d+1)$-dimensional field theory is not properly topological.} 
+\begin{equation}\label{eq:anomaly_poly}
+    \mathcal{I}_{d+2} = \dd_L \gaugefield \,\wedgedot\, \dd_L \gaugefieldtilde
+\end{equation}
+
+The second term in the action \eqref{eq:S_both_gauged} is not invariant under the gauge transformations \eqref{Cdiff} but the variation is cancelled by adding the counterterm to give the action \eqref{eq:S_both_gaugedplus} which is invariant under these transformations provided that $\gaugefieldtilde$ is invariant.
+Thus cancelling the anomaly in the transformations \eqref{eq:magnetic_transf_repeat} also cancels the anomaly in the gauge transformations \eqref{Cdiff}, as was to be expected, as they are a special case of the transformations \eqref{eq:magnetic_transf_repeat}.
+
+In the dual theory, formulated in terms of $D$, the anomaly can be uncovered by simultaneously coupling the currents for both symmetries to background gauge fields using the couplings in section~\ref{sec:shifts_for_dual}, i.e.
+\begin{equation}
+    S_{\text{dual}}^{\text{e}+\text{m}} = -\frac{1}{2} \int_{\mathcal{M}} \dd[d]{x} \tilde{\ggamma}(D)\indices{^{\mu_1\dots\mu_{n+1}|}_{[\mu_1}} \tilde{\ggamma}(D)\indices{_{\mu_2\dots\mu_{n+1}\alpha]|}^\alpha} + \int_{\mathcal{M}} \tilde{\Gamma}(D) \,\wedgedot\, \gaugefield
+\end{equation}
+This is invariant under \eqref{eq:A_gauge_transf} but under the combined transformations \eqref{eq:D_shift} and \eqref{eq:Atilde_transf} it transforms as
+\begin{equation}\label{eq:anomalyd}
+    \delta S_{\text{dual}}^{\text{e}+\text{m}} = \int_{\mathcal{M}} \dd_L \tilde\alpha \,\wedgedot\, {\gaugefield}
+\end{equation}
+in agreement with \eqref{eq:anomalycc} (up to a factor which could have been absorbed into a redefinition of the currents). The anomaly is then seen again in the dual theory.

@@ -1,0 +1,130 @@
+\section{Matrix factorizations} \label{sec:matrix-fact}
+
+% TODO This section contains the definitions and results of BCR
+
+\subsection{The $2$-category $\bMF$} \label{sec:bMF}
+
+Throughout this section, and in fact the rest of the paper, we abbreviate tuples of variables by underlines and the length of tuples by norms: $\undl{x} := (x_1, \dotsc, x_n)$ and $\vnorm{x} := n$. Concatenation of tuples is denoted by juxtaposition: $\undl{xy} = (x_1, \dotsc, x_n, y_1, \dotsc, y_p)$.
+
+Fix a polynomial $V \in \KK[\undl{x}]$. A \emph{matrix factorization of $V$} is a free $\ZZ_2$-graded $\KK[\undl{x}]$-module $M$ together with an odd endomorphism $d_M$ satisfying $d_M^2 = V \cdot \id_{M}$. The $\KK[\undl{x}]$-module $\Hom_{\KK[\undl{x}]}(M,N)$ can be given a differential $\delta$ defined by
+\begin{equation*}
+	\delta \vphi = d_N \vphi - (-1)^{\vnorm{\vphi}} \vphi d_M,
+\end{equation*}
+where $\vnorm{\vphi}$ is the degree of the map $\vphi$. In particular, $\End_{\KK[\undl{x}]}(M)$ has differential $\delta = [d_M, -]$, the graded commutator with $d_M$. Matrix factorizations form a dg-category $\cMF(\undl{x};V)$.
+
+The equation $d^2 = V \cdot \id$ has some striking consequences. Enhance the category so that every matrix factorization is equipped with a choice of basis, turning every morphism $M \to N$ into a (possibly infinite) matrix. Then in particular $d_M : M \to M$ is a matrix with polynomial entries and so we can define
+\begin{equation*}
+	\lambda_{x_i} := \partial_{x_i} d_M	
+\end{equation*}
+by differentiating each entry of $d_M$ with respect to the variable $x_i$. If the variable $x_i$ is clear from the context then we use $\lambda_i$ instead of $\lambda_{x_i}$.
+
+\begin{lmm}[{\cite[Lemma 2.11]{Murfet2018}}] \label{lmm:derivative-of-dm}
+	The odd morphism $\lambda_{i} : M \to M$ is independent of the choice of basis of $M$ up to chain homotopy.
+\end{lmm}
+
+\begin{proof}
+	Say $M_1$ and $M_2$ are two copies of $M$ equipped with two different bases, $d_1$ and $d_2$ are the matrices for $d_M$ with respect to those bases, and $P$ is a change-of-basis matrix for $d_M$: namely, $P d_1 = d_2 P$ holds. Set $\lambda_1 = \partial_{i} d_1$ and $\lambda_2 = \partial_{i} d_2$. Differentiating both sides of $P d_1 = d_2 P$ with respect to $x_i$ and using the product rule yields
+	\begin{equation*}
+		(\partial_{i} P) d_1 + P \lambda_1 = \lambda_2 P + d_2 (\partial_{i} P)
+	\end{equation*}
+	and so
+	\begin{equation*}
+		P \lambda_1 - \lambda_2 P = d_2 (\partial_{i} P) - (\partial_{i} P) d_1
+	\end{equation*}
+	as morphisms $M_1 \to M_2$. Thus any two matrix expressions for $\lambda_{i}$ are chain homotopic, as desired. 
+\end{proof}
+
+There is a symmetric monoidal $2$-category with duals, denoted $\bMF$, where matrix factorizations are the $2$-morphisms. This was constructed in \cite{BCR2023}. We recall its basic structure in preparation for the main theorem:
+
+The objects of $\bMF$ are finite tuples of variables $\undl{x}$. The symmetric monoidal product is concatenation of tuples and the empty tuple $\emptyset$ acts as the unit. The $1$-morphisms between two tuples $\undl{x}$ and $\undl{y}$ are pairs $(\undl{a}, V)$, where $\undl{a}$ is a new collection of variables distinct from those in $\undl{xy}$ and $V \in \KK[\undl{xya}]$ is a polynomial. Horizontal composition is given by concatenating the extra variables, including the intermediary one, and summing the polynomials:
+\begin{equation*}
+	(\undl{b}, W(\undl{yzb})) \circ (\undl{a}, V(\undl{xya})) = (\undl{ayb}, V(\undl{xya}) + W(\undl{yzb})). 
+\end{equation*}
+If $(\undl{a}, V)$ and $(\undl{a'}, V')$ are $1$-morphisms $\undl{x} \to \undl{y}$, a $2$-morphism $(\undl{a}, V) \Rightarrow (\undl{a'}, V')$ is an isomorphism class of objects in the idempotent completion of $\bh \cMF(\undl{xyaa'}; V' - V)$, the homotopy category of the dg-category $\cMF(\undl{xyaa'}; V' - V)$ obtained by taking the even cohomology group of all the mapping complexes; more concretely, a $2$-morphism is a chain homotopy equivalence class $[M]$ of matrix factorizations of $V' - V$ such that one representative is a direct summand of a finite-rank matrix factorization. The vertical composition is given by the tensor product, which is compatible with homotopy equivalences: if $M : (\undl{a}, U) \Rightarrow (\undl{b}, V)$ and $N : (\undl{b}, V) \Rightarrow (\undl{c}, W)$ represent two $2$-morphisms then
+\begin{equation*}
+	N \circ M = M \otimes_{\KK[\undl{xyb}]} N
+\end{equation*}
+is a representative for the composite $2$-morphism, with the twisted differential on the right given by $d_M \otimes 1 + 1 \otimes d_N$.
+
+The unit for the horizontal composition of $1$-morphisms is
+\begin{equation*}
+	\id_{\undl{x}} := (\undl{a}, \sum_{i = 1}^{\vnorm{x}} a_i(\wilde{x}_i - x_i));
+\end{equation*}
+the idea is that when composing a $1$-morphism with the unit we're substituting the variables $x_i$ with the variables $\wilde{x}_i$. Note that this is not a strict unit -- see for example the end of Section 2.1 in \cite{BCR2023} for an explicit unitor isomorphism. The unit for the vertical composition of $2$-morphisms is (the isomorphism class of) $I_{(\undl{a}, V)}$, the Koszul matrix factorization described in Section 2.1 of \cite{BCR2023} and later here in the following subsection: indeed, for any $2$-morphism $[M] : (\undl{a}, V) \Rightarrow (\undl{a'}, V')$ we have
+\begin{equation*}
+	[M] \circ [I_{(\undl{a}, V)}] = [I_{(\undl{a}, V)} \otimes_{\KK[\undl{xya}]} M] = [M] = [M \otimes_{\KK[\undl{xya'}]} I_{(\undl{a'}, V')}] = [I_{(\undl{a'}, V')}] \circ [M].
+\end{equation*}
+Explicit formulas for the homotopy equivalences in this equation can be found in \cite{CM2016,CM2020}.
+
+\subsection{A useful quasi-isomorphism}
+
+Fix a $1$-morphism $(\undl{a}, V) : \undl{x} \to \undl{y}$ in $\bMF$, with $\vnorm{\undl{a}} = k$. We need an explicit model for $I_{(\undl{a}, V)}$ as a matrix factorization of $V(\undl{xya'}) - V(\undl{xya})$ -- notice the extra tuple of variables $\undl{a'}$, which has the same length as $\undl{a}$. As a free $\KK[\undl{xyaa'}]$-module it is given by
+\begin{equation*}
+	I_{(\undl{a}, V)} = \KK[\undl{xyaa'}; \undl{\theta}] := \KK[\undl{xyaa'}] \otimes_\KK \Lambda (\theta_1, \dotsc, \theta_k),
+\end{equation*}
+where the right factor in the tensor product denotes the exterior algebra of a $\KK$-vector space with basis elements $\theta_1, \dotsc, \theta_k$. The exterior algebra inherits a $\ZZ_2$-grading where the elements $\theta_i$ are naturally in odd degree, so $I_{(\undl{a},V)}$ is a $\ZZ_2$-graded $\KK[\undl{xyaa'}]$-module. The differential is
+\begin{equation*}
+	d_{I_{(\undl{a}, V)}} = \sum_{i = 1}^k p_{i,V} \theta_i + (a_i' - a_i) \frac{\partial}{\partial \theta_i},
+\end{equation*}
+where
+\begin{equation*}
+	p_{i,V} := \frac{V(\undl{xy},a_1, \dotsc, a_{i-1}, a_i', \dotsc, a_k') - V(\undl{xy},a_1, \dotsc, a_{i}, a_{i+1}', \dotsc, a_k')}{a_i' - a_i} \in \KK[\undl{xyaa'}]
+\end{equation*}
+is the difference quotient whose limit as $a_i' \to a_i$ results in $\partial_{a_i} V$. It's easy to see that
+\begin{equation*}
+	d_{I_{(\undl{a},V)}}^2 = \sum_{i = 1}^k p_{i,V} \cdot (a_i' - a_i) = V(\undl{xya'}) - V(\undl{xya})
+\end{equation*}
+and so $I_{(\undl{a}, V)}$ is a matrix factorization of the correct polynomial.
+
+Now we can state an important lemma. If $M$ is a matrix factorization, we denote by $\End(M)$ the $\ZZ_2$-graded cochain complex of endomorphisms of $M$.
+\begin{lmm} \label{lmm:quasi-iso-end}
+	There is an equivalences of algebras
+	\begin{equation*}
+		\End(I_{(\undl{a}, V)}) \simeq R_{(\undl{a}, V)}
+	\end{equation*}
+	where $R_{(\undl{a}, V)}$ denotes a cofibrant resolution of $\KK[\undl{xya}]/\langle \partial_{a_1} V, \dotsc, \partial_{a_k} V \rangle$ (a cdga concentrated in degree $0$) in the model category of $\ZZ_2$-graded commutative dgas.
+\end{lmm}
+
+In particular, since $R_{(\undl{a}, V)}$ is commutative, this result shows that the natural multiplication of $\End(I_{(\undl{a}, V)})$ given by composition of endomorphisms is homotopy commutative. This is to be expected from an Eckmann-Hilton argument: since $I_{(\undl{a}, V)}$ is an identity morphism in a $2$-category its endomorphisms inherit a second multiplication which is compatible with the composition, and Eckmann-Hilton precisely ensures that the two multiplications coincide and are both commutative.
+
+First, here is an explicit model for $R_{(\undl{a}, V)}$:
+\begin{equation*}
+	R_{(\undl{a}, V)} = \KK[\undl{xya}; \undl{\alpha}]
+\end{equation*}
+where $\vnorm{\alpha} = \vnorm{a}$ and with differential $d_{R_{(\undl{a};V)}}$ given on generators by
+\begin{equation*}
+	d_{R_{(\undl{a};V)}} p(\undl{xya}) = 0, \quad d_{R_{(\undl{a};V)}}\alpha_i = \partial_{a_i} V,
+\end{equation*}
+for any $p(\undl{xya}) \in \KK[\undl{xya}]$ and any $1 \leq i \leq k$, and then extended using the Leibniz rule.
+
+\begin{proof}[Proof of \Cref{lmm:quasi-iso-end}]
+	We will build a zigzag of equivalences
+	\begin{equation} \label{eqn:zigzag}
+		 \End(I_{(\undl{a}, V)}) \xlra{\simeq} \End(I_{(\undl{a}, V)})[\undl{\beta}] \xlla{\simeq} R_{(\undl{a}, V)},
+	\end{equation}
+	which will prove the existence of the desired equivalence $\End(I_{(\undl{a}, V)}) \simeq R_{(\undl{a}, V)}$. In the middle we have
+	\begin{equation*}
+		\End(I_{(\undl{a}, V)})[\undl{\beta}] := \End(I_{(\undl{a}, V)}) \otimes_{\KK} \Lambda(\beta_1, \dotsc, \beta_k),
+	\end{equation*}
+	where $\vnorm{\undl{a}} = k$, and we define the differential $d$ on it to be the usual differential $\delta = [d_{I_{(\undl{a},V)}}, -]$ (the commutator with Koszul signs) on $\End(I_{(\undl{a}, V)})$ and $d\beta_i = \partial_{a_i} V$ on each generator.
+	
+	There is an inclusion of dgas
+	\begin{equation*}
+		\End(I_{(\undl{a}, V)}) \to \End(I_{(\undl{a}, V)})[\undl{\beta}], \quad f \mapsto f \otimes 1
+	\end{equation*}
+	which is also an equivalence, i.e. an isomorphism in cohomology: the only new differentials are those coming from each $\beta_i$, but since
+	\begin{equation*}
+		d \beta_i = \partial_{a_i} V = [d_{I_{(\undl{a},V)}}, \partial_{a_i} d_{I_{(\undl{a},V)}}] = \delta( \partial_{a_i} d_{I_{(\undl{a},V)}} )
+	\end{equation*}
+	we find that they were already accounted for in the cohomology of $\End(I_{(\undl{a}, V)})$. The second equality can be obtained by differentiating the equation $(d_{I_{(\undl{a},V)}})^2 = V$ by the variable $a_i$. This yields the first equivalence in \Cref{eqn:zigzag}.
+	
+	The second map $t : R_{(\undl{a};V)} \to \End(I_{(\undl{a},V)})[\undl{\beta}]$ is given as follows: using the model $R_{(a, V)} = \KK[\undl{xya}; \undl{\alpha}]$ described above, $t$ acts on generators by
+	\begin{equation*}
+		x_i \mapsto x_i, \quad y_i \mapsto y_i, \quad a_i \mapsto \frac{a_i + a_i'}{2}, \quad \alpha_i \mapsto \beta_i.
+	\end{equation*}
+	The rest of the map is determined by extending linearly over $\KK$ and using the graded Leibniz rule. We compute the cohomology on both sides to show that this map is an equivalence. Since $R_{(\undl{a};V)}$ is a resolution of $\KK[\undl{xya}]/\langle \partial_{a_1} V, \dotsc, \partial_{a_k} V \rangle$ we have
+	\begin{equation*}
+		H^0(R_{(\undl{a};V)}) \cong \KK[\undl{xya}]/\langle \partial_{a_1} V, \dotsc, \partial_{a_k} V \rangle, \quad H^1(R_{(\undl{a};V)}) \cong 0.
+	\end{equation*}
+	The cohomology of $\End(M)$, for general $M$, can be found in \cite[Section 4]{KR2008}, and it agrees with the cohomology of $R_{(\undl{a};V)}$ when $M = I_{(\undl{a}, V)}$. In fact, the variables $a_i'$ disappear in cohomology because $d\theta_i = a_i' - a_i$, and the partial derivatives $\partial_{a_i} V$ get quotiented out because $d (\partial/\partial \theta_i) = p_{i, V} = \partial_{a_i} V$ after identifying $a_i'$ with $a_i$. After these identifications in cohomology the map $H^0(t)$ becomes the identity map on $\KK[\undl{xya}]$ and correctly kills each partial derivative $\partial_{a_i} V$ by sending $\alpha_i$ to $\beta_i$, which shows that it is an isomorphism. We are now done since the odd cohomologies of $R_{(\undl{a};V)}$ and $\End(I_{(\undl{a},V)})[\undl{\beta}]$ are both zero.
+\end{proof}

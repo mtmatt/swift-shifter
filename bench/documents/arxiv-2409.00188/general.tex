@@ -1,0 +1,20 @@
+\section{General Sufficient Condition}\label{sec:general}
+Recall from \autoref{def:evaluation} that $\E|_\P: \P \times T^n \to \A^m_k \times T^n$ is the evaluation morphism that sends $(\mathbf f, p) \mapsto (\mathbf f(p), p)$ and that $X_\P = \Ker \E|_\P$. Denote by $\E|^2_\P$ the morphism $\P \times T^n \times T^n \to \A^{2m}_k \times T^n \times T^n$, $(\mathbf f, p, q) \mapsto (\mathbf f(p), \mathbf f(q), p, q)$ --- just like $\E|_\P$ it is a vector bundle morphism, i.e. it is fiberwise linear.
+
+\begin{theorem}\label{thm:sufficient}
+    Consider the locally closed subsets 
+    \[
+    \mathcal S_r \defeq \{ (p, q) \in T^n \times T^n\ |\ \rk_{(p, q)} \E|_\P^2 = 2m - r \}.
+    \]
+    If $\dim \mathcal S_r + r < 2n$ for all $r > 0$, then the general fibre of $X_\P \to \P$ is geometrically irreducible, i.e. the general system from $\P$ defines a geometrically irreducible variety in $T^n$.
+\end{theorem}
+\begin{proof}
+    If $X_\P \to \P$ is not dominant, then the general fibre is empty, in particular it is geometrically irreducible, so from now on we assume that $X_\P \to \P$ is dominant.
+    We will show that $X_\P \times_\P X_\P$ is irreducible using corollary \ref{cor:irreducibility_criterion}, which by \autoref{thm:fibre_condition} will imply that the general fibre of $X_\P \to \P$ is geometrically irreducible. Clearly $X_\P \times_\P X_\P = \Ker \E|_\P^2$, so all the fibres of $X_\P \times_\P X_\P \to T^n \times T^n$ are vector spaces, in particular the fibres are equidimensional. 
+    
+    Since we are interested in the geometric irreducibility, we assume without loss of generality that $k = \bar k$. Take any point $(\mathbf f, p, q)$ from $\P \times T^n \times T^n(k)$ s.t. $\mathbf f(p) = \mathbf f(q) = 0$, i.e. any closed point from $X_\P \times_\P X_\P$. The condition $\E|_\P^2 = 0$ gives no more than $2m$ independent equations near $(\mathbf f, p, q)$, so 
+    \[
+    \dim_{(\mathbf f, p, q)} X_\P \times_\P X_\P \ge \dim \P \times T^n \times T^n - 2m = \dim \P + 2n - 2m.
+    \]
+    Clearly $\mathcal S_0$ is open. Since $T^n = \bigsqcup_{r > 0} \mathcal S_r$ and $\dim \mathcal S_r < \dim T^n \times T^n$ for all $r > 0$, we have that $\mathcal S_0 \ne \varnothing$, in particular $\dim \P - 2m$ is the dimension of the generic fibre and $\mathcal S_r$ are precisely the subschemes where the fibre dimension jumps by $r$. Finally, for all $r \ge 0$ the variety $(X_\P \times_\P X_\P)_{\mathcal S_r}$ is a vector bundle over $\mathcal S_r$,  in particular $(X_\P \times_\P X_\P)_{\mathcal S_0}$ is irreducible. By corollary \ref{cor:irreducibility_criterion} $X_\P \times_\P X_\P$ is irreducible.
+\end{proof}

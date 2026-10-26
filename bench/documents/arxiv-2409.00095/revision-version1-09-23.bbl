@@ -1,0 +1,341 @@
+\begin{thebibliography}{10}
+
+\bibitem{AP11}
+Beatrice Acciaio and Irina Penner.
+\newblock Dynamic risk measures.
+\newblock In {\em Advanced mathematical methods for finance}, pages 1--34.
+  Springer, Heidelberg, 2011.
+
+\bibitem{ADEH99}
+Philippe Artzner, Freddy Delbaen, Jean-Marc Eber, and David Heath.
+\newblock Coherent measures of risk.
+\newblock {\em Math. Finance}, 9(3):203--228, 1999.
+
+\bibitem{BEK04}
+Pauline Barrieu and Nicole El~Karoui.
+\newblock Optimal derivatives design under dynamic risk measures.
+\newblock In {\em Mathematics of finance}, volume 351 of {\em Contemp. Math.},
+  pages 13--25. Amer. Math. Soc., Providence, RI, 2004.
+
+\bibitem{BEK09}
+Pauline Barrieu and Nicole~El Karoui.
+\newblock Pricing, hedging and optimally designing derivatives via minimization
+  of risk measures.
+\newblock In R.~Carmona, editor, {\em Indifference Pricing}, pages 77--146.
+  Princeton University Press, 2009.
+
+\bibitem{BHZ15}
+Erhan Bayraktar, Yu-Jui Huang, and Zhou Zhou.
+\newblock On hedging {A}merican options under model uncertainty.
+\newblock {\em SIAM J. Financial Math.}, 6(1):425--447, 2015.
+
+\bibitem{BZ14}
+Erhan Bayraktar and Zhou Zhou.
+\newblock On controller-stopper problems with jumps and their applications to
+  indifference pricing of {A}merican options.
+\newblock {\em SIAM J. Financial Math.}, 5(1):20--49, 2014.
+
+\bibitem{BCP17}
+Tomasz~R. Bielecki, Igor Cialenco, and Marcin Pitera.
+\newblock A survey of time consistency of dynamic risk measures and dynamic
+  performance measures in discrete time: {LM}-measure perspective.
+\newblock {\em Probab. Uncertain. Quant. Risk}, 2:Paper No. 3, 52, 2017.
+
+\bibitem{BNDN20}
+Jocelyne Bion-Nadal and Giulia Di~Nunno.
+\newblock Fully-dynamic risk-indifference pricing and no-good-deal bounds.
+\newblock {\em SIAM J. Financial Math.}, 11(2):620--658, 2020.
+
+\bibitem{BH08}
+Philippe Briand and Ying Hu.
+\newblock Quadratic {BSDE}s with convex generators and unbounded terminal
+  conditions.
+\newblock {\em Probab. Theory and Related Fields}, 141:543--567, 2008.
+
+\bibitem{Car09}
+Ren\'{e} Carmona, editor.
+\newblock {\em Indifference pricing. Theory and applications}.
+\newblock Princeton Series in Financial Engineering. Princeton University
+  Press, Princeton, NJ, 2009.
+
+\bibitem{CDK04}
+Patrick Cheridito, Freddy Delbaen, and Michael Kupper.
+\newblock Coherent and convex monetary risk measures for bounded c\`adl\`ag
+  processes.
+\newblock {\em Stochastic Process. Appl.}, 112(1):1--22, 2004.
+
+\bibitem{CKSY23}
+Jared Chessari, Reiichiro Kawai, Yuji Shinozaki, and Toshihiro Yamada.
+\newblock Numerical methods for backward stochastic differential equations: a
+  survey.
+\newblock {\em Probab. Surv.}, 20:486--567, 2023.
+
+\bibitem{CHLZ19}
+Wing~Fung Chong, Ying Hu, Gechun Liang, and Thaleia Zariphopoulou.
+\newblock An ergodic {BSDE} approach to forward entropic risk measures:
+  representation and large-maturity behavior.
+\newblock {\em Finance Stoch.}, 23(1):239--273, 2019.
+
+\bibitem{CMS15}
+Andrea Cosso, Daniele Marazzina, and Carlo Sgarra.
+\newblock American option valuation in a stochastic volatility model with
+  transaction costs.
+\newblock {\em Stochastics}, 87(3):518--536, 2015.
+
+\bibitem{Dam06}
+Anders Damgaard.
+\newblock Computation of reservation prices of options with proportional
+  transaction costs.
+\newblock {\em J. Econom. Dynam. Control}, 30(3):415--444, 2006.
+
+\bibitem{DPZ93}
+Mark H.~A. Davis, Vassilios~G. Panas, and Thaleia Zariphopoulou.
+\newblock European option pricing with transaction costs.
+\newblock {\em SIAM J. Control Optim.}, 31(2):470--493, 1993.
+
+\bibitem{DZ95}
+Mark H.~A. Davis and Thaleia Zariphopoulou.
+\newblock American options and transaction fees.
+\newblock In Mark H.~A. Davis, Darrell Duffie, Wendell~H. Fleming, and
+  Steven~E. Shreve, editors, {\em Mathematical Finance}, pages 47--61.
+  Springer, 1995.
+
+\bibitem{DS06}
+Freddy Delbaen and Walter Schachermayer.
+\newblock {\em The mathematics of arbitrage}.
+\newblock Springer Finance. Springer-Verlag, Berlin, 2006.
+
+\bibitem{RGDN24}
+Giulia Di~Nunno and Emanuela Rosazza~Gianin.
+\newblock Fully dynamic risk measures: horizon risk, time-consistency, and
+  relations with {BSDE}s and {BSVIE}s.
+\newblock {\em SIAM J. Financial Math.}, 15(2):399--435, 2024.
+
+\bibitem{EHJ17}
+Weinan E, Jiequn Han, and Arnulf Jentzen.
+\newblock Deep learning-based numerical methods for high-dimensional parabolic
+  partial differential equations and backward stochastic differential
+  equations.
+\newblock {\em Commun. Math. Stat.}, 5(4):349--380, 2017.
+
+\bibitem{EJH22}
+Weinan E, Jiequn Han, and Arnulf Jentzen.
+\newblock Algorithms for solving high dimensional {PDE}s: from nonlinear
+  {M}onte {C}arlo to machine learning.
+\newblock {\em Nonlinearity}, 35(1):278--310, 2022.
+
+\bibitem{EKKPPQ97}
+N.~El~Karoui, C.~Kapoudjian, E.~Pardoux, S.~Peng, and M.~C. Quenez.
+\newblock Reflected solutions of backward {SDE}'s, and related obstacle
+  problems for {PDE}'s.
+\newblock {\em Ann. Probab.}, 25(2):702--737, 1997.
+
+\bibitem{EKPQ97}
+N.~El~Karoui, E.~Pardoux, and M.~C. Quenez.
+\newblock Reflected backward {SDE}s and {A}merican options.
+\newblock In {\em Numerical methods in finance}, volume~13 of {\em Publ. Newton
+  Inst.}, pages 215--231. Cambridge Univ. Press, Cambridge, 1997.
+
+\bibitem{ES10}
+Robert~J. Elliott and Tak~Kuen Siu.
+\newblock Risk-based indifference pricing under a stochastic volatility model.
+\newblock {\em Commun. Stoch. Anal.}, 4(1):51--73, 2010.
+
+\bibitem{FS02}
+Hans F\"ollmer and Alexander Schied.
+\newblock Convex measures of risk and trading constraints.
+\newblock {\em Finance Stoch.}, 6(4):429--447, 2002.
+
+\bibitem{FRG05}
+Marco Frittelli and Emanuela Rosazza~Gianin.
+\newblock Law invariant convex risk measures.
+\newblock In {\em Advances in mathematical economics. {V}olume 7}, volume~7 of
+  {\em Adv. Math. Econ.}, pages 33--46. Springer, Tokyo, 2005.
+
+\bibitem{GGHZ23}
+Chengfan Gao, Siping Gao, Ruimeng Hu, and Zimu Zhu.
+\newblock Convergence of the backward deep {BSDE} method with applications to
+  optimal stopping problems.
+\newblock {\em SIAM J. Financial Math.}, 14(4):1290--1303, 2023.
+
+\bibitem{GK22}
+Tihomir~B. Gyulov and Miglena~N. Koleva.
+\newblock Penalty method for indifference pricing of {A}merican option in a
+  liquidity switching market.
+\newblock {\em Appl. Numer. Math.}, 172:525--545, 2022.
+
+\bibitem{EHJ18}
+Jiequn Han, Arnulf Jentzen, and Weinan E.
+\newblock Solving high-dimensional partial differential equations using deep
+  learning.
+\newblock {\em Proc. Natl. Acad. Sci. USA}, 115(34):8505--8510, 2018.
+
+\bibitem{HN89}
+Stewart~D. Hodges and Anthony Neuberger.
+\newblock Optimal replication of contingent claims under transaction costs.
+\newblock {\em Rev. Futures Markets}, 8(2):222--239, 1989.
+
+\bibitem{HLT24}
+Ying Hu, Gechun Liang, and Shanjian Tang.
+\newblock Utility maximization in constrained and unbounded financial markets:
+  Applications to indifference valuation, regime switching, consumption and
+  {E}pstein-{Z}in recursive utility.
+\newblock {\em arXiv-preprint 1707.00199}, 2024.
+
+\bibitem{Hul18}
+John Hull.
+\newblock {\em Risk Management and Financial Institutions.}
+\newblock Wiley, United State, 5th edition edition, 2018.
+
+\bibitem{Hur19}
+C{\^o}me Hur{\'e}.
+\newblock {\em {Numerical Methods and Deep Learning for Stochastic Control
+  Problems and Partial Differential Equations}}.
+\newblock Theses, {Universit{\'e} Paris Diderot (Paris 7), Sorbonne Paris
+  Cit{\'e}}, June 2019.
+
+\bibitem{HPW20}
+C\^ome Hur\'e, Huy\^en Pham, and Xavier Warin.
+\newblock Deep backward schemes for high-dimensional nonlinear {PDE}s.
+\newblock {\em Math. Comp.}, 89(324):1547--1579, 2020.
+
+\bibitem{Kha21}
+Idris Kharroubi.
+\newblock Machine learning approximations for some parabolic partial
+  differential equations.
+\newblock {\em Grad. J. Math.}, 6(1):1--26, 2021.
+
+\bibitem{KB17}
+Diederik~P. Kingma and Jimmy Ba.
+\newblock Adam: A method for stochastic optimization.
+\newblock {\em arXiv-preprint 1412.6980}, 2017.
+
+\bibitem{KS05}
+S.~Kl{\"o}ppel and M.~Schweizer.
+\newblock Dynamic utility indifference valuation via convex risk measures.
+\newblock {\em NCRR FINRISK working paper No.209. ETH Z\"{u}rich}, 2005.
+\newblock Shorter version published in \textit{Math. Finance} 17(4):599--627,
+  2007.
+
+\bibitem{KLQT02}
+M.~Kobylanski, J.~P. Lepeltier, M.~C. Quenez, and S.~Torres.
+\newblock Reflected {BSDE} with superlinear quadratic coefficient.
+\newblock {\em Probab. Math. Statist.}, 22(1):51--83, 2002.
+
+\bibitem{Kob00}
+Magdalena Kobylanski.
+\newblock Backward stochastic differential equations and partial differential
+  equations with quadratic growth.
+\newblock {\em Ann. Probab.}, 28(2):558--602, 2000.
+
+\bibitem{Kue02}
+Christoph K{\"{u}}hn.
+\newblock Pricing contingent claims in incomplete markets when the holder can
+  choose among different payoffs.
+\newblock {\em Insurance Math. Econom.}, 31(2):215--233, 2002.
+
+\bibitem{Kum15}
+Rohini Kumar.
+\newblock Effect of volatility clustering on indifference pricing of options by
+  convex risk measures.
+\newblock {\em Appl. Math. Finance}, 22(1):63--82, 2015.
+
+\bibitem{Lad68}
+Olga~Aleksandrovna Ladyzhenskaia, Vsevolod~Alekseevich Solonnikov, and Nina~N
+  Ural'tseva.
+\newblock {\em Linear and quasi-linear equations of parabolic type}, volume~23.
+\newblock American Mathematical Soc., 1968.
+
+\bibitem{LS09}
+Tim Leung and Ronnie Sircar.
+\newblock Exponential hedging with optimal stopping and application to employee
+  stock option valuation.
+\newblock {\em SIAM J. Control Optim.}, 48(3):1422--1451, 2009.
+
+\bibitem{LSZ12}
+Tim Leung, Ronnie Sircar, and Thaleia Zariphopoulou.
+\newblock Forward indifference valuation of {A}merican options.
+\newblock {\em Stochastics}, 84(5-6):741--770, 2012.
+
+\bibitem{L14}
+Arnaud Lionnet.
+\newblock Some results on general quadratic reflected {BSDE}s driven by a
+  continuous martingale.
+\newblock {\em Stochastic Process. Appl.}, 124(3):1275--1302, 2014.
+
+\bibitem{Mor13}
+Marie-Amelie Morlais.
+\newblock Reflected backward stochastic differential equations and a class of
+  non-linear dynamic pricing rule.
+\newblock {\em Stochastics}, 85(1):1--26, 2013.
+
+\bibitem{Nik06}
+Ashkan Nikeghbali.
+\newblock An essay on the general theory of stochastic processes.
+\newblock {\em Probab. Surv.}, 3:345--412, 2006.
+
+\bibitem{OZ03}
+A.~Oberman and T.~Zariphopoulou.
+\newblock Pricing early exercise contracts in incomplete markets.
+\newblock {\em Comput. Manag. Sci.}, 1(1):75--107, 2003.
+
+\bibitem{Pen04}
+Shige Peng.
+\newblock Nonlinear expectations, nonlinear evaluations and risk measures.
+\newblock In {\em Stochastic methods in finance}, volume 1856 of {\em Lecture
+  Notes in Math.}, pages 165--253. Springer, Berlin, 2004.
+
+\bibitem{RG06}
+Emanuela Rosazza~Gianin.
+\newblock Risk measures via {$g$}-expectations.
+\newblock {\em Insurance Math. Econom.}, 39(1):19--34, 2006.
+
+\bibitem{REK00}
+Richard Rouge and Nicole El~Karoui.
+\newblock Pricing via utility maximization and entropy.
+\newblock {\em Math. Finance}, 10(2):259--276, 2000.
+
+\bibitem{SS15}
+Ronnie Sircar and Stephan Sturm.
+\newblock From smile asymptotics to market risk measures.
+\newblock {\em Math. Finance}, 25(2):400--425, 2015.
+
+\bibitem{Sun21}
+Dingqian Sun.
+\newblock The convergence rate from discrete to continuous optimal investment
+  stopping problem.
+\newblock {\em Chinese Ann. Math. Ser. B}, 42(2):259--280, 2021.
+
+\bibitem{WCSLS18}
+Haojie Wang, Han Chen, Agus Sudjianto, Richard Liu, and Qi~Shen.
+\newblock Deep learning-based bsde solver for libor market model with
+  application to bermudan swaption pricing and hedging.
+\newblock {\em arXiv-preprint 1807.06622}, 2018.
+
+\bibitem{WD09}
+Lixin Wu and Min Dai.
+\newblock Pricing jump risk with utility indifference.
+\newblock {\em Quant. Finance}, 9(2):177--186, 2009.
+
+\bibitem{Xu06}
+Mingxin Xu.
+\newblock {Risk measure pricing and hedging in incomplete markets}.
+\newblock {\em Ann. Finance}, 2(1):51--71, January 2006.
+
+\bibitem{YLY15}
+HuiWen Yan, GeChun Liang, and Zhou Yang.
+\newblock Indifference pricing and hedging in a multiple-priors model with
+  trading constraints.
+\newblock {\em Sci. China Math.}, 58(4):689--714, 2015.
+
+\bibitem{Zak05}
+Valeri~I. Zakamouline.
+\newblock American option pricing and exercising with transaction costs.
+\newblock {\em J. Comput. Finance}, 8(3):81--113, 2005.
+
+\bibitem{ZZ10}
+Thaleia Zariphopoulou and Gordan \v{Z}itkovi\'{c}.
+\newblock Maturity-independent risk measures.
+\newblock {\em SIAM J. Financial Math.}, 1(1):266--288, 2010.
+
+\end{thebibliography}

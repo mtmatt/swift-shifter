@@ -1,0 +1,171 @@
+\section{Proofs for Odd Cycle Cuts} 
+\label{sec:proofs:oct:cut}
+
+\lemOCCARNSeparators*
+\begin{proof}
+	We start by proving the former of the two implications.
+	
+	\begin{claim} \label{clm:tight:occ:cut:optimal:AR:separtor}
+		$A_C \cap X_B$ is a minimum-size $\{A, R\}$-separator in $G[X_B]$.
+	\end{claim}
+	\begin{claimproof}
+		We start by showing that $A_C \cap X_B$ is a (not necessarily smallest) $\{A, R\}$-separator in $G[X_B]$. Consider the graph $\widetilde{G} := G[(X_C \cap A_B) \cup X_B]$, let $W_0 = f_A^{-1}(0) \cap X_C$, $W_1 = f_A^{-1}(1) \cap X_C$ and $c = f_X$.
+		
+		Using these parameters, we invoke \cref{lem:AR-separation}. Note in particular that the sets~$A$ and~$R$ in this lemma coincide with the sets~$A$ and~$R$ we obtained from \cref{def:imposed:separation:problem} at the start of the proof of \cref{lem:tight:occ:cut:optimal:ARN:separator}. Now, from \cref{lem:AR-separation}, we obtain that it suffices  to show that $\widetilde{G} - (A_C \cap X_B)$ admits a proper $2$-coloring with vertices from $W_0$ and $W_1$ receiving colors $0$ and $1$ respectively. This last property can be satisfied by defining our coloring $f: (V(\widetilde{G}) \setminus (A_C \cap X_B) \rightarrow \{0, 1\}$ to have $f(v) = f_A(v)$ for all $v \in A_B \setminus X_R$. We complete the coloring $f$ by setting $f(v) = f_X(v)$ for all $v \in X_B \cap A_R$. This is a proper $2$-coloring of $\widetilde{G} - (A_C \cap X_B)$ because:
+		\begin{itemize}
+			\item it is a proper $2$-coloring restricted to $A_B \setminus X_R$ (as $f_A$ is a proper coloring of $G[A_B]$), and
+			\item it is a proper $2$-coloring restricted to $X_B \cap A_R$ (as $f_X$ is a proper coloring of $G[X_B]$), and
+			\item the sets $A_B \setminus X_R$ and $X_B \cap A_R$ cover all vertices of $\widetilde{G} - (A_C \cap X_B)$ and are not adjacent to one another as they are subsets of $A_B$ and $A_R$ respectively.
+		\end{itemize}
+		%
+		This shows that $A_C \cap X_B$ is an $\{A, R\}$-separator in $G[X_B]$ and it remains to show that it is a smallest such separator. For contradiction, let $S \subseteq X_B$ be an $\{A, R\}$-separator in $G[X_B]$ with $|S| < |A_C \cap X_B|$. Given such a set $S$, we show that $\widehat{S} := (A_C \setminus X_B) \cup S$ is an OCT in $G[A_B \cup A_C]$. Since $\widehat{S}$ is then strictly smaller than $A_C$, this will contradict the assumption that $(A_B, A_C, A_R)$ is a tight OCC, which requires that $A_C$ is a smallest OCT of $G[A_B \cup A_C]$.
+		
+		To prove that $\widehat{S}$ is an OCT of $G[A_B \cup A_C]$, we show that $G[A_B \cup A_C \cup X_B] - \widehat{S}$ is bipartite of which $G[A_B \cup A_C] - \widehat{S}$ is a subgraph. To this end, we recall that $S$ is an $\{A, R\}$-separator in $G[X_B]$. Hence, by \cref{lem:AR-separation} with $c = f_X$ and $W_0$ and $W_1$ based on $f_A$ as defined above, there is a proper $2$-coloring $\widetilde{f}$ of $\widetilde{G} - S$ with $\widetilde{f}(v) = f_A(v)$ for each $v \in X_C \cap A_B$.
+		
+		Now, the subgraphs induced by $A_B \setminus X_B$ and $V(\widetilde{G}) \setminus S$ can be properly $2$-colored by $f_A$ and $\widetilde{f}$ respectively. These vertex sets intersect precisely in $X_C \cap A_B$ on which the two colorings agree and which separates the remaining vertices from the two sets. Hence, by \cref{lem:separated:colorings:make:bipartite}, the graph induced by the union of these sets, $G[A_B \cup A_C] - \widehat{S}$, is bipartite.
+	\end{claimproof}
+	%
+	Towards proving that $A_C \cap X_B$ is also a minimum-size $\{A, R, N\}$-separator in $G[X_B]$, we prove the following claim.
+	
+	\begin{claim} \label{clm:tight:occ:cut:separates:N}
+		$A_C \cap X_B$ is a (not necessarily minimum-size) $\{A \cup R, N\}$-separator in $G[X_B]$.
+	\end{claim}
+	\begin{claimproof}		
+		Note that $A \cup R$, being defined as a set of neighbors of $A_B \cap X_C$, is a subset of $A_B \cup A_C$, because $A_C$ separates $A_B$ from the remaining vertices of the graph. Likewise, as $N$ is defined as a set of neighbors of $A_R \cap X_C$, it is a subset of $A_R \cup A_C$, because $A_C$ also separates $A_R$ from the remaining vertices of the graph. As such, when removing $A_C$ from the graph, the remaining vertices of $A \cup R$ and $N$ live in $A_B$ and $A_R$ respectively. Since $A_C$ separates these latter two sets by definition of $(A_B, A_C, A_R)$ being an OCC, $A_C \cap X_B$ is an $\{A \cup R, N\}$-separator in $G[X_B]$.
+	\end{claimproof}
+	
+	Now, the fact that $A_C \cap X_B$ is an $\{A, R, N\}$-separator follows from the claims that this set is both an$\{A, R\}$-separator (\cref{clm:tight:occ:cut:optimal:AR:separtor}) and an $\{A \cup R, N\}$-separator (\cref{clm:tight:occ:cut:separates:N}). The fact that it is even a \emph{minimum-size} $\{A, R, N\}$-separator follows from the observation that any $\{A, R, N\}$-separator must be at least as large as a minimum-size $\{A, R\}$-separator and from the claim that $A_C \cap X_B$ is itself a minimum-size $\{A, R\}$-separator (\cref{clm:tight:occ:cut:optimal:AR:separtor}).
+	
+	This proves the second implication from the lemma statement and concludes the proof.
+\end{proof}
+
+To facilitate a proof of \Cref{lem:num_components}, here we characterize the components in the bipartite part of an $X_C$-certificate that are safe to remove.
+
+\begin{lemma}\label{lem:redundant-component}
+  For a graph $G$ and its vertex set $X_C \subseteq V(G)$,
+  let $H$ be an $X_C$-certificate of order $z$ in~$G$.
+  %
+  Suppose there exists a connected component $D$ of $H - X_C$ that satisfies the following two criteria,
+  where $H'$ is a connected component of $H$ that contains $D$, and $X'_C := X_C \cap V(H')$:
+%
+  \begin{enumerate}[(1)]
+    \item For each vertex $x \in X'_C$ for which $H[\{x\} \cup V(D)]$ contains an odd cycle,
+    there are at least $z$ connected components $D' \neq D$ of $H-X_C$ for which
+    $H[\{x\} \cup V(D')]$ also contains an odd cycle, and 
+    \item For each pair of distinct vertices $x,y \in X'_C$, for each parity $p \in \{0,1\}$,
+    if the graph $H[\{x,y\} \cup V(D)]$ contains an $(x,y)$-path of parity $p$,
+    then there are at least $z$ connected components $D' \neq D$ of $H-X_C$ for which
+    $H[\{x,y\} \cup V(D')]$ also contains an $(x,y)$-path of parity $p$.
+  \end{enumerate}
+%
+  Then $\oct(H) = \oct(H - V(D))$.
+\end{lemma}
+
+\begin{proof}
+Suppose $D$ satisfies these criteria.
+Assume for a contradiction that $\oct(H - V(D)) < \oct(H)$.
+% Let $H'$ be the connected component of $H$ that contains $V(D)$.
+Then $\oct(H' - V(D)) < \oct(H') \leq z$,
+where the last inequality comes from the assumption that $H$ is an order-$z$ $X_C$-certificate.
+%
+Let $X$ be an optimal OCT for $\oct(H' - V(D))$, whose size is less than $\oct(H') \leq z$.
+It follows that $H' - X$ has an odd cycle.
+Out of all odd cycles of $H' - X$,
+let $A$ be an odd cycle that minimizes the quantity $t := |V(A) \cap V(D)|$.
+Note that $t > 0$, otherwise $A$ would also be an odd cycle in $H' - V(D)$
+which contradicts $X$ being an OCT for that subgraph.
+%
+Since $X_C$ is an OCT in $H$ by the definition of $X_C$-certificate,
+the component $D$ of $H - X_C$ is bipartite.
+Hence the odd cycle $A$ is not fully contained in $V(D)$,
+but contains at least one vertex $d$ of $D$ since $t \geq 1$.
+%
+Orient the odd cycle $A$ in an arbitrary direction and let $x$ be the first vertex after $d$ on $A$ that does not belong to $V(D)$.
+Similarly, let $y$ be the first vertex before $d$ on $A$ that does not belong to $V(D)$.
+We distinguish two cases, depending on whether $x=y$.
+
+Case 1: If $x=y$.
+In this case, $A$ is an odd cycle in $H[\{x\} \cup V(D)]$.
+Since component $D$ satisfied criterion (1),
+there are at least $z$ connected components $D' \neq D$ of $H-X_C$
+for which $H[\{x\} \cup V(D')]$ contains an odd cycle.
+%
+Since $|X| < z$, at least one of these components $D^*$ does not contain any vertex of $X$.
+Then, $H[\{x\} \cup V(D^*)]$ contains an odd cycle $A'$, but we have $V(A') \cap V(D) = \emptyset$.
+This contradicts our choice of $A$ as an odd cycle minimizing $V(A) \cap V(D)$.
+
+Case 2: If $x \neq y$.
+Observe that the subpath of $C$ from $x$ to $y$ through $d$ forms an $(x,y)$-path $P$ in the graph $H[\{x,y\} \cup V(D)]$.
+%
+Let $p$ be the parity of path $P$.
+Since component $D$ satisfied criterion (2),
+there are at least $z$ connected components $D' \neq D$ of $H-X_C$
+that provide an $(x,y)$-path of parity $p$.
+%
+Since $|X| < z$, at least one of these components $D^*$ does not contain any vertex of $X$.
+Consider the closed walk $A'$ that is obtained by replacing the subpath $P$ of $A$ by
+an $(x,y)$-path $P'$ of the same parity in the graph $H[\{x,y\} \cup V(D^*)]$.
+%
+Since the replacement preserves the total parity and provides an alternative connection between
+the two vertices $x,y$ that appeared on $A$,
+it follows that $A'$ is a closed odd walk.
+Since $V(D^*) \cap X = \emptyset$, it follows that $A'$ is a closed odd walk in $H' - X$,
+which implies that $H' - X$ contains an odd cycle whose vertex set is a subset of $V(A')$.
+But note that $A'$ uses strictly fewer vertices from $V(D)$ than $A$ does,
+since vertex $d \in V(D)$ does not appear in $V(A')$.
+This contradicts our choice of $A$ as an odd cycle minimizing $|V(A) \cap V(D)|$
+and proves the claim.
+\end{proof}
+
+The following lemma states that we can bound the number of components in an $X_C$-certificate.
+This is inspired by and a variation of \cite[Lemma 4.5]{DonkersJ24}.
+
+\begin{lemma}\label{lem:num-components-certificate}
+	Let $G$ be a graph. For a set $X_C \subseteq V(G)$, let $H$ be an $X_C$-certificate of order $z$ in~$G$.
+  Then $H$ contains an $X_C$-certificate $\hat{H}$ of order $z$ in $G$
+	such that $\hat{H}-X_C$ has at most $z^2|X_C|$ components.
+\end{lemma}
+
+\begin{proof}
+  If there is a connected component $D$ of $H-X_C$ that satisfies the two criteria of \Cref{lem:redundant-component},
+  then, update $H$ to $H-V(D)$.
+  %
+  From \Cref{lem:redundant-component}, we have $\oct(H) = \oct(H-V(D))=|X_C|$,
+  and since we never remove vertices in $X_C$, $H-V(D)$ remains an \zocc.
+  %
+  We repeat this process until the criteria become unsatisfied,
+  and let $\hat{H}$ be the final graph.
+
+  Now, we count the number of components in $\hat{H}-X_C$.
+  %
+  For each vertex $x \in X_C$, there are at most $z$ components in $\hat{H}-X_C$ that violates criterion (1)
+  because otherwise, one of those components will satisfy criterion (1).
+  This results in that there exist at most $z \cdot |X_C|$ components in $\hat{H}-X_C$ violating criterion (1).
+
+  For each component $H'$ of $H$, for each distinct vertex pair $x,y \in X_C \cap H'$, 
+  and for each parity $p \in \{0,1\}$, there are at most $z$ components in $\hat{H}-X_C$ that violates criterion (2)
+  because otherwise, one of those components will satisfy criterion (2).
+  This results in that there exist at most
+  $\sum_{H'} \binom{|X_C \cap V(H')|}{2} \cdot 2z
+  = z \cdot \sum_{H'} (|H_C \cap V(H')|)(|H_C \cap V(H')|-1) \leq z\cdot (z-1)|X_C|$
+  components in $\hat{H}-X_C$ violating criterion (2).
+
+  Hence, the number of components in $\hat{H}-X_C$ is upper-bounded by
+  $z \cdot |X_C| + z \cdot (z-1) |X_C|=z^2|X_C|$, as desired.
+\end{proof}
+
+Lastly, we restate and prove \Cref{lem:num_components}.
+
+\restatenumcomponents*
+
+\begin{proof}
+Since $(A_B,A_C,A_R)$ is a \zocc, the graph $G[A_B \cup A_C]$ contains an $A_C$-certificate $H$ of order $z$.
+From \Cref{lem:num-components-certificate} we know that $H$ contains an $A_C$-certificate $\hat{H}$
+of order $z$ such that $\hat{H}-A_C$ has at most $z^2|A_C|$ components.
+
+Let $A_B'$ be the union of the vertices in the components $B$ in $G[A_B]$ such that
+$B$ includes at least one vertex from $\hat{H}$.
+By definition, $(A_B',A_C,A_R \cup A_B \setminus A_B')$ is a \zocc such that
+$G[A_B']$ has at most $z^2|A_C|$ components.
+\end{proof}
+

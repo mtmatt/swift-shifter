@@ -1,0 +1,215 @@
+\subsection{Dual symmetry}
+\label{sec:dual_symmetries}
+
+There is also a conserved $[d-2,1]$ bi-form current given by
+\begin{equation}\label{eq:Jtilde}
+    \tilde{J}(h) = \star_L \Gamma(h)
+\end{equation}
+which satisfies
+\begin{equation}\label{eq:Jtilde_conserved}
+    \dd^\dag_L \tilde{J}(h) = 0
+\end{equation}
+as a result of $\dd_L \Gamma(h) = 0$, which follows from \eqref{eq:Gamma}. We note that this current is not right-conserved, $\dd^\dag_R \tilde{J}(h) \neq 0$, and is also not irreducible under $GL(d,\mathbb{R})$. This current is associated with a $[d-3,1]$ bi-form symmetry. 
+The current $\tilde{J}(h)$ and its derivatives can be contracted with suitable tensors to give topological operators as discussed earlier for $J(h)$; the topological operators constructed from $\tilde{J}(h)$ will be discussed elsewhere.
+The current $\tilde{J}(h)$ is not gauge-invariant and transforms by
+\begin{equation}
+    \delta \tilde{J}(h)\indices{_{\mu_1\dots\mu_{d-2}|}^\nu} = \frac{1}{2} \epsilon_{\mu_1\dots\mu_{d-2}\alpha\beta} \partial^\nu \partial^\alpha \xi^\beta
+\end{equation}
+under a linearised diffeomorphism \eqref{eq:linear_diffeo}.
+
+The symmetry associated with the current \eqref{eq:Jtilde} can be gauged by coupling $\tilde{J}(h)$ to a rank-$[d-2,1]$ background tensor gauge field $\gaugefieldtilde$ which transforms as
+\begin{equation}\label{eq:Atilde_transf}
+    \gaugefieldtilde \to \gaugefieldtilde + \dd_L \tilde{\alpha}
+\end{equation}
+with $\tilde{\alpha}$ a $[d-3,1]$ parameter.
+The gauging is achieved by adding this coupling to the  action \eqref{eq:S_FP_Gamma} to give\footnote{The prefactor of the $\tilde{J}\gaugefieldtilde$ term is chosen for convenience and could be absorbed into a rescaling of $\tilde{J}(h)$.}
+\begin{align}
+\begin{split}\label{eq:S_magnetic_gauged}
+    S_{\text{FP}}^{\text{m}} &= -\frac{3}{2} \int_{\mathcal{M}} \dd[d]{x} \Gamma(h)\indices{_{\mu\rho|}^{[\mu}} \Gamma(h)\indices{^{\rho\alpha]}_{|\alpha}} -\frac{2}{d!} \int_{\mathcal{M}} \dd[d]{x} \tilde{J}(h)_{\mu_1\dots\mu_{d-2}|\nu} \gaugefieldtilde^{\mu_1\dots\mu_{d-2}|\nu} \\
+    &= -\frac{3}{2} \int_{\mathcal{M}} \dd[d]{x} \Gamma(h)\indices{_{\mu\rho|}^{[\mu}} \Gamma(h)\indices{^{\rho\alpha]}_{|\alpha}} + \int_{\mathcal{M}} \Gamma(h) \,\wedgedot\, \gaugefieldtilde
+\end{split}
+\end{align}
+which is then invariant under \eqref{eq:Atilde_transf}.
+In the last line, we are using the notation introduced in \eqref{eq:wedgedot}.
+Note that the gauging of this symmetry does not involve a transformation of the graviton, just as the magnetic $(d-3)$-form symmetry of Maxwell theory did not involve a transformation of the photon $A$.
+As in section~\ref{sec:graviton_shifts}, we can construct topological operators from this $[d-2,1]$ bi-form current $\tilde{J}$ by contracting with other tensors which satisfy some differential condition.
+
+\section{The dual graviton theory and its symmetries}
+\label{sec:shifts_for_dual}
+
+\subsection{Shift symmetry for the dual graviton}
+
+As we have seen, Maxwell theory can be formulated in terms of the photon $A$ or the dual photon $\tilde A$ and either formulation has a shift symmetry. The current $J_e \sim F$ is the conserved Noether current associated with the shift symmetry of $A$, while $J_m \sim \star F$ is the Noether current for the shift symmetry of $\tilde A$ in the dual formulation.
+Linearised gravity can be formulated in terms of the graviton $h$ as above, but also has a dual formulation in terms of a dual graviton $D$ \cite{Hull2000, Hull2001DualityFields}. See \cite{HullYetAppear} for a discussion of the dual theory and further references.
+The Noether current for the shift symmetry for the graviton is $J(h)$. In this section, we will investigate the shift symmetry for the dual graviton in the dual formulation and then in the following section we will relate the conserved current for this to $\tilde{J}$.
+
+The dual formulation of a free spin-two field is in terms of the dual graviton, which is an irreducible $[n,1]$ tensor gauge field $D$, where $n\equiv d-3$. Its gauge transformations are
+\begin{equation}\label{Dgauge}
+    D\to D+ \dd_L \zeta + \mathcal{Y}_{[n,1]} \left(\dd_R \phi\right)
+\end{equation}
+where $\zeta$ is an $[n-1,1]$ bi-form and $\phi$ is an $n$-form. Explicitly, 
+\begin{equation}
+    D_{\mu_1\dots\mu_n|\nu} \to D_{\mu_1\dots\mu_n|\nu} + \partial_{[\mu_1} \zeta_{\mu_2\dots\mu_n]|\nu} + \partial_\nu \phi_{\mu_1\dots\mu_n} -  \partial_{[\nu} \phi_{\mu_1\dots\mu_n]}
+\end{equation}
+There are two distinct connections which can be constructed from $D$ \cite{deMedeiros:2003osq}. The first is an irreducible $[n+1,1]$ bi-form
+\begin{equation}\label{eq:Gammatilde}
+    \tilde{\Gamma}(D) = \dd_L D
+\end{equation}
+while the second is a reducible $[n,2]$ bi-form
+\begin{equation}
+    \hat{\Gamma}(D) = \dd_R D
+\end{equation}
+We note that, while $\tilde{\Gamma}$ transforms in an irreducible representation of $GL(d,\mathbb{R})$, $\hat{\Gamma}$ does not. Therefore, while it has the index symmetries $\hat{\Gamma}(D)_{\mu_1\dots\mu_n|\nu_1\nu_2} = \hat{\Gamma}(D)_{[\mu_1\dots\mu_n]|[\nu_1\nu_2]}$, it is not true that $\hat{\Gamma}(D)_{[\mu_1\dots\mu_n|\nu_1]\nu_2}=0$ in general.
+
+The gauge-invariant curvature is an irreducible $[n+1,2]$ bi-form which can be written
+\begin{equation}
+    S(D) = \dd_R \tilde{\Gamma}(D) = \dd_L \hat{\Gamma}(D)
+\end{equation}
+The action \cite{Curtright:1980yk} for a tensor gauge field in this representation can be written as \cite{Medeiros2003ExoticDuality}
+\begin{equation}\label{eq:S_dual}
+    S_{\text{dual}} = \frac{1}{2} \int_{\M} \dd[d]{x} D_{\mu_1\dots\mu_n|\nu} E(D)^{\mu_1\dots\mu_n|\nu}
+\end{equation}
+where 
+\begin{equation}
+    E(D)\indices{_{\mu_1\dots\mu_n|}^\nu} = \delta_{\mu_1\dots\mu_n\alpha\beta}^{\rho_1\dots\rho_{n+1}\nu} S(D)\indices{_{\rho_1\dots\rho_{n+1}|}^{\alpha\beta}}
+\end{equation}
+is the Einstein tensor for the dual graviton, which is an irreducible $[n,1]$ bi-form. Varying the action with respect to $D$ gives the free field equation
+\begin{equation}
+    E(D)_{\mu_1\dots\mu_n|\nu} = 0
+\end{equation}
+
+We now study the shift symmetry of the dual graviton theory.
+Consider the transformation
+\begin{equation}\label{eq:D_shift}
+    D_{\mu_1\dots\mu_n|\nu} \to D_{\mu_1\dots\mu_n|\nu} + \tilde{\alpha}_{\mu_1\dots\mu_n|\nu}
+\end{equation}
+where $\tilde{\alpha}$ is an irreducible $[n,1]$ bi-form. Under this variation, the action \eqref{eq:S_dual} changes by
+\begin{equation}
+    \delta S_{\text{dual}} = \int_{\mathcal{M}} \dd[d]{x} D_{\mu_1\dots\mu_n|\nu} E(\tilde{\alpha})^{\mu_1\dots\mu_n|\nu}
+\end{equation}
+so that \eqref{eq:D_shift} is a global symmetry provided that $E(\tilde{\alpha})=0$.\footnote{The action \eqref{eq:S_dual} is the most relevant term in the effective theory of a $[n,1]$-tensor gauge field on Minkowski space which could, in general, have higher-derivative terms involving the curvature $S(D)$. The shift \eqref{eq:D_shift} would then  remain a symmetry provided that we impose the stronger constraint $S(\tilde{\alpha}) = \dd_L \dd_R \tilde{\alpha} = 0$. If we consider only the leading term \eqref{eq:S_dual} in the EFT expansion, we need only require that $E(\tilde{\alpha})=0$.}
+The variation of the action under a transformation with an unconstrained parameter $\tilde{\alpha}$ can be written as $\dd_L\tilde \alpha$ contracted with an irreducible $[n+1,1]$ bi-form $\tilde{J}(D)$
+which is given by
+\begin{equation}\label{eq:Jtilde_D}
+    \tilde{J}(D)\indices{_{\mu_1\dots\mu_{n+1}|}^\nu} = \frac{n+1}{2} \delta^\nu_{[\beta} \tilde{\Gamma}(D)\indices{_{\mu_1\dots\mu_{n+1}]|}^\beta}
+\end{equation}
+with a normalisation chosen for later convenience.
+This is then a Noether current for the $\tilde \alpha$ global symmetry.
+(As usual, this is defined only up to the addition of a co-exact term of the form $\dd_L^\dagger \tilde{H}$ for some $[n+2,1]$ bi-form $\tilde{H}$.)
+We then find that $\dd_L^\dag \tilde{J}(D) \propto E(D)$ and so on-shell
+(i.e.\ when $E(D)=0$) $\tilde{J}(D)$ satisfies the left-conservation law
+$\dd_L^\dag \tilde{J}(D)=0$.
+
+There is a gauge-invariant codimension-1 topological operator $\tilde{Q}(\tilde{\alpha})$ which generates a shift of $D$ by a given $\tilde{\alpha}$ in the quantum theory. The construction is analogous to the one in section~\ref{sec:graviton_shifts} and the $\tilde{Q}(\tilde{\alpha})$ also satisfy a centrally-extended algebra. For example, in $d=4$, this is the same algebra as for the graviton theory found in \eqref{eq:central_ext}.
+
+The shift symmetry \eqref{eq:D_shift} of the dual graviton theory can be gauged by introducing a background (irreducible) $[n+1,1]$ tensor gauge field $\gaugefieldtilde$ which transforms as in eq.~\eqref{eq:Atilde_transf}.
+The combination 
+\begin{equation}
+    \tilde{\ggamma}(D) = \tilde{\Gamma}(D) - \gaugefieldtilde
+\end{equation}
+is invariant under the combined transformations \eqref{eq:D_shift} and \eqref{eq:Atilde_transf}. We note that the action \eqref{eq:S_dual} can be written as
+\begin{equation}\label{eq:S_dual_rewrite_tilde}
+    S_{\text{dual}} = -\frac{1}{2} \int_{\mathcal{M}} \dd[d]{x} \tilde{\Gamma}(D)\indices{^{\mu_1\dots\mu_{n+1}|}_{[\mu_1}} \tilde{\Gamma}(D)\indices{_{\mu_2\dots\mu_{n+1}\alpha]|}^\alpha}
+\end{equation}
+by integrating by parts. Hence, the shift symmetry can be gauged by replacing $\tilde{\Gamma}(D)$ with $\tilde{\ggamma}(D)$, giving
+\begin{equation}
+    S^{\text{e}}_{\text{dual}} = -\frac{1}{2} \int_{\mathcal{M}} \dd[d]{x} \tilde{\ggamma}(D)\indices{^{\mu_1\dots\mu_{n+1}|}_{[\mu_1}} \tilde{\ggamma}(D)\indices{_{\mu_2\dots\mu_{n+1}\alpha]|}^\alpha}
+\end{equation}
+This action is also invariant under the gauge transformations for $D$ in \eqref{Dgauge} provided the background gauge field $\gaugefieldtilde$ transforms as 
+\begin{equation}\label{Ctgauge}
+    \gaugefieldtilde\to \gaugefieldtilde + \dd_L  \mathcal{Y}_{[n,1]} \left(\dd_R \phi\right)
+\end{equation}
+
+Alternatively, the variation of the action under a transformation with an unconstrained parameter $\tilde{\alpha}$ can be written as $\dd_R\tilde{\alpha}$ contracted with a (reducible) $[n,2]$ bi-form $\hat{J}(D)$ which is then a further Noether current associated with the $\tilde{\alpha}$ global symmetry and is given by 
+\begin{equation}\label{eq:Jhat}
+    \hat{J}(D)\indices{_{\mu_1\dots\mu_n|}^{\nu_1\nu_2}} = \delta^{\nu_1\nu_2}_{[\alpha\beta} \hat{\Gamma}(D)\indices{_{\mu_1\dots\mu_n]|}^{\alpha\beta}}
+\end{equation}
+This satisfies $\dd_R^\dag \hat{J}(D) \propto E(D)$ and so 
+obeys the right-conservation law $\dd_R^\dag \hat{J}(D)=0$ on-shell.
+
+Taking $\hat{J}(D)$ in eq.~\eqref{eq:Jhat} as the Noether current provides another way to gauge the shift symmetry of the dual graviton. The action \eqref{eq:S_dual} can be rewritten as
+\begin{equation}\label{eq:S_dual_rewrite_hat}
+    S_{\text{dual}} = \frac{(-1)^n}{2} \int_{\mathcal{M}} \dd[d]{x} \hat{\Gamma}(D)\indices{^{\mu_1\dots\mu_n}_{|[\mu_1\mu_2}} \hat{\Gamma}(D)\indices{_{\mu_3\dots\mu_n \alpha\beta]|}^{\alpha\beta}}
+\end{equation}
+Now, the combination
+\begin{equation}
+    \hat{\ggamma}(D) = \hat{\Gamma}(D) - \gaugefieldhat
+\end{equation}
+is invariant under the shift \eqref{eq:D_shift} where $\gaugefieldhat$ is a background (reducible) $[n,2]$ tensor gauge field which transforms as
+\begin{equation}
+    \gaugefieldhat \to \gaugefieldhat + \dd_R \tilde{\alpha}
+\end{equation}
+under the symmetry.\footnote{$\gaugefieldhat$ is in the same $GL(d,\mathbb{R})$ representation as $\hat{\ggamma}$; that is, it has index symmetries $\gaugefieldhat_{\mu_1\dots\mu_n|\nu_1\nu_2} = \gaugefieldhat_{[\mu_1\dots\mu_n]|[\nu_1\nu_2]}$ but is not irreducible.} Then the gauging is simply achieved by replacing $\hat{\Gamma}(D)$ with $\hat{\ggamma}(D)$ in eq.~\eqref{eq:S_dual_rewrite_hat}, giving
+\begin{equation}
+    S_{\text{dual}}^{\text{e}\,\prime} = \frac{(-1)^n}{2} \int_{\mathcal{M}} \dd[d]{x} \hat{\ggamma}(D)\indices{^{\mu_1\dots\mu_n}_{|[\mu_1\mu_2}} \hat{\ggamma}(D)\indices{_{\mu_3\dots\mu_n \alpha\beta]|}^{\alpha\beta}}
+\end{equation}
+This action is invariant under the gauge transformations \eqref{Dgauge} provided the gauge field transforms as 
+\begin{equation}
+    \gaugefieldhat\to \gaugefieldhat + \dd_R  \left( \dd_L \zeta + \mathcal{Y}_{[n,1]} \left(\dd_R \phi\right) \right)
+\end{equation}
+
+\subsection{Dual symmetry for the dual graviton}
+
+The graviton theory has an identically conserved current \eqref{eq:Jtilde} which was coupled to a gauge field $\gaugefieldtilde$ in section~\ref{sec:dual_symmetries}.
+In the same way, the dual graviton theory has
+a conserved $[2,1]$ bi-form current
+\begin{equation}\label{eq:JD}
+     {J}(D) = \star_L \tilde \Gamma(D)
+\end{equation}
+which satisfies
+\begin{equation}
+    \dd^\dag_L J(D) = 0
+\end{equation}
+as a result of $\dd_L \tilde\Gamma(D) = 0$.
+
+This Noether current can be coupled to a background irreducible [2,1] tensor gauge field $\gaugefield$ which transforms as in \eqref{eq:A_gauge_transf}. The gauging is implemented by coupling $J$ to the gauge field,
+\begin{align}
+\begin{split}
+    S_{\text{dual}}^{\text{m}} &= -\frac{1}{2} \int_{\mathcal{M}} \dd[d]{x} \tilde{\Gamma}(D)\indices{^{\mu_1\dots\mu_{n+1}|}_{[\mu_1}} \tilde{\Gamma}(D)\indices{_{\mu_2\dots\mu_{n+1}\alpha]|}^\alpha} - \frac{1}{d(d-1)} \int_{\mathcal{M}} \dd[d]{x} J(D)_{\mu\nu|\rho}\gaugefield^{\mu\nu|\rho} \\
+    &= -\frac{1}{2} \int_{\mathcal{M}} \dd[d]{x} \tilde{\Gamma}(D)\indices{^{\mu_1\dots\mu_{n+1}|}_{[\mu_1}} \tilde{\Gamma}(D)\indices{_{\mu_2\dots\mu_{n+1}\alpha]|}^\alpha} + \int_{\mathcal{M}} \tilde{\Gamma}(D) \,\wedgedot\, \gaugefield
+\end{split}
+\end{align}
+This is invariant under the gauge transformation \eqref{eq:A_gauge_transf} with $D$ invariant.
+
+\section{Relation between the graviton and dual graviton theories}
+\label{sec:relating_dual_theories}
+
+For Maxwell theory, the field strength $F$ can be written locally in terms of the potential $A$ as $F=F(A)$ with $F(A)= \dd A$ or in terms of the dual potential $\tilde A$ as $F=\star \tilde F(\tilde A)$ where $\tilde F(\tilde A)= \dd\tilde A$. The two formulations are then related by
+\begin{equation}
+     \tilde F(\tilde A) = \star F(A)
+\end{equation}
+The situation is similar for linearised gravity. The $[2,2]$ bi-form field strength $R$ can be written as $R=R(h)$ where $R(h)=-2\dd_L \dd_R h$ or as $R=\star_L S(D)$ where $S(D)=\dd_L \dd_R D$. This then gives the duality relation \cite{Hull2001DualityFields}
+\begin{equation}
+    S(D) = \star_L R(h)
+\end{equation}
+
+We can fix a gauge where not only the curvatures are related in this way, but the connections $\Gamma(h)$ and $\tilde{\Gamma}(D)$ are also dual \cite{HullYetAppear}. In terms of the graviton description, the relevant gauge is one in which
+\begin{equation}\label{eq:h_duality_gauge}
+    \Gamma(h)\indices{_{\mu\nu|}^\nu} = 0
+\end{equation}
+while in the dual graviton description we must impose
+\begin{equation}\label{eq:D_duality_gauge}
+    \tilde{\Gamma}(D)\indices{_{\mu_1\dots\mu_n\nu|}^\nu} = 0
+\end{equation}
+With these gauge choices, we can consistently impose the duality at the level of the connections:
+\begin{equation}\label{eq:connection_duality}
+    \Gamma(h) = -\frac{1}{2}\star_L \tilde{\Gamma}(D)
+\end{equation}
+(Note there is no such relation for $\hat{\Gamma}(D)$.)
+
+With the gauge choice \eqref{eq:D_duality_gauge}, the current $\tilde{J}(D)$ in \eqref{eq:Jtilde_D} simply becomes
+\begin{equation}
+    \tilde{J}(D) = \frac{1}{2} \tilde{\Gamma}(D)
+\end{equation}
+which is the same current as was introduced in eq.~\eqref{eq:Jtilde} once we impose the duality \eqref{eq:connection_duality}, i.e.
+\begin{equation}
+    \tilde{J}(D) = \tilde{J}(h)
+\end{equation}
+Therefore, the current $\tilde{J}(h)$ in the original graviton formulation of the theory can be interpreted as coming from a shift symmetry in the dual field description. This is precisely the same structure as was seen in Maxwell theory in section~\ref{sec:maxwell}.
+
+We have seen that the shift symmetry of the dual graviton \eqref{eq:D_shift} is related to the identically conserved current \eqref{eq:Jtilde} in the original graviton theory via duality.
+Similarly, the current $J(h)$ associated with the shift symmetry of the graviton \eqref{eq:graviton_shift} is an identically conserved current in the dual theory. Explicitly, in the gauge \eqref{eq:h_duality_gauge}, we find $J(h) = \Gamma(h)$ and so $J$ can be written in terms of the dual graviton as
+\begin{equation}
+    J(h) = \Gamma(h) = - \frac{1}{2} \star_L \tilde{\Gamma}(D) \equiv J(D)
+\end{equation}
+where we have used the duality \eqref{eq:connection_duality} in the second equality. 

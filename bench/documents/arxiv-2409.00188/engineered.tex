@@ -1,0 +1,306 @@
+\section{Engineered Complete Intersections}\label{sec:ECI}
+In this final section we formulate and prove the most concrete version of our condition, \autoref{thm:ECI}, it is given in \autoref{ssec:ECI_condition}. In \autoref{ssec:ECI_simpler} we give two simpler versions of \autoref{thm:ECI}. In \autoref{ssec:ECI_critical} we give an application of our method by studying some classes of critical loci and Thom-Bordmann strata. Section \ref{ssec:ECI_other} contains two important remarks on how one could use \autoref{thm:ECI}. Finally, in \autoref{ssec:ECI_proof} we prove \autoref{thm:ECI}.
+
+\subsection{Irreducibility Condition}\label{ssec:ECI_condition}
+We use the notation from \autoref{sssec:prelim_engineered}, so we have $c^i_1, \dots, c^i_{d_i} \in A_i,\ 1 \le i \le m$ and we study the irreducibility of the variety defined in $T^n$ by the system $c^i_j * f_i = 0$ for the general $f_1 \in k^{A_1}, \dots, f_m \in k^{A_m}$.
+
+\begin{notation}
+    For $c \in \Gamma(T^n, \mathcal O)$ and $\chi \in M$ we denote by $c[\chi] \in k$ the unique element of the field such that $c * \chi = c[\chi] \cdot \chi$, i.e. $c[\chi]$ is the coefficient of $c$ with respect to $\chi$.
+\end{notation}
+
+\begin{theorem}\label{thm:ECI}
+    Let $A \subset M$ be a finite subset, $c_1, \dots, c_d \in k^A$ be polynomials. Consider the map $\mathbf c: A \to k^d$, $\chi \mapsto (c_1[\chi], \dots, c_d [\chi])$. For a complete flag
+    \[
+    \mathcal V = ~(0 = ~V_0 \subsetneq ~V_1 \subsetneq ~\dots \subsetneq ~V_d = ~k^d)
+    \]
+    in $k^d$ we define the sets\footnote{in particular, $\Delta_1 (\mathcal V) = \{ \chi \in A\ |\ \mathbf c(\chi) \in V_1\text{ and } \mathbf c(\chi) \ne 0\}$ } $\Delta_i (\mathcal V) \defeq \mathbf c^{-1}(V_i \backslash V_{i - 1})$, $1 \le i \le d$. 
+
+    If there is a complete flag $\mathcal V$ in $k^d$ such that the sets $\Delta_1(\mathcal V), \dots, \Delta_d(\mathcal V)$ satisfy the Khovanskii condition\footnote{\autoref{def:khovanskii_condition}}, then for the general polynomial $f \in k^A$ the variety cut out in $T^n$ by the system $c_1 * f = \cdots = c_d * f = 0$ is geometrically irreducible.
+\end{theorem}
+
+\begin{corollary}
+    Let $A_1, \dots, A_m \subset M$ be finite subsets, $c^i_1, \dots, c^i_{d_i} \in k^{A_i}$ be polynomials. Consider the maps $\mathbf c^i: A_i \to k^{d_i}$, $\chi \mapsto (c^i_1[\chi], \dots, c^i_{d_i} [\chi])$. For a complete flag $\mathcal V^i =~ (0 = V_0^i \subsetneq V_1^i \subsetneq \dots \subsetneq V^i_{d_i} = k^{d_i})$ in $k^{d_i}$ we define the sets $\Delta_j (\mathcal V^i) \defeq (\mathbf c^i)^{-1}(V^i_j \backslash V^i_{j - 1})$, $1 \le j \le d_i$. 
+    
+    If there are complete flags $\mathcal V^1, \dots, \mathcal V^m$ such that the sets $\{ \Delta_j(\mathcal V^i) \}^{1 \le i \le m}_{1 \le j \le d_i}$ satisfy the Khovanskii condition, then for the general polynomials $\mathbf f \in k^{A_1} \times \cdots \times k^{A_m}$ the system $c_1^1 * f_1 = \cdots = c^1_{d_1} * f_1 = \cdots = c^m_1 * f_m = \cdots = c^m_{d_m} * f_m = 0$ defines a geometrically irreducible variety in $T^n$.
+\end{corollary}
+\begin{proof}
+    We follow \autoref{rem:prelim_engin_m_ECI_is_ECI}. We can shift $A_i$ by multiplying the equations $c^i_j * f_i$ by characters from $M$ so that $A_1, \dots, A_m$ are disjoint\footnote{we then replace with $A_i$ with $\chi_i \cdot A_i$ and $c_i$ with $\chi_i c_i$}. Put $A \defeq A_1 \sqcup \dots \sqcup A_m$. Denote by $\hat c^i_j$ the images of $c^i_j$ with respect to the natural embeddings $k^{A_i} \xhookrightarrow{} k^A$. Then we can define $\mathbf c: A \to k^{d_1 + \dots + d_m}$, $\chi \mapsto (\hat c^i_j [\chi])^{1 \le i \le m}_{1 \le j \le d_i}$. 
+    
+    We have that $k^{d_1 + \dots + d_m} = k^{d_1} \oplus \cdots \oplus k^{d_m}$. In particular, the complete flags $\mathcal V^1, \dots, \mathcal V^m$ in $k^{d_1}, \dots, k^{d_m}$ give the flag $\mathcal V \defeq (V_0 \defeq 0 \subsetneq V_1 \subsetneq \dots \subsetneq V_{d_1 + \dots + d_m} )$ in $k^{d_1 + \dots + d_m}$, where $V_{d_1 + \cdots + d_r + i} = V^1_{d_1} \oplus \cdots \oplus V^r_{d_r} \oplus V^{r + 1}_i$ for $1 \le i \le d_{r + 1}$. Moreover, the subsets $\Delta_q (\mathcal V) = \mathbf c^{-1} (V_q \backslash V_{q - 1})$ satisfy the Khovanskii condition if and only if the collection $\{ \Delta_j(\mathcal V^i)\}^{1 \le i \le l}_{1 \le j \le d_i}$ does as 
+    \begin{multline*}
+    \Delta_{d_1 + \dots + d_r + i}(\mathcal V) = \mathbf c^{-1} (V_{d_1 + \dots + d_r + i}) \backslash \mathbf c^{-1} (V_{d_1 + \dots + d_r + i - 1}) = \\
+    = \left((\mathbf c^{r + 1})^{-1} (V^{r + 1}_i) \bigcup_{j = 1}^r (\mathbf c^j)^{-1} (V^j_{d_j}) \right) \backslash \left((\mathbf c^{r + 1})^{-1} (V^{r + 1}_{i - 1}) \bigcup_{j = 1}^r (\mathbf c^j)^{-1} (V^j_{d_j}) \right) = \\
+    = (\mathbf c^{r + 1})^{-1}(V^{r + 1}_i) \backslash (\mathbf c^{r + 1})^{-1} (V^{r + 1}_{i - 1}) = \Delta_i(\mathcal V^{r + 1})
+    \end{multline*}
+    for $1 \le i \le d_{r + 1}$ and $0 \le r < m$.
+    
+    Therefore we reduced the problem to the case when $m = 1$ and now instead of $A_1, \dots, A_m$ we have one finite set of monomials $A$; instead of polynomials $c^i_j \in k^{A_i}$ we have the polynomials\footnote{$c_{d_1 + \dots + d_r + i} = c^{r + 1}_i$ for $1 \le i \le d_{r + 1}$} $c_1, \dots, c_d \in k^A$, where $d = d_1 + \dots + d_m$; finally, instead of the maps $\mathbf c^1, \dots, \mathbf c^m$ and the complete flags $\mathcal V^1, \dots, \mathcal V^m$ we have one map $\mathbf c: A \to k^d$ and one complete flag $\mathcal V$. Thus, the above theorem applies.
+\end{proof}
+
+\subsection{Some Reductions}\label{ssec:ECI_simpler}
+In this section we replace the complete flags in the condition \autoref{thm:ECI} with individual fibres and analyse them instead.
+
+\begin{remark}
+    Note that if $\Delta_1, \dots, \Delta_d \subset M$ are subsets such that $\dim \Delta_i > d$ for all $i$, then automatically $\Delta_1, \dots, \Delta_d$ satisfy the Khovanskii condition.
+\end{remark}
+
+\begin{claim}
+    As above, let $A_1, \dots, A_l \subset M$ be finite subsets, $c^i_1, \dots, c^i_{d_i} \in k^{A_i}$ be polynomials. Consider $\pi_i \defeq \mathbb P(\mathbf c^i): A \to \mathbb P(k^{d_i})$, $\chi \mapsto \left[c^i_1[\chi]: \cdots : c^i_{d_i}[\chi]\right]$. If there are points $p^i_1, \dots, p^i_{d_i} \in \mathbb P(k^{d_i})$ in general position such that all the fibres $\{ \pi_i^{-1} (p^i_j) \}^{1 \le i \le m}_{1 \le j \le d_i}$ satisfy the Khovanskii condition, then the system $c^i_j * f = 0$ defines a geometrically irreducible variety for the general $\mathbf f \in k^{A_\bullet}$.
+\end{claim}
+
+By \autoref{rem:prelim_engin_m_ECI_is_ECI} it is sufficient to prove the above claim only for $m = 1$, so reformulate the above claim in this case and prove only that.
+
+\begin{claim}\label{claim:ECI_simpler}
+    Let $A \subset M$ and $c_1, \dots, c_d \in k^A$ be polynomials. Consider\footnote{the locus where $\pi$ is undefined, i.e. $\chi \in A$ such that $c_i * \chi = 0$ for all $i$ does not affect the system, so we may assume that it is empty} $\pi \defeq \mathbb P(\mathbf c): A \to \mathbb P(k^d)$, $\chi \mapsto \left[ c_1[\chi] : \cdots : c_d[\chi] \right]$. If there are points $p_1, \dots, p_d \in \mathbb P(k^d)$ in general position\footnote{i.e. no $s$ points are contained in a $s - 2$ projective subspace for any $s > 0$.} such that the fibres $\pi^{-1}(p_1), \dots, \pi^{-1}(p_d)$ satisfy the Khovanskii condition, then the system $c_1 * f = \cdots = c_d * f = 0$ defines a geometrically irreducible variety for the general $f \in k^A$.
+\end{claim}
+\begin{proof}
+    Denote by $l_i \subset k^d$ the one-dimensional subspaces corresponding to $p_i \in \mathbb P(k^d)$. Define the subspaces $V_i \defeq l_1 + \cdots + l_d$. Since $p_1, \dots, p_d$ are in general position, $\dim V_i = i$, so $V_1 \subset V_2 \subset \cdots \subset V_d$ is a complete flag. Clearly we have the inclusions $\pi^{-1} (p_i) = ~\mathbf c^{-1} (l_i) \subset \mathbf c^{-1} (V_i \backslash V_{i - 1})$, so $\mathbf c^{-1} (V_i \backslash V_{i - 1})$ satisfy the Khovanskii condition.
+\end{proof}
+
+
+\begin{corollary}\label{cor:ECI_simpler_poly}
+    Let $A \subset M$ be a subset, $l : A \to k$ be a function, and $c_i \in k^A$ be polynomials such that $c_i[\chi] = p_i(l(\chi))\ \ \forall \chi \in A$, where $p_i$ is a polynomial of degree $i - 1$. Assume that there are at least $d$ distinct values $v_1, \dots, v_d \in k$ such that the fibres $\phi^{-1}(v_1), \dots, \phi^{-1}(v_d)$ satisfy the Khovanskii condition.
+    Then $c_1 * f = \dots = c_d * f = 0$ defines a geometrically irreducible variety in $T^n$ for the general $f \in k^A$.
+\end{corollary}
+\begin{proof}
+    Without loss of generality $A = \Delta_1 \sqcup \Delta_2 \sqcup \cdots \sqcup \Delta_d$. The polynomials $p_1, \dots, p_d$ by definition form a basis of polynomials in one variable of degree $\le d$. Hence, after applying a linear invertible operation on the system $c_1 * f = \cdots = c_d * f = 0$ we could assume that $p_i(x) = x^{i - 1}$. Then $\pi : A \to \mathbb P(k^d)$ takes form $\chi \mapsto [1: \phi(\chi) : \phi(\chi)^2 : \cdots : \phi(\chi)^{d - 1}]$. Since the image of $\pi$ lies on the Veronese curve of degree $d - 1$, any $d$ points from $\pi(\Delta_1 \cup \cdots \cup \Delta_d)$ are in general position. Hence, if there are $d$ distinct fibres that satisfy the Khovanskii condition, then their images are in general position and \autoref{claim:ECI_simpler} applies.
+\end{proof}
+
+\begin{remark}
+    Everywhere above instead of analysing fibres we could take their subsets that satisfy the Khovanskii condition. It could make great difference e.g. when using \autoref{cor:ECI_simpler_poly}: in fact, we do not need $c_i$ to exhibit polynomial behavior on the whole support set $A$, but only on some sufficiently big subsets of fibres of $\phi$.
+\end{remark}
+
+\begin{remark}\label{rem:ECI_simpler_unsimpler}
+    Everywhere above we could replace the last point $p_d$ (or the fibre $\phi^{-1}(v_d)$ in \autoref{cor:ECI_simpler_poly}) with the complement of $\{ p_1, \dots, p_{d - 1} \}$ (or the pre-image of the complement of $\{ v_1, \dots, v_{d - 1} \}$) given that the complement is not contained in the span of $p_1, \dots, p_d$ (no additional assumption is needed in \autoref{cor:ECI_simpler_poly}). The proofs will go exactly the same except that in the proof of \autoref{claim:ECI_simpler} we will replace $l_d$ with the whole space $k^d$.
+\end{remark}
+
+\subsection{Applying \autoref{thm:ECI}}\label{ssec:ECI_other}
+\subsubsection{Verifying combinatorial condition: Exhaustive search}
+In this subsection we give an explicit algorithm that allows one to use our sufficient condition \autoref{thm:ECI} to the full extent. This algorithm may be difficult to use manually, but it is perfectly possible to run a computer program for any specific support set $A$ and polynomials $c_1, \dots, c_d \in k^A$ to determine whether the conditions of \autoref{thm:ECI} are satisfied (and in that case for the general $f \in k^A$ the system $c_1 * f = \cdots = c_d * f = 0$ defines a geometrically irreducible variety.).
+\begin{enumerate}
+    \setcounter{enumi}{-1}
+    \item We are given a finite support set $A \subset M$ and polynomials $c_1, \dots, c_d \in k^A$. By \autoref{rem:prelim_engin_m_ECI_is_ECI} our algorithm also applies to the general case with multiple support sets.
+    
+    \item Choose an order $\prec$ on $A$. Let $A = \{ \chi_1, \dots, \chi_m \}$ such that $\chi_1 \prec \dots \prec \chi_m$.
+
+    \item Define $s_i \defeq \min \{ s\ |\ \dim \langle \mathbf c[\chi_1], \dots, \mathbf c[\chi_s] \rangle = i \}$. Since $c_1, \dots, c_d$ are linearly independent we can find such $s_1, \dots, s_d$. Define the complete flag $\mathcal V$:
+    \[
+    \mathcal V \defeq (V_1 \subset \cdots \subset V_d), \quad V_i \defeq \langle \mathbf c[\chi_1], \dots, \mathbf c[\chi_{s_i}] \rangle.
+    \]
+    
+    \item If the flag $\mathcal V$ satisfies the conditions of \autoref{thm:ECI} (i.e. $\mathbf c^{-1} (V_i \backslash V_{i - 1})$ satisfy the Khovasnkii condition), then we are done: for the general $f \in k^A$ the system $c_1 * f = \cdots = c * f = 0$ defines a geometrically irreducible variety. If the flag $\mathcal V$ does not satisfy the conditions of \autoref{thm:ECI}, then we choose another order in item 1. and repeat.
+
+    \item If we iterated over all orders on $A$ and never constructed a flag that satisfies the conditions of \autoref{thm:ECI}, then our sufficient condition of irreduciblity is inapplicable.
+\end{enumerate}
+
+
+\subsubsection{Explicit genericity conditions}
+We are building on the notion of Engineered Complete Intersection which is developed in \cite{Esterov2024}. In particular, the work contains a sufficient genericity condition for the ECI: for a fixed finite subset $A \subset M$ and polynomials $c_1, \dots, c_d \in \C^A$ for all $f \in \C^A$ such that the system $c_1 * f = \cdots = c_d * f = 0$ is smooth and non-degenerate upon cancellations (\cite[Def. 1.6.2]{Esterov2024}), the varieties defined by these systems are diffeomorphic (\cite[Prop. 4.14.2]{Esterov2024}), a cancellation matrix is given in \cite[Cor. 4.6]{Esterov2024}. As irreducibility is equivalent to connectedness for smooth varieties, we get a sufficient condition of irreducibility for an ECI: if $A, c_1, \dots, c_d$ satisfy the conditions of \autoref{thm:ECI} and $f \in \C^A$ is such that the system $c_1 * f = \cdots = c_d * f = 0$ is a non-degenerate upon cancellations system that defines a smooth variety, then that variety is irreducible.
+
+Such an explicit genericity condition in arbitrary characteristic would require a theory of Engineered Complete Intersections similar to the one developed in \cite{Esterov2024} but over a field of arbitrary characteristic (rather than just $\C$).
+
+\subsection{Critical Loci \& Thom-Brodmann Strata}\label{ssec:ECI_critical}
+This section gives a few examples on how one could apply \autoref{thm:ECI} or its corollaries from \autoref{ssec:ECI_simpler}
+
+\begin{notation}
+    We denote by $\mathbb F$ the prime subfield of $k$, i.e. $\mathbb F = \Z/p\Z$ if $p = \char k > 0$ and $\mathbb F = \Q$ otherwise.
+\end{notation}
+
+\begin{notation}
+    Everywhere bellow by degree of a polynomial (with respect to any given coordinate) we will mean not the integer from $\Z$ but its residue class from $\Z/(\char k) \cdot \Z$ (in particular, if $\char k = 0$, then it just the usual integer degree). This way whenever we write $\deg_x f$ we always have that $\deg_x f \in \mathbb F$ and if $\deg_x f = \deg_x g$, then what we really mean is that the actual degrees with respect to $x$ are the same only modulo $\char k$.
+\end{notation}
+
+\begin{example}
+    Let $A  \subset  \langle x, y_1, \dots, y_n \rangle$ be a finite set. Consider the hyperplane: 
+    \[
+    H^x_\lambda \defeq \{ \chi \in M\ | \deg_x \chi = \lambda \}.
+    \]
+    If there is $\lambda \in \mathbb F$ such that $A \cap H^x_\lambda$, $A \backslash H^x_\lambda$ satisfy the Khovanskii condition\footnote{i.e. both of them are at least 2-dimensional and they are not contained in two parallel 2-dimensional planes}, then $f = f'_x = 0$ is geometrically irreducible for the general~$f \in k^A$.
+\end{example}
+\begin{proof}
+    $f = f'_x = 0$ is equivalent to $f = xf'_x = 0$. Consider the polynomials $c_1 = ~\sum_{\chi \in A} ~\chi$ and $c_2 = x c'_{1x} = \sum_{\chi \in A} (\deg_x \chi) \cdot \chi$. We have that $f = c_1 * f$ and $x f'_x = c_2 * f$.
+    Now, let $l_\lambda$ be the 1-dimensional subspace of $k^2$ spanned by the vector $(1, \lambda)$. Then $\mathbf c^{-1} (l) = H^x_\lambda$, where $\mathbf c = c_1 \oplus c_2: A \to k^2$. Consider the complete flag $0 \subset l \subset k^2$. By \autoref{thm:ECI} we are done.
+\end{proof}
+
+\begin{example}
+Let $A \subset \langle x, y, z_1, \dots, y_n \rangle$ be a finite set. Consider the (punctured) planes:
+\begin{gather*}
+    H^{[x : y]}_0 \defeq \{ \chi \in M\ |\ \deg_x \chi = \deg_y \chi = 0\}; \\
+    H^{[x: y]}_{[\lambda : \mu]} \defeq \left\{\chi \in M\ |\ [\deg_x \chi : \deg_y \chi] = [\lambda : \mu ] \right\} \text{ for } [\lambda : \mu] \in \mathbb P(\mathbb F^2).
+\end{gather*}
+If there is $[\lambda : \mu] \in \mathbb P(\mathbb F^2)$ such that $A \cap H^{[x: y]}_{[\lambda : \mu]}$, $A \backslash (H^{[x:y]}_0 \cup H^{[x: y]}_{[\lambda : \mu]})$ satisfy the Khovanskii condition,
+then $f'_x = f'_y = 0$ is geometrically irreducible for the general $f \in k^A$.
+\end{example}
+\begin{proof}
+    Monomials from $H^{[x: y]}_0$ have zero coefficients in both $f'_x, f'_y$, so without loss of generality we may assume that $A \cap H^{[x: y]}_0 = \varnothing$. The system $f'_x = f'_y = 0$ is equivalent to $xf'_x = yf'_y = 0$. Consider the polynomials $c_1 = \sum_{\chi \in A} (\deg_x \chi) \cdot \chi$, $c_2 = \sum_{\chi \in A} (\deg_y \chi) \cdot \chi$.
+    Then $xf'_x = c_1 * f$ and $y f'_y = c_2 * f$. Without loss of generality $\deg_x \chi \ne 0$ for all $\chi \in \Delta_1$. Denote by $l \subset k^2$ the one-dimensional subspace of $k^2$ spanned by $(\lambda, \mu)$. Then $\mathbf c^{-1} (l) = H^{[x: y]}_{[\lambda: \mu]}$, where $\mathbf c = c_1 \oplus c_2: A \to k^2$. Consider the complete flag $0 \subset l \subset k^2$. By \autoref{thm:ECI} we are done.
+\end{proof}
+
+\begin{example}
+    Let $A \subset \langle x, y_1, \dots, y_n \rangle$ be a finite subset. Again, consider the hyperplanes:
+    \[
+    H^x_\lambda \defeq \{ \chi \in M\ | \deg_x \chi = \lambda \}.
+    \]
+    If there are $\lambda_1, \dots, \lambda_r \in \mathbb F$ such that $A \cap H^x_{\lambda_1}, \dots, A \cap H^x_{\lambda_r}, A \backslash (H^x_{\lambda_1} \cup \cdots \cup H^x_{\lambda_r})$ satisfy the Khovanskii condition, then the system $f = \frac{\partial}{\partial x} f = \dots = \frac{\partial^r}{\partial x^r} f = 0$ defines a geometrically irreducible variety for the general $f \in k^A$.
+\end{example}
+\begin{proof}
+    First note that over $T^n$ the equation $\frac{\partial^i}{\partial x^i} f = 0$ is equivalent to $x^i \frac{\partial^i}{\partial x^i} f = 0$. Then define $p_i(d) \defeq \frac{d!}{(d - i + 1)!}$ --- clearly these are polynomials in $d$ of degree $i - 1$. Put $c_i \defeq \sum_{\chi \in A} p_i(\deg_x \chi) \cdot \chi$. Then $x^i \frac{\partial^i}{\partial x^i} f = c_i * f$, so we are to study the ECI $c_1 * f = \dots = c_{r + 1} * f = 0$. By \autoref{cor:ECI_simpler_poly} and \autoref{rem:ECI_simpler_unsimpler} this ECI is geometrically irreducible.
+\end{proof}
+
+
+% For a fixed A, c_i the varieties defined by the systems c * f = 0 are diffeomorphic for all f such that the system is regular\footnote{i.e. defines a smooth variety} and NUC upon cancellation with the cancellation matrix defined by Cor. 4.6
+
+% if A, c_i satisfy \autoref{thm:ECI} and f is such that the system c * f = 0 is regular and NUC, then the variety defined by ... is irreducible
+
+
+\subsection{Proof of \autoref{thm:ECI}}\label{ssec:ECI_proof}
+
+\begin{proof}
+    We will use \autoref{thm:sufficient}. In Step 1 we replace the complete flag $\mathcal V$ with the standard complete flag in $k^d$. Then in Step 2 we show that the matrix of  the vector bundle morphism $\mathcal E|^2_\P$ (cf. bellow) is in nice echelon form if $\mathcal V$ is standard and then it is easier to describe the rank drop locus of $\mathcal E|^2_\P$. Finally, in Step 3 we show that the rank drop locus of $\mathcal E|^2_\P$ is small enough for \autoref{thm:sufficient} to hold precisely when $\Delta_1(\mathcal V), \dots, \Delta_d(\mathcal V)$ satisfy the Khovanskii condition.
+    
+
+    \paragraph{Step 1. Without loss of generality $\mathcal V$ is standard.} In $k^d$ there is the standard basis
+    \[
+    e_1 = 
+    \begin{pmatrix}
+        1 \\ 0 \\ \vdots \\ 0
+    \end{pmatrix},
+    e_2 = 
+    \begin{pmatrix}
+        0 \\ 1 \\ \vdots \\ 0
+    \end{pmatrix},
+    \dots, 
+    e_d = 
+    \begin{pmatrix}
+        0 \\ 0 \\ \vdots \\ 1
+    \end{pmatrix}.
+    \]
+    Then by the standard complete flag we mean the flag corresponding to the basis $e_1, \dots, e_n$, i.e. $0 \subset \langle e_1 \rangle \subset \langle e_1, e_2 \rangle \subset \dots \subset \langle e_1, \dots, e_d \rangle$, where $\langle - \rangle$ denotes the linear span. The following paragraph shows that we could assume that $\mathcal V$ is standard. 
+    
+    Take any matrix $G = (\gamma_{ij}) \in \GL_d (k)$ and put $\tilde c_i \defeq \sum_j \gamma_{ij} c_j$. On one hand, the system $\tilde c_1 * f = \cdots = \tilde c_d * f = 0$ is equivalent to $c_1 * f = \cdots = c_d * f = 0$ for all $f \in k^A$. On the other hand, if we define $\tilde{\mathbf c}: A \to k^d$, $\chi \mapsto (\tilde c_1 [\chi], \dots, \tilde c_d[\chi])$ then $\tilde {\mathbf c} = G \circ \mathbf c$, so for any subspace $W \subset V$ we have $\tilde {\mathbf c}^{-1} (W) = \mathbf c^{-1} (G^{-1} (W))$. Since $\GL_d (k)$ acts transitively on complete flags we can choose $G \in \GL_d (k)$ such that $G^{-1}(\mathcal V)$ is the standard complete flag and replace $c_1, \dots, c_d$ with $\tilde c_1, \dots, \tilde c_d$.
+
+    Henceforth we assume that $\mathcal V$ is standard. In particular for all $\chi_i \in \Delta_i$, we have that $c_j * \chi_i = 0$ for $j > i$ (because $\mathbf c(\chi_i) \in \langle e_1, \dots, e_i \rangle$) and $c_i * \chi_i \ne 0$ (otherwise $\mathbf c(\chi_i) \in \langle e_1, \dots, e_{i - 1} \rangle$). We will also assume that $\mathbf c^{-1} (0) = \varnothing$ as monomials from the kernel affect neither the system $c_1 * f_1 = \dots = c_d * f = 0$, nor the sets $\Delta_1, \dots, \Delta_d$.
+
+    \paragraph{Step 2. Analysing the matrix of $\mathcal E|_\P^2$.} Recall that $\E|_\P^2$ is the vector bundle morphism $k^A \times T^n \times T^n \to \mathbb A^{2d} \times T^n \times T^n$ such that
+    \[
+    (f, p, q) \mapsto ((c_1 * f) (p), (c_1 * f)(q), \dots, (c_d * f)(p), (c_d * f)(q), p, q).
+    \]
+    So if we put $A = \{ \chi_1, \dots, \chi_N \}$, then the matrix of $\mathcal E|^2_\P$ is:
+    \[
+    \begin{pmatrix}
+        (c_1 * \chi_1) (p) & (c_1 * \chi_2)(p) & \cdots & (c_1 * \chi_N) (p) \\
+        (c_1 * \chi_1) (q) & (c_1 * \chi_2)(q) & \cdots & (c_1 * \chi_N) (q) \\
+        (c_2 * \chi_1) (p) & (c_2 * \chi_2)(p) & \cdots & (c_2 * \chi_N) (p) \\
+        (c_2 * \chi_1) (q) & (c_2 * \chi_2)(q) & \cdots & (c_2 * \chi_N) (q) \\
+        \vdots & \vdots & \ddots & \vdots & \vdots \\
+        (c_d * \chi_1) (p) & (c_d * \chi_2)(p) & \cdots & (c_d * \chi_N) (p) \\
+        (c_d * \chi_1) (q) & (c_d * \chi_2)(q) & \cdots & (c_d * \chi_N) (q) \\
+    \end{pmatrix}.
+    \]
+    If we show that the rank of the above matrix drops by $r$ only at subvarieties of codimension at least $r + 1$ and the general rank is $2d$, then by \autoref{thm:sufficient} our theorem will be proved. Now $\Delta_1, \dots, \Delta_d$ give a partition\footnote{here we use the assumption that $\mathbf c^{-1} (0) = \varnothing$} of $A$. Let us denote $\Delta_i = \{ \chi^i_1, \dots, \chi^i_{N_i} \}$. By the last[CHANGE TO FORMULA REFERENCE] paragraph of the above step we have that $c_i * \chi^j_t = 0$ for $j > i$. Hence, the matrix of $\mathcal E|^2_\P$ takes form:
+    \[
+    \begin{pmatrix}
+        (c_1 * \chi^1_1) (p) & \cdots & (c_1 * \chi^1_{N_1}) (p) & (c_1 * \chi^2_1) (p) & \cdots &  (c_1 * \chi^d_{N_d}) (p) \\
+        (c_1 * \chi^1_1) (q) & \cdots & (c_1 * \chi^1_{N_1}) (q) & (c_1 * \chi^2_1) (q) & \cdots &  (c_1 * \chi^d_{N_d}) (q) \\
+        0 & \cdots & 0 & (c_2 * \chi^2_1) (p) & \cdots &  (c_2 * \chi^d_{N_d}) (p) \\
+        0 & \cdots & 0 & (c_2 * \chi^2_1) (q) & \cdots &  (c_2 * \chi^d_{N_d}) (q) \\
+        \vdots & \vdots & \ddots & \vdots & \ddots & \vdots \\
+        0 & \cdots & 0 & 0 & \cdots &  (c_d * \chi^d_{N_d}) (p) \\
+        0 & \cdots & 0 & 0 & \cdots &  (c_d * \chi^d_{N_d}) (q) \\
+    \end{pmatrix}
+    \]
+    In particular, we have that
+    \[
+    \rk_{(p, q)} \E|^2_\P \ge \sum_{i = 1}^d \rk
+    \begin{pmatrix}
+        (c_i * \chi^i_1) (p) & \cdots & (c_i * \chi^i_{N_i}) (p) \\
+        (c_i * \chi^i_1) (q) & \cdots & (c_i * \chi^i_{N_i}) (q)
+    \end{pmatrix}.
+    \]
+    Since $c_i * \chi^i_j \ne 0$ (by the last paragraph of the above step[CHANGE TO FORMULA REFRENECE]), $c_i * \chi^i_j$ do not vanish on $T^n \times T^n$, so the above sum is at least $d$ and $\rk \mathcal E \ge d$ everywhere on $T^n \times T^n$.
+
+
+    \paragraph{Step 3. Codimension of $\mathcal S_r$.} Recall that by $\mathcal S_r$ we denote the following subschemes: 
+    \[
+    \mathcal S_r = \{ (p, q) \in T^n \times T^n\ |\ \rk_{(p, q)} \E^2|_\P = 2d - r \}.
+    \]
+    To finish the proof using \autoref{thm:sufficient} we need to show that $\dim \mathcal S_r + r < 2n$ for all $r > 0$. Note that the last sentence of the above paragraph tells us that $\mathcal S_r = \varnothing$ for $r > d$, so $\dim \mathcal S_r = -\infty$ and we only need to tackle the case when $r \le d$. For a subset of characters $\Delta = \{ \chi_1, \dots, \chi_t \} \subset A$ and $p \in T^n$ denote by $\Delta(p)$ the vector $(\chi_1 (p), \dots, \chi_t(p)) \in k(p)^t$. Now, for each non-empty subset $\Delta \subset A$ consider the closed subschemes\footnote{here by $k(p, q)$ we mean the residue field of the point $(p, q) \in T^n$}
+    \[
+    \mathcal S_\Delta \defeq \{ (p, q) \in T^n \times T^n\ |\ \exists \lambda \in k(p, q)^\times:\  \Delta(p) = \lambda \Delta(q) \},
+    \]
+    i.e. if $(p, q) \in \mathcal S_\Delta$, then $(\chi_1 \cdot \chi_2^{-1}) (p) = (\chi_1 \cdot \chi_2^{-1}) (q)$ for all $\chi_1, \chi_2 \in \Delta$. Then for a subset of indicies $J \subset \{1, \dots, d\}$ we define\footnote{recall that $\Delta_j = \mathbf c^{-1} (V_j \backslash V_{j - 1})$} $\mathcal S_J \defeq \bigcap_{j \in J} \mathcal S_{\Delta_j}$. Now we will show that $\mathcal S_r \subset \bigcup_{|J| = r} \mathcal S_J$ and that the Khovanskii condition implies $\dim \mathcal S_J + |J| < 2n$. 
+
+    For $(p, q) \in T^n \times T^n$ define the set of indicies 
+    \[
+    I(p, q) \defeq \{ i \in \{1, \dots, d\}\ |\ (p, q) \not \in \mathcal S_{\Delta_i} \}.
+    \]
+    If $(p, q) \not \in \mathcal S_J$ for all $|J| = r$, then\footnote{indeed: $(p, q) \in \Delta_j$ for all $j \not \in I(p, q)$, so $(p, q) \in \mathcal S_J$ for $J = \{ 1, \dots, d \} \backslash I(p, q)$ As $|J| < r$, we get $I(p, q) \ge d - r + 1$} $|I(p, q)| \ge d - r + 1$. If $(p, q) \not \in \mathcal S_{\Delta_i}$, then there are $\chi^i_t, \chi^i_s \in \Delta_i$, $t \ne s$, such that $(\chi^i_t(p), \chi^i_s(p))$ is not proportional to $(\chi^i_t(q), \chi^i_s(q))$, i.e.
+    \[
+    \rk 
+    \begin{pmatrix}
+        \chi^i_t(p) & \chi^i_s(p) \\
+        \chi^i_t(q) & \chi^i_s(q)
+    \end{pmatrix} = 2
+    \]
+    and therefore
+    \[
+    \rk
+    \begin{pmatrix}
+        (c_i * \chi^i_t) (p) & (c_i * \chi^i_t) (p) \\
+        (c_i * \chi^i_t) (q) & (c_i * \chi^i_s) (q)
+    \end{pmatrix}
+    =
+    \rk \left(
+    \begin{pmatrix}
+        \chi^i_t(p) & \chi^i_s(p) \\
+        \chi^i_s(q) & \chi^i_s(q)
+    \end{pmatrix}
+    \cdot
+    \begin{pmatrix}
+        c_i[\chi^i_t] & 0 \\
+        0 & c_i[\chi^i_s]
+    \end{pmatrix}
+    \right) = 
+    \rk 
+    \begin{pmatrix}
+        \chi^i_t(p) & \chi^i_s(p) \\
+        \chi^i_t(q) & \chi^i_s(q)
+    \end{pmatrix} = 2,
+    \]
+    the latter equality holds because $c_i[\chi^i_t], c_i[\chi^i_s] \ne 0$. Now recall from the previous paragraph that
+    \[
+    \rk_{(p, q)} \E^2|_\P \ge \sum_{i = 1}^d \rk
+    \begin{pmatrix}
+        (c_i * \chi^i_1) (p) & \cdots & (c_i * \chi^i_{N_i}) (p) \\
+        (c_i * \chi^i_1) (q) & \cdots & (c_i * \chi^i_{N_i}) (q)
+    \end{pmatrix}
+    \]
+    So we have that\footnote{
+    $\begin{pmatrix}
+        \chi^i_t(p) & \chi^i_s(p) \\
+        \chi^i_t(q) & \chi^i_s(q)
+    \end{pmatrix}$ is a submatrix of $\begin{pmatrix}
+        (c_i * \chi^i_1) (p) & \cdots & (c_i * \chi^i_{N_i}) (p) \\
+        (c_i * \chi^i_1) (q) & \cdots & (c_i * \chi^i_{N_i}) (q)
+    \end{pmatrix}$. We also use that that each summand is at least 1 as all the matrices are non-zero
+    }
+    \begin{multline*}
+    \rk_{(p, q)} \E^2|_\P \ge \sum_{i \in I}
+    \begin{pmatrix}
+        (c_i * \chi^i_1) (p) & \cdots & (c_i * \chi^i_{N_i}) (p) \\
+        (c_i * \chi^i_1) (q) & \cdots & (c_i * \chi^i_{N_i}) (q)
+    \end{pmatrix} + \\ +
+    \sum_{j \in \{ 1, \dots, d \} \backslash I}
+    \begin{pmatrix}
+        (c_j * \chi^j_1) (p) & \cdots & (c_j * \chi^i_{N_j}) (p) \\
+        (c_j * \chi^j_1) (q) & \cdots & (c_j * \chi^j_{N_j}) (q)
+    \end{pmatrix} \ge 2 |I| + d - |I| = |I| + d \ge 2d - r + 1 > 2d - r.
+    \end{multline*}
+    Hence, $(p, q) \not \in \mathcal S_r$, i.e. we showed that $\mathcal S_r$ is contained in $\bigcup_{|J| = r} \mathcal S_J$.
+
+    Finally, we have that $\dim \mathcal S_r \le \dim \bigcup_{|J| = r} \mathcal S_J = \max_{|J| = r} \dim \mathcal S_J$. By \autoref{claim:prelim_quasisubtori} $\mathcal S_J$ has codimension $\dim \sum_{j \in J} \Delta_j$. Therefore by the Khovasnkii condition we have that $\dim \mathcal S_J + |J| = 2n - \dim \sum_{j \in J} \Delta_j + |J| < 2n$ and 
+    \[
+    \dim \mathcal S_r + r \le \max_{|J| = r} \dim \mathcal S_J + r = \max_{|J| = r} (\dim \mathcal S_J + |J|) < 2n. 
+    \]
+    So \autoref{thm:sufficient} holds which proves \autoref{thm:ECI}.
+\end{proof}

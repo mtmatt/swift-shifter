@@ -1,0 +1,34 @@
+\subsection{Gauging shift symmetries of the graviton}
+\label{sec:gauging_graviton_shifts}
+
+We now consider the gauging of the shift symmetries introduced in the previous subsection. Since the Noether current $J(h)$ is a [2,1] bi-form,
+we will couple the current to a rank-[2,1] gauge field $\gaugefield$ which transforms as
+\begin{equation}\label{eq:A_gauge_transf}
+    \gaugefield \to \gaugefield+\dd_L \alpha
+\end{equation}
+Explicitly, the components $\gaugefield_{\mu\nu|\rho}$ of $\gaugefield$ transform as 
+\begin{equation}
+     \gaugefield_{\mu\nu|\rho} \to \gaugefield_{\mu\nu|\rho} +  \partial_{[\mu} \alpha_{\nu]\rho}
+\end{equation}
+
+The simplest way to gauge the shift symmetry is to note that the combination 
+\begin{equation}\label{eq:ggamma}
+    \ggamma(h) = \Gamma(h) - \gaugefield
+\end{equation}
+is invariant under the transformations \eqref{eq:graviton_shift} and \eqref{eq:A_gauge_transf}. Furthermore, inserting \eqref{eq:G(h)} into \eqref{eq:S_FP} and integrating by parts, the graviton action \eqref{eq:S_FP} can be written as
+\begin{equation}\label{eq:S_FP_Gamma}
+    S_{\text{FP}} = -\frac{3}{2} \int_{\mathcal{M}} \dd[d]{x} \Gamma(h)\indices{_{\mu\rho|}^{[\mu}} \Gamma(h)\indices{^{\rho\alpha]}_{|\alpha}}
+\end{equation}
+The shift symmetry \eqref{eq:graviton_shift} can then be gauged simply by replacing $\Gamma(h)$ with $\ggamma(h)$ in this form of the graviton action to give
+\begin{equation}\label{eq:S_electric_gauged}
+    S^{\text{e}}_{\text{FP}} = -\frac{3}{2} \int_{\mathcal{M}} \dd[d]{x} \ggamma(h)\indices{_{\mu\rho|}^{[\mu}} \ggamma(h)\indices{^{\rho\alpha]}_{|\alpha}}
+\end{equation}
+which is now gauge-invariant under simultaneous transformations \eqref{eq:graviton_shift} and \eqref{eq:A_gauge_transf}.
+This is analogous to the replacement of $F$ by $F-B$ in the Maxwell action to gauge the electric 1-form symmetry in eq.~\eqref{eq:Maxwell_electric_gauged}. 
+
+We note that the gauged theory with action \eqref{eq:S_electric_gauged} is invariant under linearised diffeomorphisms provided that $\gaugefield$ transforms as a connection, i.e.\ the action is invariant under
+\begin{equation}
+\label{Cdiff}
+    h_{\mu\nu} \to h_{\mu\nu} + 2\partial_{(\mu}\xi_{\nu)}\qc \gaugefield_{\mu\nu|\rho} \to \gaugefield_{\mu\nu|\rho} + \partial_\rho \partial_{[\mu}\xi_{\nu]}
+\end{equation}
+as these transformations leave $\ggamma$ invariant. This is of course a special case of the full gauge symmetry \eqref{eq:graviton_shift} and \eqref{eq:A_gauge_transf} for which $\alpha_{\mu\nu} = 2 \partial_{(\mu}\xi_{\nu)}$.

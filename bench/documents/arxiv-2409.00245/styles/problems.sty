@@ -1,0 +1,54 @@
+% Problem style
+\newcommand{\probname}[1]{\textnormal{\textsc{#1}}\xspace}
+
+% Problem environment
+\usepackage{xargs}
+\usepackage{xifthen}
+\usepackage{framed}
+\usetikzlibrary{calc}
+
+\newenvironment{tightcenter}
+	{\parskip=0pt\par\nopagebreak\centering}
+	{\par\noindent\ignorespacesafterend}
+
+\let\tnote\relax
+\usepackage{ctable}
+\newlength{\RoundedBoxWidth}
+\newsavebox{\GrayRoundedBox}
+\newenvironment{GrayBox}[1]%
+{\setlength{\RoundedBoxWidth}{\linewidth-4.5ex}
+\def\boxheading{#1}
+\begin{lrbox}{\GrayRoundedBox}
+\begin{minipage}{\RoundedBoxWidth}%
+}{%
+\end{minipage}
+\end{lrbox}%
+\begin{tightcenter}%
+\begin{tikzpicture}%
+\node(Text)[draw=black!20,fill=white,rounded corners,%
+inner sep=2ex,text width=\RoundedBoxWidth]%
+{\usebox{\GrayRoundedBox}};
+\coordinate(x) at (current bounding box.north west);
+\node [draw=white,rectangle,inner sep=3pt,anchor=north west,fill=white]
+at ($(x)+(10.5pt,.75em)$) {\boxheading};
+\end{tikzpicture}
+\end{tightcenter}\vspace{0pt}%
+\ignorespacesafterend
+}
+
+\newenvironment{problem}[1]{\noindent\ignorespaces%
+\FrameSep=6pt%
+\parindent=0pt%
+\vspace*{-.5em}
+\begin{GrayBox}{\textsc{#1}}%
+\newcommand\Input{Input:}%
+\newcommand\Prob{Problem:}%
+\begin{tabular*}
+    {\columnwidth}
+    {@{\hspace{-0.5em}} >{\itshape} p{3.8em} p{0.8\columnwidth} @{}}
+}{
+\end{tabular*}%
+\end{GrayBox}%
+\vspace*{-1.0em}
+\ignorespacesafterend
+}

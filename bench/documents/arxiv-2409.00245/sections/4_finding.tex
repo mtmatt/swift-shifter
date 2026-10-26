@@ -1,0 +1,91 @@
+\section{Finding \Occs} \label{sec:find:occs}
+
+Our ultimate goal is to show that if the graph contains any \tocc $(X_B,X_C,X_R)$ with $|X_C| \leq k$, 
+then we can produce a \tocc with $|X_C| \leq k$ \emph{and} $|X_B|$ upper-bounded by some function of $k$.
+To achieve this, we first show that we can efficiently find some \occ where $|X_B|$ is large enough, and then (in \Cref{sec:reduce:occ}) 
+that we can reduce any such cut so that $|X_B|$ is small without destroying any essential structure of the input graph.
+
+Specifically, we say an \occ $(X_B,X_C,X_R)$ is \emph{reducible} with respect to some function $g_r$ if $|X_B| > g_r(|X_C|)$. 
+Our results all hold for a specific polynomial $g_r(x)$ in $\Theta(x^{16})$, which we specify in \Cref{sec:reduction:proofs}.
+We say an \occ $(X_B,X_C,X_R)$ is a \emph{single-component} \occ if $G[X_B]$ is connected.
+
+%-------------------------------------------------------------------------------
+%    Color coding
+%-------------------------------------------------------------------------------
+
+Given a graph $G$, our goal is to output a reducible \occ efficiently
+assuming that $G$ contains a single-component \occ $(X_B, X_C, X_R)$
+with $|X_B| > g_r(2 |X_C|)$ and~$|X_C| \leq k$.
+%
+We achieve this by color coding of the vertices in $G$ (see definitions in \cref{sec:color:coding} for details).
+%
+Consider a coloring $\chi\colon V(G) \to \{\cB, \cC\}$.
+For an integer $\ell$,
+an \occ $(X_B, X_C, X_R)$ with $|X_B| \geq \ell$
+is \emph{$\ell$-properly colored} by $\chi$
+if $X_C \subseteq \chi^{-1}(\cC)$ and there is a set of~$\ell$ vertices of~$X_B$ that are colored $\cB$ and induce a connected subgraph of~$G$.
+%
+First, we show how to construct an \occ with large $X_B$ from a proper coloring.
+
+\begin{restatable}{lemma}{lemFindColoredOCC}[$(\bigstar)$] \label{lem:finding-occ-colored}
+  Given a graph $G$, integers $k, \ell$, and a coloring $\chi \colon V(G) \to \{\cB, \cC\}$ of $V(G)$ that $\ell$-properly colors
+  a single-component \occ $(X_B, X_C, X_R)$ with $|X_C| \leq k$,
+  an \occ $(X_B', X_C', X_R')$ such that $|X_B'| \geq \ell$ and $|X_C'| \leq 2k$
+  can be found in polynomial time.
+\end{restatable}
+
+\begin{proof}[Proof sketch]
+We iterate over the connected components of $G[\chi^{-1}(\cB)]$. 
+For any component which is both large ($\geq \ell$) and bipartite, we try to find an \occ of small enough width
+where the component is contained in the $X_B$ side of the cut. To do this, we use the machinery of 
+bipartite separations introduced in Jansen et al.~\cite{JansenKW22} (see \Cref{sec:proofs:oct:finding} for details). 
+Intuitively, given a vertex set $C$ which induces a connected bipartite subgraph, they either find a set of at most $2k$ vertices
+which separates $C' \supseteq C$ from the remainder of the graph so that $G[C']$ is bipartite, or certify that $C$ is not part of $X_B$ for any \occ with width $\leq k$. 
+\end{proof}
+
+%\bmpr{Since bipartite separation finding is only relevant for this section (and even more particularly, only relevant for this lemma) I took it out of the general preliminaries and moved it to \cref{sec:bipartite:separation:finding}. I suggest deferring the formal proof below to a later section while writing a proof sketch that gives the main idea while also introducing the bipartite separation finding problem at an intuitive level, referring to the later section for the details.}
+
+
+%-------------------------------------------------------------------------------
+%    FPT algorithm
+%-------------------------------------------------------------------------------
+
+Now, we use this coloring scheme to find a reducible \occ,
+assuming that a graph $G$ has a single-component \occ $(X_B, X_C, X_R)$ with large $X_B$.
+%
+%Using an $(n,k)$-universal set, we obtain the following lemma.
+
+\begin{lemma}\label{lem:finding-occ}
+  There exists a $2^{\Oh(k^{16})} n^{\Oh(1)}$-time algorithm that,
+  given a graph $G$ and an integer $k$,
+  either determines that $G$ does not contain a single-component \occ $(X_B,X_C,X_R)$ of width at most $k$ with $|X_B|>g_r(2k)$ or
+  outputs a reducible \occ in $G$.
+\end{lemma}
+
+%\bmp{[When looking at it again, perhaps it suffices to do the following: delete the text 'using an $(n,k)$-universal set' from the fill-text just before the lemma (since it has not yet been defined), and in the proof replace 'From Theorem 27 .. ' by 'Using an~$(n,k)$-universal set, which is a well-known pseudorandom object [cite the sources mentioned in the additional prelims for them] used to derandomize applications of color coding (see Theorem 27), we can construct a family of (..) many subsets~$A_1, \ldots, A_{2^{\Oh(s)} \log n}$ with the guarantee that for each set~$S \subseteq V(G)$ of size~$s$, for each subset~$S'$ of~$S$, there exists a set in the family with~$A_i \cap S = S'$. From this family, we can construct a family of colorings that is guaranteed to include one that $\ell$-properly colors a suitable \occ~$(X_B, X_C, X_R)$ if one exists. To derive a coloring~$\chi_i$ from a member~$A_i \subseteq V(G)$ of the $(n,s)$-universal set, it suffices to pick~$\chi(a \in A) = \cR$ and~$\chi(a \notin A) = \cB$.' (The latter to address the fact that currently the proof forgets to translate between sets and colorings.) (Then continue with the rest of the proof.)]}
+
+\begin{proof}
+  We will invoke the algorithm from \Cref{lem:finding-occ-colored} multiple times for $\ell=g_r(2k) + 1$.
+  If we supply a coloring that $\ell$-properly colors~$(X_B, X_C, X_R)$, then the algorithm is guaranteed to find an \occ $(X_B', X_C', X_R')$
+  such that $|X_B'| > g_r(2k)$ and $|X_C'| \leq 2k$,
+  which is reducible as $|X_B'| > g_r(2k) \geq g_r(|X_C'|)$.
+  %
+  If all relevant colorings fail to find such a reducible \occ,
+  then we can conclude that $G$ does not contain a single-component \occ $(X_B, X_C, X_R)$
+  with $|X_C| \leq k$ and $|X_B| \geq \ell >g_r(2k)$.
+
+  Let $X_B' \subseteq X_B$ be an arbitrary vertex set of size $\ell$ that induces a connected subgraph of $G$.
+  Since $G[X_B]$ is connected, such $X_B'$ must exist.
+  %
+  Observe that we obtain an $\ell$-proper coloring if $X_C \cup X_B'$ are colored correctly.
+  Let $s = |X_C \cup X_B'| = k + g_r(2k) + 1 = \Oh(k^{16})$.
+  %
+
+  Using an~$(n,k)$-universal set, which is a well-known pseudorandom object~\cite{NaorSS95, CyganFKLMPPS15} used to derandomize applications of color coding (see \Cref{thm:universal-set}), we can construct a family of $2^{\Oh(s)}\log n$ many subsets~$A_1, \ldots, A_{2^{\Oh(s)} \log n}$ with the guarantee that for each set~$S \subseteq V(G)$ of size~$s$, for each subset~$S'$ of~$S$, there exists a set in the family with~$A_i \cap S = S'$. This can be done in $2^{\Oh(s)} n \log n = 2^{\Oh(k^{16})} n \log n$ time. From this family, we can construct a family of colorings that is guaranteed to include one that $\ell$-properly colors a suitable \occ~$(X_B, X_C, X_R)$ if one exists. To derive a coloring~$\chi_i$ from a member~$A_i \subseteq V(G)$ of the $(n,s)$-universal set, it suffices to pick~$\chi(a \in A) = \cR$ and~$\chi(a \notin A) = \cB$.
+
+%  From \Cref{thm:universal-set}, an $(n,s)$-universal set for $V(G)$ of size $2^{\Oh(s)}\log n$
+ % can be constructed in $2^{\Oh(s)} n \log n = 2^{\Oh(k^{16})} n \log n$ time.
+  %
+  We run the $n^{\Oh(1)}$-time algorithm from \Cref{lem:finding-occ-colored} for each coloring,
+  which results in the overall runtime $2^{\Oh(k^{16})} n^{\Oh(1)}$.
+\end{proof}

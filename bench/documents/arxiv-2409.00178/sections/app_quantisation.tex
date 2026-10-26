@@ -1,0 +1,67 @@
+\section*{Appendix}
+
+\section{Quantisation \& charges generating shift symmetries}
+\label{app:quantisation}
+
+In this appendix we canonically quantise the graviton theory and demonstrate that the charge $Q(\alpha)$ in \eqref{eq:Q(alpha)} does, indeed, generate a shift of the graviton field. 
+
+The graviton action is given in \eqref{eq:S_FP}. We decompose the Minkowski space coordinates as $x^\mu = (x^0\equiv t, x^i)$ with $i=1,\dots,d-1$. Integrating the action by parts allows time derivatives to be shuffled between different terms. Doing so then changes the canonical momenta $\pi^{00}$, $\pi^{0i}$, and $\pi^{ij}$. We will take the convention used, for example, in \cite{Hinterbichler:2011tt} where all time derivatives in the action are removed from the fields $h_{00}$ and $h_{0i}$ by integration by parts.
+These fields then appear as Lagrange multipliers, enforcing $d$ first class constraints.
+The dynamical fields are then the $h_{ij}$, whose canonical momenta are
+\begin{equation}
+    \pi^{ij} = \frac{1}{2} \left( \dot{h}_{ij} - \dot{h} \delta_{ij} + 2\partial_k h_{k0} \delta_{ij} - 2\partial_{(i} h_{j)0} \right)
+\end{equation}
+where $\dot{f} \equiv \partial_0 f$ and $h \equiv h\indices{_i^i}$. 
+
+Recall that the charge $Q(\alpha)$ in \eqref{eq:Q(alpha)} is the charge associated with the conserved 1-form current $j(\alpha)_\mu$ in \eqref{eq:j(alpha)}. 
+Now, taking the surface $\Sigma_{d-1}$ on which it is defined to be a constant-time hypersurface at time $t$, $\Sigma_{d-1} = \mathbb{R}^{d-1}_t$, the charge is
+\begin{equation}
+    Q(\alpha) = \int_{\Sigma_{d-1}} \dd[d-1]{\vec{x}} j_0(\alpha)
+\end{equation}
+where $\vec{x} = (x^1,\dots,x^{d-1})$.
+Conservation implies that $Q(\alpha)$ is independent of $t$.
+
+Expanding the current explicitly in the $(t,x^i)$ coordinate split, the charge can be written
+\begin{equation}
+    Q(\alpha) = \int \dd[d-1]{\vec{x}} \left( \alpha_{ij} \pi_{ij} - \alpha_{i0} \left( \partial_j h_{ij} - \partial_i h \right) - \frac{1}{2} \dot{\alpha}_{ij} \left( h_{ij} - \delta_{ij} h \right) \right)
+\end{equation}
+where we assume that the field vanishes sufficiently fast at spatial infinity that we can drop boundary terms.\footnote{We could also consider closed $\Sigma_{d-1}$.}
+
+
+We may now pass directly to the quantum theory by replacing Poisson brackets by $i\hbar$ times canonical equal-time commutators to obtain (with $\hbar=1$)
+\begin{equation}
+    \comm{h_{ij}(\vec{x})}{\pi^{kl}(\vec{y})} = i \delta_{(i}^k\delta_{j)}^l \delta(\vec{x}-\vec{y}) 
+\end{equation}
+which imply that the action of $Q(\alpha)$ on the dynamical fields $h_{ij}$ is
+\begin{align}
+    \comm{h_{ij}(\vec{x})}{Q(\alpha)} &= i \alpha_{ij}(\vec{x})
+\end{align}
+provided that $\vec{x} \in \Sigma_{d-1}$, and otherwise the result vanishes vanishes. Therefore, the charge $Q(\alpha)$ generates the correct shifts of the graviton field in this canonical formulation.\footnote{We emphasise that the $h_{00}$ and $h_{0i}$ fields are unphysical in this formulation and so $Q(\alpha)$ is the correct operator to generate shifts of the \emph{physical} fields.}
+
+The algebra of these charges can be computed using the commutator above. A straightforward but lengthy calculation gives 
+\begin{equation}
+\begin{split}\label{eq:comm_working}
+    \comm{Q(\alpha)}{Q(\alpha')} &= \frac{i}{2} \int \dd[d-1]{\vec{x}} \big( 2 \alpha_{i0} \partial_i \alpha' - 2\alpha_{i0} \partial_j \alpha'_{ji} - 2\partial_i \alpha \alpha'_{i0} + 2\partial_j \alpha_{ji} \alpha'_{i0}\\
+    & \qquad\qquad\qquad + \alpha_{ij} \dot{\alpha}'_{ij} - \alpha \dot{\alpha}' - \alpha'_{ij} \dot{\alpha}_{ij} + \alpha' \dot{\alpha} \big)
+\end{split}
+\end{equation}
+where $\alpha \equiv \alpha_{ii}$, $\alpha' \equiv \alpha'_{ii}$ and we have assumed that $\alpha$, $\alpha'$ vanish sufficiently fast at the boundary of $\Sigma_{d-1}$, so we can integrate the spatial derivatives by parts.
+This result can be neatly written in terms of $\dd_L \alpha$ and $\dd_L \alpha'$, which have components $(\dd_L \alpha)_{\mu\nu|\rho} = \partial_{[\mu} \alpha_{\nu]\rho}$. This implies the relations
+\begin{equation}
+\begin{split}
+    2(\dd_L \alpha)_{ij|j} &= \partial_i \alpha - \partial_j \alpha_{ij} \\
+    2(\dd_L \alpha)_{0i|j} &= \dot{\alpha}_{ij} - \partial_i \alpha_{j0} \\
+    2(\dd_L \alpha)_{0ii} &= \dot{\alpha} - \partial_i \alpha_{i0}
+\end{split}
+\end{equation}
+Substituting these into \eqref{eq:comm_working} and integrating spatial derivatives by parts gives
+\begin{equation}
+    \comm{Q(\alpha)}{Q(\alpha')} = i \int\dd[d-1]{\vec{x}} \left( 3 \alpha\indices{^i_{[0}} (\dd_L\alpha')\indices{_{ij]|}^j} - (\alpha\leftrightarrow\alpha') \right)
+\end{equation}
+The integrand can be recognised as the $t$-component of the 1-form $\chi(\alpha,\alpha')$ defined in \eqref{eq:zeta_def},
+such that the whole equation can be written in a Lorentz covariant form
+\begin{equation}
+    \comm{Q(\alpha)}{Q(\alpha')} = i \int_{\Sigma_{d-1}} \star\chi(\alpha,\alpha')
+\end{equation}
+
+
