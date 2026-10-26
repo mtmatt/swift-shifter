@@ -126,9 +126,10 @@ jobs:
   # TeX Live's engines (#78), epubcheck (#79), pandoc, pdftotext and
   # pymupdf4llm (#114). In CI, a test fails rather than skip without one.
   # Not tectonic: it downloads its bundle while the tests run, and TeX
-  # Live's XeLaTeX compiles our LaTeX already. On the Ubuntu the tools were
-  # tested on: `ubuntu-latest` moves to Ubuntu 26, and a run left on it
-  # hung an hour installing them. Past half an hour, a run has hung.
+  # Live's XeLaTeX compiles our LaTeX already. On the Ubuntu its tools are
+  # known to install on, as `ubuntu-latest` moves to Ubuntu 26. Past half an
+  # hour, a run is stuck: a slow mirror once took that long for a tenth of
+  # its packages.
   test:
     name: Tests
     runs-on: ubuntu-24.04
@@ -138,7 +139,8 @@ jobs:
       - name: Install system dependencies and the tools tests check with
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
+          # A download the mirror stalls on is tried again, not waited on.
+          sudo apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=60 \
             libwebkit2gtk-4.1-dev \
             libgtk-3-dev \
             libayatana-appindicator3-dev \
