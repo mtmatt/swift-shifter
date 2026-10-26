@@ -464,7 +464,11 @@ fn starts_entity(rest: &[char]) -> bool {
 fn code_span(code: &str, ctx: Ctx) -> String {
     let code = single_line(code, ctx);
     let ticks = "`".repeat(longest_run(&code, '`') + 1);
-    let pad = if code.starts_with('`') || code.ends_with('`') {
+    // A space each side, which readers take off again: so a backtick at an
+    // end isn't taken for the ticks, and spaces at both ends, which readers
+    // would take one of off, are kept.
+    let spaced = code.starts_with(' ') && code.ends_with(' ') && code.contains(|c| c != ' ');
+    let pad = if code.starts_with('`') || code.ends_with('`') || spaced {
         " "
     } else {
         ""
