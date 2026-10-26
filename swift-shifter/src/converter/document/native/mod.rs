@@ -3015,7 +3015,14 @@ Ref[^code].\n\n\
                 "He said “你好” to me, and say “hi” — now.",
                 "他说“你好”——“好”。",
             ] {
-                assert!(shown.contains(line), "{line} in {shown}");
+                // Ubuntu's pdftotext (poppler 24.02, in CI) gives a CJK
+                // line's closing `。` a line of its own: what's checked is
+                // the spaces, not where it breaks lines.
+                let unbroken = shown.replace('\n', "");
+                assert!(
+                    shown.contains(line) || unbroken.contains(line),
+                    "{line} in {shown}"
+                );
             }
         }
     }
