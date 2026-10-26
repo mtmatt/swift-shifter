@@ -31,6 +31,44 @@ pub struct Config {
     /// Folders the quick bar scans for recently changed files.
     #[serde(default = "default_recent_folders")]
     pub recent_folders: Vec<String>,
+    /// Light or dark windows, or the system's (see [`Appearance`]).
+    #[serde(default, deserialize_with = "appearance_or_system")]
+    pub appearance: Appearance,
+}
+
+/// How the windows look: as the system does (the default), light or dark.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Appearance {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+impl Appearance {
+    /// The theme windows are given: none for the system's.
+    pub fn theme(self) -> Option<tauri::Theme> {
+        match self {
+            Appearance::System => None,
+            Appearance::Light => Some(tauri::Theme::Light),
+            Appearance::Dark => Some(tauri::Theme::Dark),
+        }
+    }
+}
+
+/// The appearance a config holds: what it names, or the system's where it
+/// names none this version knows (a newer version's, say) or isn't a name,
+/// so the rest of the config is kept.
+fn appearance_or_system<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Appearance, D::Error> {
+    let value = toml::Value::deserialize(deserializer)?;
+    Ok(match value.as_str() {
+        Some("light") => Appearance::Light,
+        Some("dark") => Appearance::Dark,
+        _ => Appearance::System,
+    })
 }
 
 fn default_jpeg_quality() -> u8 {
@@ -77,6 +115,7 @@ impl Default for Config {
             clipboard_output_mode: default_clipboard_output_mode(),
             quick_bar_shortcut: default_quick_bar_shortcut(),
             recent_folders: default_recent_folders(),
+            appearance: Appearance::System,
         }
     }
 }
@@ -176,6 +215,41 @@ mod tests {
         // Saved again, they're gone.
         let saved = toml::to_string_pretty(&cfg).unwrap();
         assert!(!saved.contains("llm"), "{saved}");
+    }
+
+    /// #152: a config without an appearance, or with one this version
+    /// doesn't know or that isn't a name, follows the system and keeps the
+    /// rest; one it knows is saved and read back.
+    #[test]
+    fn appearance_falls_back_to_the_system_and_round_trips() {
+        for text in [
+            "jpeg_quality = 80\n",
+            "jpeg_quality = 80\nappearance = \"sepia\"\n",
+            "jpeg_quality = 80\nappearance = 3\n",
+            "jpeg_quality = 80\nappearance = \"system\"\n",
+        ] {
+            let cfg = parse(text);
+            assert_eq!(cfg.appearance, Appearance::System, "{text}");
+            assert_eq!(cfg.jpeg_quality, 80, "{text}");
+        }
+        for (name, appearance) in [("light", Appearance::Light), ("dark", Appearance::Dark)] {
+            let cfg = parse(&format!("appearance = \"{name}\"\n"));
+            assert_eq!(cfg.appearance, appearance);
+            let saved = toml::to_string_pretty(&cfg).unwrap();
+            assert!(
+                saved.contains(&format!("appearance = \"{name}\"")),
+                "{saved}"
+            );
+            assert_eq!(parse(&saved).appearance, appearance);
+        }
+        // As Settings sends it.
+        let sent = serde_json::to_value(Config {
+            appearance: Appearance::Dark,
+            ..Config::default()
+        })
+        .unwrap();
+        let back: Config = serde_json::from_value(sent).unwrap();
+        assert_eq!(back.appearance, Appearance::Dark);
     }
 
     #[test]

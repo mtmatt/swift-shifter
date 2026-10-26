@@ -42,13 +42,15 @@ body {
     font-family: inherit;
     font-size: 13px;
     letter-spacing: 0.06em;
-    padding: 5px 12px;
+    padding: 5px 8px;
     background: transparent;
     border: none;
     border-radius: 4px;
     color: var(--text-3);
     cursor: pointer;
+    /* Five share the fixed-width window: they shrink rather than overflow. */
     flex: 1;
+    min-width: 0;
     text-align: center;
     transition:
         background 0.15s,

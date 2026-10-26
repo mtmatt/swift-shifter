@@ -4,6 +4,9 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { parseQuery, rankFiles, relativeTime, type RecentFile } from "./quick-search";
 import { type ConversionWarning, warningTooltip } from "./warnings";
+import { followAppearance } from "./appearance";
+
+followAppearance();
 
 // ─── Backend payloads ─────────────────────────────────────────────────────
 

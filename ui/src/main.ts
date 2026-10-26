@@ -4,6 +4,9 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { type ConversionWarning, warningLine, warningTooltip } from "./warnings";
+import { followAppearance } from "./appearance";
+
+followAppearance();
 
 // ─── Interfaces ──────────────────────────────────────────────────────────
 
