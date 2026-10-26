@@ -205,4 +205,12 @@ This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Push
 
 ## License
 
-Apache License Version 2.0
+Copyright 2026 ShangJhe Li (mtmatt)
+
+From v2.0.0, Swift Shifter is licensed under the GNU General Public License
+v3.0 or later ([`LICENSE`](LICENSE), SPDX `GPL-3.0-or-later`).
+
+v1.0.1 and earlier were released under the Apache License 2.0, and stay
+under it. Code that came in under Apache-2.0 keeps its notices, and
+third-party code keeps its own license, such as the vendored mitex Typst
+scope (`swift-shifter/src/converter/document/native/typst/mitex/LICENSE`).

@@ -4,8 +4,8 @@ The Typst definitions that the `mitex` crate's TeX→Typst math output refers
 to (`mitexsqrt`, `pmatrix`, …). They are copied from
 <https://github.com/mitex-rs/mitex/tree/f69eb43b52372e141b35661c049ce522567adbf0/packages/mitex>,
 the commit the `mitex` 0.2.4 crate was published from, so the scope matches
-the converter's output. Licensed Apache-2.0 (see `LICENSE`), like Swift
-Shifter.
+the converter's output. Licensed Apache-2.0 (see `LICENSE`), as mitex is,
+whatever Swift Shifter's own license.
 
 Local changes:
 
