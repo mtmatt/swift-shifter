@@ -83,8 +83,7 @@ swift-shifter/
 ├── .github/
 │   └── workflows/
 │       ├── build.yml        # Compile check on macOS, Windows, Ubuntu, Fedora, Arch
-│       ├── tag.yml          # Auto-creates v* tag after build passes on main
-│       └── release.yml      # Builds signed installers and publishes GitHub release
+│       └── release.yml      # On a v* tag: builds signed installers as a draft release
 ├── scripts/
 │   ├── bump-version.sh      # Syncs version across package.json, Cargo.toml, tauri.conf.json
 │   └── build-icons.sh
@@ -123,22 +122,27 @@ npm run tauri -- build
 
 The release `.app` lands in `swift-shifter/target/release/bundle/`.
 
-### Bumping the version
+### Releasing a version
+
+Releases are cut from the `release` branch, and tags are pushed by hand:
 
 ```bash
+git switch release && git merge main
 ./scripts/bump-version.sh 0.2.0
-git push origin main
+git commit -am "chore: bump version to 0.2.0"
+./scripts/check-version.sh v0.2.0
+git push origin release
+git tag v0.2.0 && git push origin v0.2.0
 ```
 
-This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Pushing to `main` triggers the CI pipeline, which automatically creates the `v0.2.0` tag and kicks off the release build.
+`bump-version.sh` syncs `package.json`, `Cargo.toml`, and `tauri.conf.json`, which must agree. Pushing the `v0.2.0` tag starts `release.yml`: it checks the tag against those three files, then builds the signed installers into a draft GitHub release, which a maintainer reviews and publishes. Afterwards, merge `release` back into `main`. Nothing creates tags automatically.
 
 ## CI / Release Pipeline
 
-| Workflow      | Trigger                      | What it does                                                              |
-| ------------- | ---------------------------- | ------------------------------------------------------------------------- |
-| `build.yml`   | Push to `main`, PRs          | Compile check on macOS, Windows, Ubuntu, Fedora, Arch                     |
-| `tag.yml`     | `build.yml` passes on `main` | Verifies version files agree, creates `v{version}` tag                    |
-| `release.yml` | `v*` tag pushed              | Builds signed installers on all platforms, publishes GitHub draft release |
+| Workflow      | Trigger                                   | What it does                                                                            |
+| ------------- | ----------------------------------------- | --------------------------------------------------------------------------------------- |
+| `build.yml`   | Push to `main` or `release`, PRs          | Compile check on macOS, Windows, Ubuntu, Fedora, Arch; runs the full test suite         |
+| `release.yml` | `v*` tag pushed, or run by hand for a tag | Verifies the tag matches the version files, builds signed installers as a draft release |
 
 ## Roadmap
 
@@ -155,7 +159,7 @@ This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Push
 - [x] Handle ffmpeg and brew installation automatically
 - [x] Auto-update via Tauri updater plugin
 - [x] Windows and Linux support
-- [x] CI/CD pipeline with automatic tagging and signed releases
+- [x] CI/CD pipeline with signed releases
 - [x] Document conversion (native engine, embedded typst for PDF; pandoc for the rest)
 - [x] Images to PDF
 - [x] EPUB <-> PDF
