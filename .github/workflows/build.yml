@@ -126,10 +126,13 @@ jobs:
   # TeX Live's engines (#78), epubcheck (#79), pandoc, pdftotext and
   # pymupdf4llm (#114). In CI, a test fails rather than skip without one.
   # Not tectonic: it downloads its bundle while the tests run, and TeX
-  # Live's XeLaTeX compiles our LaTeX already.
+  # Live's XeLaTeX compiles our LaTeX already. On the Ubuntu the tools were
+  # tested on: `ubuntu-latest` moves to Ubuntu 26, and a run left on it
+  # hung an hour installing them. Past half an hour, a run has hung.
   test:
     name: Tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
     steps:
       - name: Install system dependencies and the tools tests check with
