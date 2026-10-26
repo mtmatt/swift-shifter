@@ -94,9 +94,9 @@ All conversions are edges in one directed graph. `graph::edges()` is the authori
   - **Images:** local images are packaged, and non-EPUB formats are converted to PNG. Remote images become their alt text.
   - **Cover and TOC:** front matter `cover-image:` sets the cover, and `nav.xhtml` and `toc.ncx` are built from the headings.
 
-### External binary management — two strategies by platform
+### External tools — found, never installed
 
-`document/binaries.rs` and `downloader.rs` locate or install tools. macOS resolves system/Homebrew binaries (`/opt/homebrew/bin`, `/usr/local/bin`) and auto-installs via brew. **Linux/Windows download pinned prebuilt binaries** described in `tools.toml` into `dirs::data_local_dir()/swift-shifter`. `tools.toml` is the single source of truth for tool versions/URLs/checksums (`include_str!`'d at compile time) — bump a tool there, no Rust changes needed. Each external tool has an `ensure_*` function spawned at startup in `main.rs setup()`; failures are non-fatal and surfaced to the UI via events.
+The app doesn't install tools (#145). `converter/tools.rs` lists them (`Tool`): ffmpeg, pandoc, pymupdf4llm and marker-pdf. Each has a finder (`media::find_ffmpeg`, `document/binaries.rs`) that looks on `PATH` and where installers usually put it (Homebrew's bins on macOS, pipx's venvs, and on Linux/Windows the directory earlier versions downloaded into). A conversion gets its tool with `Tool::locate`, which caches it once found; a missing tool's error is `Tool::missing`, naming it, what needs it and how to install it on this platform. `doctor` prints the same.
 
 ### Config and shared state
 

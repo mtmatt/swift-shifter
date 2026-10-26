@@ -5,7 +5,6 @@ mod cli;
 mod clipboard;
 mod config;
 mod converter;
-mod downloader;
 mod hotkey;
 mod process;
 mod quick;
@@ -140,36 +139,9 @@ fn main() {
                 }
             });
 
-            // Check for ffmpeg at startup
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = converter::media::ensure_ffmpeg(&handle).await {
-                    eprintln!("ffmpeg setup warning: {e}");
-                    handle.emit("ffmpeg:failed", e).ok();
-                }
-            });
-
-            // Check for pandoc at startup
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = converter::document::ensure_pandoc(&handle).await {
-                    eprintln!("pandoc setup warning: {e}");
-                    handle.emit("pandoc:failed", e).ok();
-                }
-            });
-
             // PDFs are typeset in-process; scan fonts now so the first
             // conversion doesn't wait for it.
             converter::document::native::typst::warm_up();
-
-            // Check for pymupdf4llm at startup — needed for PDF → EPUB/HTML/MD
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = converter::document::ensure_pymupdf4llm(&handle).await {
-                    eprintln!("pymupdf4llm setup warning: {e}");
-                    handle.emit("pymupdf:failed", e).ok();
-                }
-            });
 
             // Check for app updates in the background
             let handle = app.handle().clone();

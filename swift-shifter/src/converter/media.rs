@@ -3,69 +3,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use tauri::Emitter;
 
-// Streaming installs only happen via Homebrew on macOS.
-#[cfg(target_os = "macos")]
-#[derive(serde::Serialize, Clone)]
-struct InstallLogPayload {
-    line: String,
-    phase: String,
-}
-
-/// Run a command, streaming every stdout/stderr line as an `install:log` event.
-/// Returns whether the process exited successfully.
-#[cfg(target_os = "macos")]
-async fn run_streamed(
-    app: &tauri::AppHandle,
-    mut cmd: tokio::process::Command,
-    phase: &str,
-) -> Result<bool, String> {
-    use tokio::io::{AsyncBufReadExt, BufReader};
-
-    cmd.stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-
-    let mut child = cmd.spawn().map_err(|e| format!("spawn failed: {e}"))?;
-
-    let stdout = child.stdout.take().unwrap();
-    let stderr = child.stderr.take().unwrap();
-
-    let mut stdout_lines = BufReader::new(stdout).lines();
-    let mut stderr_lines = BufReader::new(stderr).lines();
-
-    let app2 = app.clone();
-    let phase2 = phase.to_string();
-    let stderr_task = tokio::spawn(async move {
-        while let Ok(Some(line)) = stderr_lines.next_line().await {
-            app2.emit(
-                "install:log",
-                InstallLogPayload {
-                    line,
-                    phase: phase2.clone(),
-                },
-            )
-            .ok();
-        }
-    });
-
-    let phase_str = phase.to_string();
-    while let Ok(Some(line)) = stdout_lines.next_line().await {
-        app.emit(
-            "install:log",
-            InstallLogPayload {
-                line,
-                phase: phase_str.clone(),
-            },
-        )
-        .ok();
-    }
-
-    stderr_task.await.ok();
-
-    let status = child.wait().await.map_err(|e| format!("wait error: {e}"))?;
-    Ok(status.success())
-}
-
-static FFMPEG_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
+static FFMPEG_PATH: OnceLock<PathBuf> = OnceLock::new();
 
 /// Cached result of probing whether this ffmpeg build ships the external
 /// `libvorbis` encoder. Some builds (e.g. certain Homebrew bottles) only carry
@@ -198,7 +136,7 @@ fn find_ffmpeg_binary() -> Option<PathBuf> {
         } else {
             "ffmpeg"
         };
-        let candidate = crate::downloader::user_tool_dir()
+        let candidate = crate::converter::tools::earlier_download_dir()
             .join("bin")
             .join(bin_name);
         if candidate.exists() {
@@ -208,102 +146,8 @@ fn find_ffmpeg_binary() -> Option<PathBuf> {
     None
 }
 
-#[cfg(target_os = "macos")]
-fn find_brew_binary() -> Option<PathBuf> {
-    if let Ok(p) = which::which("brew") {
-        return Some(p);
-    }
-    for dir in BREW_PATHS {
-        let candidate = PathBuf::from(dir).join("brew");
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-/// Install Homebrew non-interactively via the official install script.
-#[cfg(target_os = "macos")]
-async fn install_brew(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    app.emit("brew:installing", ()).ok();
-
-    let mut cmd = crate::process::async_command("/bin/bash");
-    cmd.arg("-c")
-        .arg("curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh | /bin/bash")
-        .env("NONINTERACTIVE", "1");
-
-    let ok = run_streamed(app, cmd, "brew").await?;
-
-    if ok && let Some(p) = find_brew_binary() {
-        app.emit("brew:installed", ()).ok();
-        return Ok(p);
-    }
-
-    Err("Homebrew installation failed or brew binary not found after install".to_string())
-}
-
-pub async fn ensure_ffmpeg(app: &tauri::AppHandle) -> Result<(), String> {
-    // Check if already cached
-    if FFMPEG_PATH.get().is_some() {
-        return Ok(());
-    }
-
-    // Try to find ffmpeg in PATH and well-known Homebrew locations
-    if let Some(path) = find_ffmpeg_binary() {
-        FFMPEG_PATH.set(Some(path)).ok();
-        return Ok(());
-    }
-
-    // ffmpeg not found — notify the user and attempt to install via brew on macOS
-    app.emit("ffmpeg:missing", ()).ok();
-
-    #[cfg(target_os = "macos")]
-    {
-        // Ensure brew is available, installing it if needed
-        let brew = match find_brew_binary() {
-            Some(p) => p,
-            None => install_brew(app).await?,
-        };
-
-        app.emit("ffmpeg:installing", ()).ok();
-
-        let mut cmd = crate::process::async_command(&brew);
-        cmd.args(["install", "ffmpeg"]);
-        let ok = run_streamed(app, cmd, "ffmpeg").await?;
-
-        if ok {
-            // Re-search after install (brew may have put it in a non-PATH location)
-            if let Some(path) = find_ffmpeg_binary() {
-                FFMPEG_PATH.set(Some(path)).ok();
-                app.emit("ffmpeg:installed", ()).ok();
-                return Ok(());
-            }
-        }
-    }
-
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
-    {
-        match crate::downloader::ensure_tool(app, "ffmpeg").await {
-            Ok(path) => {
-                FFMPEG_PATH.set(Some(path)).ok();
-                app.emit("ffmpeg:installed", ()).ok();
-                return Ok(());
-            }
-            Err(e) => {
-                app.emit("ffmpeg:failed", &e).ok();
-            }
-        }
-    }
-
-    FFMPEG_PATH.set(None).ok();
-    Ok(())
-}
-
 fn get_ffmpeg() -> Result<PathBuf, String> {
-    match FFMPEG_PATH.get() {
-        Some(Some(p)) => Ok(p.clone()),
-        _ => Tool::Ffmpeg.require(find_ffmpeg_binary()),
-    }
+    Tool::Ffmpeg.locate(&FFMPEG_PATH)
 }
 
 #[derive(serde::Serialize, Clone)]
