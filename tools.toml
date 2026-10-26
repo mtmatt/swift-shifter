@@ -49,22 +49,3 @@ sha256  = "a9e5feb3d56d2fb0e3e765d1c33b8ee6b72e6963d7de31504edeec8cd1be34b1"
 archive = "zip"
 mode    = "binary"
 binary  = "pandoc-3.6.4/pandoc.exe"
-
-[calibre]
-version  = "7.26.0"
-
-[calibre.linux-x86_64]
-url      = "https://download.calibre-ebook.com/7.26.0/calibre-7.26.0-x86_64.txz"
-sha256   = ""
-archive  = "tar.xz"
-mode     = "dir"
-dest_dir = "calibre"
-binary   = "ebook-convert"
-
-[calibre.linux-aarch64]
-url      = "https://download.calibre-ebook.com/7.26.0/calibre-7.26.0-aarch64.txz"
-sha256   = ""
-archive  = "tar.xz"
-mode     = "dir"
-dest_dir = "calibre"
-binary   = "ebook-convert"

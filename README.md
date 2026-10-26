@@ -16,7 +16,7 @@ A featherweight, always-on file converter that lives in your menu bar. Press a h
   - Video: MP4, MOV, MKV, WebM, AVI, GIF (video-to-GIF and GIF-to-video)
   - Audio: MP3, AAC, FLAC, OGG, WAV, OPUS, M4A
   - Data: JSON, YAML, TOML, CSV
-  - Documents: Markdown, plain text, HTML, LaTeX, Typst, PDF, EPUB, MOBI (native engine + embedded typst for PDF; pandoc, pymupdf4llm/marker-pdf and Calibre for the rest)
+  - Documents: Markdown, plain text, HTML, LaTeX, Typst, PDF, EPUB (native engine + embedded typst for PDF; pandoc and pymupdf4llm/marker-pdf for the rest)
 - **PDF merge** -- combine multiple PDF files into one in a dedicated merge mode
 - **Clipboard integration** -- paste (⌘V) to load clipboard content for conversion; result written back to clipboard or saved to disk (configurable)
 - **Output next to source** -- converted file lands in the same folder as the input (configurable)
@@ -37,7 +37,6 @@ A featherweight, always-on file converter that lives in your menu bar. Press a h
 | Document conversion    | Native Rust engine for Markdown / plain text / HTML / EPUB / Typst; `pandoc` for LaTeX input (auto-installed if missing)     |
 | PDF output             | [typst](https://typst.app) compiler linked in (no install, CJK font selection, TeX math via `mitex`)                         |
 | PDF ↔ EPUB / HTML / MD | `pymupdf4llm` (auto-installed via pipx); optional ML engine via `marker-pdf`                                                 |
-| MOBI conversion        | System `ebook-convert` / Calibre (auto-installed via Homebrew cask / winget / apt)                                           |
 | Data serialization     | `serde_json`, `serde_yaml`, `toml`, `csv` crates                                                                             |
 | Frontend UI            | TypeScript + [Vite](https://vitejs.dev) (plain DOM, no framework)                                                            |
 | Global hotkeys         | `tauri-plugin-global-shortcut`                                                                                               |
@@ -60,7 +59,7 @@ swift-shifter/
 │   │       ├── image.rs     # image crate + ravif (AVIF) + sips (HEIC)
 │   │       ├── media.rs     # ffmpeg subprocess wrapper
 │   │       ├── data.rs      # JSON/YAML/TOML/CSV converters
-│   │       └── document/    # native engine + embedded typst, pandoc, pymupdf4llm/marker-pdf, Calibre
+│   │       └── document/    # native engine + embedded typst, pandoc, pymupdf4llm/marker-pdf
 │   │           ├── mod.rs
 │   │           ├── binaries.rs  # dependency detection and auto-install
 │   │           ├── conversion.rs # conversion logic per format
@@ -102,7 +101,6 @@ swift-shifter/
 | ffmpeg      | ≥ 6             | for video/audio; auto-installed via `brew` if missing             |
 | pandoc      | any             | for document conversion; auto-installed via `brew` / winget / apt |
 | pymupdf4llm | any             | for PDF extraction; auto-installed via `pipx` if missing          |
-| Calibre     | any             | for MOBI conversion; auto-installed via `brew` / winget / apt     |
 
 ## Contribute to the Project
 
@@ -159,8 +157,7 @@ This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Push
 - [x] Document conversion (native engine, embedded typst for PDF; pandoc for the rest)
 - [x] Images to PDF
 - [x] EPUB <-> PDF
-- [x] MOBI <-> PDF/EPUB/HTML/MD
-- [x] PDF/EPUB/MOBI -> HTML and Markdown
+- [x] PDF/EPUB -> HTML and Markdown
 - [x] PDF merge (combine multiple PDFs into one)
 - [x] M4A audio format support
 - [x] Clipboard integration (paste to convert; copy result back to clipboard)

@@ -212,6 +212,8 @@ mod tests {
         touch(root.path(), "new.jpg", 10);
         touch(root.path(), "middle.md", 100);
         touch(root.path(), "notes.unknownext", 1);
+        // MOBI isn't converted any more (#133): a recent one isn't offered.
+        touch(root.path(), "book.mobi", 2);
 
         let files = scan(&[root.path().to_path_buf()], MAX_RESULTS);
 

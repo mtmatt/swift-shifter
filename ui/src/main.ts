@@ -202,14 +202,12 @@ const DEP_DISPLAY: Record<string, string> = {
   ffmpeg: "ffmpeg",
   pandoc: "pandoc",
   pymupdf: "PyMuPDF",
-  "ebook-convert": "Calibre",
 };
 
 /** Map error substrings → dep key, for friendly "installing" messages. */
 const DEP_ERROR_FRAGMENTS: [string, string][] = [
   ["pandoc not found", "pandoc"],
   ["pymupdf4llm not found", "pymupdf"],
-  ["ebook-convert not found", "ebook-convert"],
   ["ffmpeg not found", "ffmpeg"],
 ];
 
@@ -1427,12 +1425,11 @@ listen("ffmpeg:failed", (ev) => {
   bottomStatus.textContent = "ffmpeg unavailable";
 }).catch(console.error);
 
-// ─── Background dep install status (pandoc, PyMuPDF, Calibre) ─────────────
+// ─── Background dep install status (pandoc, PyMuPDF) ──────────────────────
 
 const BACKGROUND_DEPS: [string, string][] = [
   ["pandoc", "pandoc"],
   ["pymupdf", "PyMuPDF"],
-  ["ebook-convert", "Calibre"],
 ];
 
 for (const [dep, label] of BACKGROUND_DEPS) {

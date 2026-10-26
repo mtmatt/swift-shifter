@@ -171,15 +171,6 @@ fn main() {
                 }
             });
 
-            // Check for ebook-convert (Calibre) at startup — needed for MOBI conversion
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                if let Err(e) = converter::document::ensure_ebook_convert(&handle).await {
-                    eprintln!("ebook-convert setup warning: {e}");
-                    handle.emit("ebook-convert:failed", e).ok();
-                }
-            });
-
             // Check for app updates in the background
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -220,7 +211,6 @@ fn main() {
             set_config,
             check_marker,
             install_marker,
-            check_ebook_convert,
             open_output_folder,
             check_update,
             install_update,
@@ -481,11 +471,6 @@ fn check_marker() -> bool {
 #[tauri::command]
 async fn install_marker(app: tauri::AppHandle) -> Result<(), String> {
     converter::document::install_marker(&app).await
-}
-
-#[tauri::command]
-fn check_ebook_convert() -> bool {
-    converter::document::ebook_convert_available()
 }
 
 #[tauri::command]
