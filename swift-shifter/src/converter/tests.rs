@@ -166,12 +166,8 @@ fn test_detect_output_formats_snapshot() {
         ("/x.latex", &["md", "html", "pdf", "typst"]),
         ("/x.typst", &["md", "html", "pdf", "tex", "txt", "epub"]),
         ("/x.typ", &["md", "html", "pdf", "tex", "txt", "epub"]),
-        (
-            "/x.epub",
-            &["pdf", "mobi", "md", "html", "txt", "typst", "tex"],
-        ),
-        ("/x.mobi", &["epub", "pdf", "html", "md"]),
-        ("/x.pdf", &["epub", "mobi", "html", "md"]),
+        ("/x.epub", &["pdf", "md", "html", "txt", "typst", "tex"]),
+        ("/x.pdf", &["epub", "html", "md"]),
     ];
     for (path, expected) in cases {
         let mut got = d(path).unwrap();
@@ -200,12 +196,12 @@ fn test_find_path_direct_is_two_nodes() {
 }
 
 #[test]
-fn test_find_path_multi_hop_png_to_mobi() {
-    // png has no direct edge to mobi; must go through pdf then an ebook tool.
-    let p = crate::converter::graph::find_path("png", "mobi").unwrap();
+fn test_find_path_multi_hop_png_to_epub() {
+    // png has no direct edge to epub; must go through pdf.
+    let p = crate::converter::graph::find_path("png", "epub").unwrap();
     assert!(p.len() > 2, "expected a chain, got {p:?}");
     assert_eq!(p.first().unwrap(), &"png");
-    assert_eq!(p.last().unwrap(), &"mobi");
+    assert_eq!(p.last().unwrap(), &"epub");
     for w in p.windows(2) {
         assert!(
             crate::converter::graph::route_hop(&w[0], &w[1]).is_some(),
@@ -214,6 +210,39 @@ fn test_find_path_multi_hop_png_to_mobi() {
             w[1]
         );
     }
+}
+
+/// Regression for #133: MOBI went with Calibre. A `.mobi` file, or asking
+/// for MOBI, says so, and nothing routes to or from it.
+#[test]
+fn test_mobi_is_refused_with_why() {
+    use crate::converter::graph::{detect_with_chains, find_path};
+    let why = "MOBI isn't supported any more";
+    for err in [
+        crate::converter::detect_output_formats("/x.mobi").unwrap_err(),
+        detect_with_chains("/x.MOBI").unwrap_err(),
+        crate::converter::refuse_dropped("mobi", "pdf").unwrap_err(),
+        crate::converter::refuse_dropped("epub", "mobi").unwrap_err(),
+    ] {
+        assert!(err.starts_with(why), "{err}");
+    }
+    assert!(crate::converter::refuse_dropped("epub", "pdf").is_ok());
+    for (from, to) in [
+        ("pdf", "mobi"),
+        ("epub", "mobi"),
+        ("png", "mobi"),
+        ("mobi", "epub"),
+    ] {
+        assert!(find_path(from, to).is_none(), "{from} -> {to}");
+    }
+    for e in crate::converter::graph::edges() {
+        assert!(e.from != "mobi" && e.to != "mobi", "{} -> {}", e.from, e.to);
+    }
+    // Other unknown types keep their message.
+    assert_eq!(
+        crate::converter::detect_output_formats("/x.xyz").unwrap_err(),
+        "Unsupported file type: .xyz"
+    );
 }
 
 #[test]
@@ -272,21 +301,21 @@ fn test_no_chain_passes_through_plain_text() {
 }
 
 #[test]
-fn test_detect_with_chains_png_offers_chained_mobi() {
+fn test_detect_with_chains_png_offers_chained_epub() {
     let r = crate::converter::graph::detect_with_chains("/x.png").unwrap();
     // direct still includes a 1-hop target
     assert!(r.direct.contains(&"pdf".to_string()));
-    // mobi is NOT direct from png
-    assert!(!r.direct.contains(&"mobi".to_string()));
+    // epub is NOT direct from png
+    assert!(!r.direct.contains(&"epub".to_string()));
     // ...but appears as a chained target with a route through pdf
-    let mobi = r
+    let epub = r
         .chained
         .iter()
-        .find(|c| c.format == "mobi")
-        .expect("mobi should be a chained target for png");
-    assert!(mobi.hops >= 2);
-    assert_eq!(mobi.route.first().unwrap(), "png");
-    assert_eq!(mobi.route.last().unwrap(), "mobi");
+        .find(|c| c.format == "epub")
+        .expect("epub should be a chained target for png");
+    assert!(epub.hops >= 2);
+    assert_eq!(epub.route.first().unwrap(), "png");
+    assert_eq!(epub.route.last().unwrap(), "epub");
     // chained never repeats a direct target
     for c in &r.chained {
         assert!(
@@ -350,8 +379,8 @@ fn test_chains_keep_what_every_hop_left_out() {
     let done = Converted::whole("/in/doc.typ".into())
         .then(hop("/tmp/doc.md", vec![lost(1)]))
         .then(hop("/tmp/doc.epub", Vec::new()))
-        .then(hop("/out/doc.mobi", vec![lost(2)]));
-    assert_eq!(done, hop("/out/doc.mobi", vec![lost(1), lost(2)]));
+        .then(hop("/out/doc.epub", vec![lost(2)]));
+    assert_eq!(done, hop("/out/doc.epub", vec![lost(1), lost(2)]));
 }
 
 #[test]

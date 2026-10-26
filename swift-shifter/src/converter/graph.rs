@@ -132,12 +132,8 @@ pub fn edges() -> Vec<Edge> {
         ("txt", &["md", "html", "pdf", "tex", "typst", "epub"]),
         ("tex", &["md", "html", "pdf", "typst"]),
         ("typst", &["md", "html", "pdf", "tex", "txt", "epub"]),
-        (
-            "epub",
-            &["pdf", "mobi", "md", "html", "txt", "typst", "tex"],
-        ),
-        ("mobi", &["epub", "pdf", "html", "md"]),
-        ("pdf", &["epub", "mobi", "html", "md"]),
+        ("epub", &["pdf", "md", "html", "txt", "typst", "tex"]),
+        ("pdf", &["epub", "html", "md"]),
         // html is an input only.
         ("html", &["md", "txt", "pdf", "typst", "epub", "tex"]),
     ];
@@ -187,9 +183,6 @@ pub enum Hop {
     HeicInput,    // image::convert_heic (heic input, non-pdf target)
     Media,        // media::convert_media
     Data,         // data::convert_data
-    EpubToMobi,
-    MobiInput, // document::convert_mobi
-    PdfToMobi,
     PdfToHtml,
     PdfToMd,
     PdfToEpubOrMarker,
@@ -224,10 +217,7 @@ pub fn route_hop(from: &str, to: &str) -> Option<Hop> {
         "mp4" | "mov" | "mkv" | "webm" | "avi" | "mp3" | "aac" | "flac" | "ogg" | "wav"
         | "opus" | "m4a" => Some(Media),
         "json" | "yaml" | "toml" | "csv" => Some(Data),
-        "mobi" => Some(MobiInput),
-        "epub" if to == "mobi" => Some(EpubToMobi),
         "pdf" => match to {
-            "mobi" => Some(PdfToMobi),
             "html" => Some(PdfToHtml),
             "md" => Some(PdfToMd),
             "epub" => Some(PdfToEpubOrMarker),
@@ -330,10 +320,29 @@ pub fn find_path(from_ext: &str, target: &str) -> Option<Vec<String>> {
     shortest_paths(&from).remove(&target)
 }
 
+/// Why a format the app once converted isn't converted any more, for the
+/// message a file of it, or asking for it, gets: MOBI went with Calibre
+/// (#133).
+pub fn dropped(format: &str) -> Option<&'static str> {
+    (normalize_ext(format) == "mobi").then_some(
+        "MOBI isn't supported any more: converting it needed Calibre, \
+         which Swift Shifter no longer uses",
+    )
+}
+
+/// What a file of `ext` gets when nothing converts it: why, for a format
+/// the app dropped (see [`dropped`]).
+pub fn unsupported_file(ext: &str) -> String {
+    match dropped(ext) {
+        Some(why) => why.to_string(),
+        None => format!("Unsupported file type: .{ext}"),
+    }
+}
+
 #[derive(serde::Serialize, Debug)]
 pub struct ChainedTarget {
     pub format: String,
-    /// Full node sequence including source and target, e.g. ["png","pdf","epub","mobi"].
+    /// Full node sequence including source and target, e.g. ["png","pdf","epub","md"].
     pub route: Vec<String>,
     /// Number of hops (edges) = route.len() - 1.
     pub hops: usize,
@@ -357,7 +366,7 @@ pub fn detect_with_chains(path: &str) -> Result<DetectResult, String> {
 
     let direct = direct_targets(&ext);
     if direct.is_empty() {
-        return Err(format!("Unsupported file type: .{ext}"));
+        return Err(unsupported_file(&ext));
     }
 
     let mut chained: Vec<ChainedTarget> = shortest_paths(from)

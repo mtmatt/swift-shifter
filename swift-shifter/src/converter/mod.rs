@@ -51,7 +51,7 @@ pub fn detect_output_formats(path: &str) -> Result<Vec<String>, String> {
 
     let targets = graph::direct_targets(&ext);
     if targets.is_empty() {
-        return Err(format!("Unsupported file type: .{ext}"));
+        return Err(graph::unsupported_file(&ext));
     }
     Ok(targets)
 }
@@ -92,14 +92,9 @@ async fn run_single_hop(
         Hop::HeicInput => image::convert_heic(path, to, out_dir),
         Hop::Media => media::convert_media(app, path, to, out_dir).await,
         Hop::Data => data::convert_data(path, to, out_dir),
-        Hop::EpubToMobi => document::convert_epub_to_mobi(app, path, out_dir).await,
-        Hop::MobiInput => return document::convert_mobi(app, path, to, out_dir).await,
         Hop::DocumentPandoc => document::convert_document(app, path, to, out_dir).await,
         Hop::DocumentNative => {
             return document::native::convert_document(app, path, to, out_dir).await;
-        }
-        Hop::PdfToMobi => {
-            document::convert_pdf_to_mobi(app, path, out_dir, config.use_marker_pdf).await
         }
         Hop::PdfToHtml => document::convert_pdf_to_html(app, path, out_dir).await,
         Hop::PdfToMd => {
@@ -114,6 +109,15 @@ async fn run_single_hop(
         }
     }?;
     Ok(Converted::whole(output))
+}
+
+/// Refuses converting from `ext` or to `target`, a format the app dropped,
+/// saying why (see `graph::dropped`), as the CLI asking for MOBI does.
+pub(crate) fn refuse_dropped(ext: &str, target: &str) -> Result<(), String> {
+    match graph::dropped(ext).or_else(|| graph::dropped(target)) {
+        Some(why) => Err(why.to_string()),
+        None => Ok(()),
+    }
 }
 
 /// Convert `path` to `target_format`, chaining hops through a temp dir when no
@@ -134,6 +138,7 @@ pub async fn convert_file(
         .unwrap_or("")
         .to_lowercase();
 
+    refuse_dropped(&ext, target_format)?;
     let seq = graph::find_path(&ext, target_format)
         .ok_or_else(|| format!("No conversion path from .{ext} to {target_format}"))?;
 

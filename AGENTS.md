@@ -2,7 +2,7 @@
 
 This file provides guidance to AI coding agents (Claude Code, etc.) working in this repository. `CLAUDE.md` is a local symlink to this file.
 
-Swift Shifter is a Tauri v2 menu-bar file converter: a Rust backend doing the conversions, a plain-DOM TypeScript/Vite frontend, and external tools (ffmpeg, pandoc, pymupdf4llm, Calibre) for what isn't native yet. typst is linked in for PDF output.
+Swift Shifter is a Tauri v2 menu-bar file converter: a Rust backend doing the conversions, a plain-DOM TypeScript/Vite frontend, and external tools (ffmpeg, pandoc, pymupdf4llm) for what isn't native yet. typst is linked in for PDF output.
 
 ## Commands
 
@@ -51,7 +51,7 @@ All conversions are edges in one directed graph. `graph::edges()` is the authori
 
 - `detect_output_formats(path)` (in `mod.rs`) returns `graph::direct_targets()` — the direct (1-hop) out-edges, platform-filtered. The UI's `detect_format` command instead returns `graph::detect_with_chains()` → `DetectResult { direct, chained }`, where `chained` are formats reachable only via a multi-hop chain (each with its `route` and `hops`), shown behind the UI's "…" expander.
 - `graph::find_path(from, to)` runs Dijkstra over satisfiable edges (weighted by `cost`, capped at `MAX_HOPS = 6`) to pick the min-cost chain.
-- `graph::route_hop(from, to) -> Option<Hop>` classifies a single hop to its converter; `convert_file` → `run_single_hop` dispatches on the exhaustive `Hop` enum to `image.rs`, `media.rs` (ffmpeg), `data.rs` (serde), or `document/` (native engine, pandoc, pymupdf, Calibre, marker). The exhaustive match + `test_route_hop_covers_every_satisfiable_edge` structurally guarantee every offered edge is handled.
+- `graph::route_hop(from, to) -> Option<Hop>` classifies a single hop to its converter; `convert_file` → `run_single_hop` dispatches on the exhaustive `Hop` enum to `image.rs`, `media.rs` (ffmpeg), `data.rs` (serde), or `document/` (native engine, pandoc, pymupdf, marker). The exhaustive match + `test_route_hop_covers_every_satisfiable_edge` structurally guarantee every offered edge is handled.
 
 `convert_file` finds the path, then runs each hop; multi-hop chains stage intermediates in a `tempfile::TempDir` (auto-cleaned) and write only the final artifact to `output_dir`, emitting overall `convert:progress` keyed to the original path.
 
@@ -67,7 +67,7 @@ All conversions are edges in one directed graph. `graph::edges()` is the authori
 **Native document engine (`document/native/`).** This replaces pandoc one hop at a time; see `docs/superpowers/specs/2026-10-15-native-document-converter-design.md`. Readers (`read/markdown.rs` via comrak, which keeps HTML blocks verbatim as `Block::Raw` and folds bare inline tag pairs like `<sup>…</sup>` into AST nodes; `read/html.rs` via scraper, which also reads EPUB/pandoc/ARIA footnote markup; `read/epub.rs`; `read/typst/`, with math converted to TeX by `read/typst_math.rs`; and `read/plain.rs`) build an `ast::Document`, and writers (`write/html.rs`, `write/markdown.rs`, `write/plain.rs`, `write/typst.rs`, `write/epub.rs`, `write/latex.rs`) render it. `route_hop` sends a pair to `Hop::DocumentNative` whenever `native::handles(from, to)` holds, which today means md, txt, html, epub and typst input, and md, txt, html, pdf, typst, epub and tex output. Only `tex` input stays on `DocumentPandoc`.
 
 - **Inputs.** html is an input format only: html → md/txt/pdf/typst/epub/tex directly. Edges into `txt` and `typst` cost 5, so chains pass through md instead. The native `.txt` reader is literal: blank lines separate paragraphs, newlines are line breaks, and there's no Markdown interpretation.
-- **pdf→html and pdf→epub** keep pymupdf4llm (or marker) for extraction and use `native::markdown_to_html` / `native::markdown_to_epub` for the last step. **mobi→md** keeps Calibre for MOBI→EPUB and then reads the EPUB natively.
+- **pdf→html and pdf→epub** keep pymupdf4llm (or marker) for extraction and use `native::markdown_to_html` / `native::markdown_to_epub` for the last step. **MOBI** isn't converted either way since Calibre was dropped (#133): a `.mobi` file, or asking for MOBI, gets `graph::dropped`'s message.
 - **Typst input** (`read/typst/`):
   - **Files:** `mod.rs` reads markup and calls; `names.rs` follows what `#import` and `#let` bind; `wrapper.rs` has the wrappers of tables and their parts, the presets made with `.with`, and the arguments they give; `signature.rs` works out what a call shows of its arguments; `table.rs` reads tables and grids; and `finish.rs` settles labels, references and smart quotes once the whole document is read.
   - **Parsing:** `typst::syntax` markup is walked into the AST. `#set document(…)` and `#set text(lang:)` fill the metadata, and `#set enum(start:)` numbers lists.

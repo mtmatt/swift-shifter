@@ -12,7 +12,6 @@ const MANIFEST: &str = include_str!("../../tools.toml");
 struct Manifest {
     ffmpeg: ToolSpec,
     pandoc: ToolSpec,
-    calibre: ToolSpec,
 }
 
 impl Manifest {
@@ -23,7 +22,6 @@ impl Manifest {
         match name {
             "ffmpeg" => Some(&self.ffmpeg),
             "pandoc" => Some(&self.pandoc),
-            "calibre" => Some(&self.calibre),
             _ => None,
         }
     }
@@ -179,7 +177,7 @@ fn make_executable(dir: &std::path::Path) -> Result<(), String> {
     for entry in std::fs::read_dir(dir).map_err(|e| e.to_string())? {
         let path = entry.map_err(|e| e.to_string())?.path();
         if path.is_symlink() {
-            // Skip symlinks — calibre uses them; chmodding through a symlink
+            // Skip symlinks — archives may hold them; chmodding through a symlink
             // requires the target to be accessible, which may not be the case
             // during extraction ordering. The target will be chmod'd directly.
             continue;

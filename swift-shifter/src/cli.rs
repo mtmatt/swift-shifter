@@ -168,13 +168,6 @@ fn run_doctor() -> i32 {
     );
     println!(
         "{}",
-        format_check(
-            "ebook-convert (Calibre)",
-            document::find_ebook_convert_binary().as_deref()
-        )
-    );
-    println!(
-        "{}",
         format_check("marker-pdf", document::find_marker_binary().as_deref())
     );
     0
