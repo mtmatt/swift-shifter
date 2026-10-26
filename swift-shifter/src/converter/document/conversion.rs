@@ -24,8 +24,7 @@ pub async fn convert_pdf_with_marker(
     path: &str,
     output_dir: Option<&str>,
 ) -> Result<String, String> {
-    let marker = find_marker_binary()
-        .ok_or_else(|| "marker not found — install with: pip install marker-pdf".to_string())?;
+    let marker = get_marker()?;
 
     let user_output_dir = output_dir;
     let out = output_path(path, "epub", user_output_dir)?;
@@ -866,8 +865,7 @@ pub(crate) async fn convert_pdf_with_marker_to_md(
     path: &str,
     output_dir: Option<&str>,
 ) -> Result<String, String> {
-    let marker = find_marker_binary()
-        .ok_or_else(|| "marker not found — install with: pip install marker-pdf".to_string())?;
+    let marker = get_marker()?;
     let out = output_path(path, "md", output_dir)?;
 
     app.emit(

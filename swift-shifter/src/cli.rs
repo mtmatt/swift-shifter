@@ -3,7 +3,8 @@ use std::sync::Mutex;
 
 use crate::config::{AppState, Config};
 use crate::converter;
-use crate::converter::{document, media};
+use crate::converter::media;
+use crate::converter::tools::Tool;
 use clap::{Args, Parser, Subcommand};
 use tauri::Manager;
 
@@ -101,10 +102,11 @@ enum Commands {
     Doctor,
 }
 
-fn format_check(name: &str, found: Option<&Path>) -> String {
+/// `doctor`'s line for `tool`: where it is, or how to install it.
+fn format_check(tool: Tool, found: Option<&Path>) -> String {
     match found {
-        Some(p) => format!("\u{2713} {name}: {}", p.display()),
-        None => format!("\u{2717} {name}: not found"),
+        Some(p) => format!("\u{2713} {}: {}", tool.name(), p.display()),
+        None => format!("\u{2717} {}", tool.missing()),
     }
 }
 
@@ -151,25 +153,9 @@ fn run_duration(input: &str) -> i32 {
 }
 
 fn run_doctor() -> i32 {
-    println!(
-        "{}",
-        format_check("ffmpeg", media::find_ffmpeg().as_deref())
-    );
-    println!(
-        "{}",
-        format_check("pandoc", document::find_pandoc_binary().as_deref())
-    );
-    println!(
-        "{}",
-        format_check(
-            "pymupdf4llm",
-            document::find_pymupdf4llm_python().as_deref()
-        )
-    );
-    println!(
-        "{}",
-        format_check("marker-pdf", document::find_marker_binary().as_deref())
-    );
+    for tool in Tool::ALL {
+        println!("{}", format_check(tool, tool.find().as_deref()));
+    }
     0
 }
 
@@ -431,14 +417,13 @@ mod tests {
 
     #[test]
     fn format_check_marks_found_and_missing() {
-        let found = format_check("ffmpeg", Some(&PathBuf::from("/usr/bin/ffmpeg")));
-        assert!(found.contains("ffmpeg"));
-        assert!(found.contains("/usr/bin/ffmpeg"));
-        assert!(found.starts_with('\u{2713}')); // ✓
+        let found = format_check(Tool::Ffmpeg, Some(&PathBuf::from("/usr/bin/ffmpeg")));
+        assert_eq!(found, "\u{2713} ffmpeg: /usr/bin/ffmpeg"); // ✓
 
-        let missing = format_check("pandoc", None);
-        assert!(missing.contains("not found"));
-        assert!(missing.starts_with('\u{2717}')); // ✗
+        // A missing tool gets the same install hint as a conversion that needs it.
+        let missing = format_check(Tool::Pandoc, None);
+        assert_eq!(missing, format!("\u{2717} {}", Tool::Pandoc.missing())); // ✗
+        assert!(missing.contains(Tool::Pandoc.install_hint()));
     }
 
     #[test]

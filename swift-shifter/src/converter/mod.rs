@@ -3,6 +3,7 @@ pub mod document;
 pub mod graph;
 pub mod image;
 pub mod media;
+pub mod tools;
 
 pub use document::merge_pdfs;
 
