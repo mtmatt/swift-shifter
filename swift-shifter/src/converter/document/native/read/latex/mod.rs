@@ -101,13 +101,26 @@ enum Piece {
 
 fn pieces(node: &SyntaxNode) -> Vec<Piece> {
     let mut out = Vec::new();
+    push_pieces(node, &mut out);
+    out
+}
+
+/// Appends `node`'s children to `out`, those that only group what they
+/// hold taken apart: text into its tokens, and a prime joined to what's
+/// before it (`It's`, `{B}'`, `]'`) into what it joins, so that an argument
+/// is only the first of them.
+fn push_pieces(node: &SyntaxNode, out: &mut Vec<Piece>) {
     for item in node.children_with_tokens() {
         match item {
-            SyntaxElement::Node(text) if text.kind() == SyntaxKind::ItemText => {
-                out.extend(text.children_with_tokens().filter_map(|token| {
-                    let token = token.into_token()?;
-                    Some(Piece::Token(token.kind(), token.text().to_string()))
-                }));
+            SyntaxElement::Node(node)
+                if matches!(
+                    node.kind(),
+                    SyntaxKind::ItemText
+                        | SyntaxKind::ItemAttachComponent
+                        | SyntaxKind::ClauseArgument
+                ) =>
+            {
+                push_pieces(&node, out);
             }
             SyntaxElement::Node(node) => out.push(Piece::Node(node)),
             SyntaxElement::Token(token) => {
@@ -115,7 +128,6 @@ fn pieces(node: &SyntaxNode) -> Vec<Piece> {
             }
         }
     }
-    out
 }
 
 #[derive(Default)]
@@ -143,15 +155,26 @@ struct Reader {
 impl Reader {
     fn flow(&mut self, mut items: Vec<Piece>) {
         let mut at = 0;
+        // How long a tail of `items` holds no `]` (see `take_arguments`).
+        let mut unbracketed = 0;
         while let Some(item) = items.get(at).cloned() {
             at += 1;
             match item {
+                // `\\`, a line break: its `*` and `[…]` say how, which the
+                // document has no say in, and the spaces after it go.
+                Piece::Token(SyntaxKind::ItemNewLine, _) => {
+                    take_arguments(&mut items, &mut at, &mut unbracketed, LINE_BREAK);
+                    self.inline(Inline::LineBreak);
+                    self.skip_spaces = true;
+                }
                 Piece::Token(kind, text) => self.token(kind, &text),
                 Piece::Node(node) => match node.kind() {
                     SyntaxKind::ItemCmd => {
                         let name = command_name(&node);
                         let args = match signature(&name) {
-                            Some(signature) => take_arguments(&mut items, &mut at, signature),
+                            Some(signature) => {
+                                take_arguments(&mut items, &mut at, &mut unbracketed, signature)
+                            }
                             // Unknown: the groups right after it.
                             None => {
                                 let mut groups = Vec::new();
@@ -265,16 +288,28 @@ impl Reader {
         self.skip_spaces = false;
     }
 
-    /// `text`, emphasized in the run of emphasis at the end, or a new one.
     fn text(&mut self, text: &str) {
         self.non_space();
+        push_text(self.run(), text);
+    }
+
+    fn inline(&mut self, inline: Inline) {
+        self.non_space();
+        self.run().push(inline);
+    }
+
+    /// Where what's read goes: emphasized, the run of emphasis at the end,
+    /// or a new one.
+    fn run(&mut self) -> &mut Vec<Inline> {
         if !self.emphasized {
-            push_text(&mut self.inlines, text);
-        } else if let Some(Inline::Emph(run)) = self.inlines.last_mut() {
-            push_text(run, text);
-        } else {
-            self.inlines
-                .push(Inline::Emph(vec![Inline::Text(text.into())]));
+            return &mut self.inlines;
+        }
+        if !matches!(self.inlines.last(), Some(Inline::Emph(_))) {
+            self.inlines.push(Inline::Emph(Vec::new()));
+        }
+        match self.inlines.last_mut() {
+            Some(Inline::Emph(run)) => run,
+            _ => unreachable!("an emphasis was just pushed"),
         }
     }
 
@@ -316,46 +351,90 @@ impl Reader {
 /// Characters LaTeX gives meanings, escaped: each shows its character.
 const ESCAPED: [&str; 7] = ["\\%", "\\&", "\\#", "\\$", "\\_", "\\{", "\\}"];
 
-/// What a command takes after its name, as LaTeX defines it: its required
-/// arguments.
+/// What a command takes after its name, as LaTeX defines it: a star
+/// (`\section*`), an optional argument (`[…]`) and required ones.
 #[derive(Clone, Copy, Default)]
 struct Signature {
+    star: bool,
+    optional: bool,
     required: usize,
 }
+
+#[cfg(test)]
+thread_local! {
+    /// How many pieces the reader has looked at for an optional argument's
+    /// `]` on this thread, for tests to bound it without a clock.
+    static BRACKET_SCAN_STEPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// `\\`'s: `\\*[1em]`.
+const LINE_BREAK: Signature = Signature {
+    star: true,
+    optional: true,
+    required: 0,
+};
 
 /// What a command the reader knows takes; `None` for one it doesn't, which
 /// keeps the text of the groups right after it (see [`Reader::command`]).
 /// Those that take nothing leave the groups after them to be read on.
 fn signature(name: &str) -> Option<Signature> {
     match name {
-        "\\emph" => Some(Signature { required: 1 }),
+        "\\emph" => Some(Signature {
+            required: 1,
+            ..Signature::default()
+        }),
         "\\par" | "\\" => Some(Signature::default()),
         _ if ESCAPED.contains(&name) => Some(Signature::default()),
         _ => None,
     }
 }
 
-/// Takes from `items[*at..]` the arguments a command with `signature`
-/// takes, as TeX takes them: each a group or a single token (a word's first
-/// letter), looked for past spaces (see [`past_spaces`]). A missing one,
-/// before an empty line or a group's end, ends the taking.
-fn take_arguments(items: &mut Vec<Piece>, at: &mut usize, signature: Signature) -> Vec<Vec<Piece>> {
+/// Takes from `items[*at..]` what a command with `signature` takes, as TeX
+/// and LaTeX take it, and gives its required arguments: each a group or a
+/// single token (a word's first letter), looked for past spaces (see
+/// [`past_spaces`]). A missing one, before an empty line or a group's end,
+/// ends the taking. Its star and optional argument are taken but not
+/// given, as no command the reader knows shows them; LaTeX's
+/// `\@ifnextchar`, looking for them, takes the spaces before them even
+/// where they're not there.
+///
+/// `unbracketed` is how long a tail of `items` is known to hold no `]`:
+/// an unclosed `[` scans it once, not again for every `[` before it.
+fn take_arguments(
+    items: &mut [Piece],
+    at: &mut usize,
+    unbracketed: &mut usize,
+    signature: Signature,
+) -> Vec<Vec<Piece>> {
+    if signature.star {
+        *at = past_spaces(items, *at);
+        if let Some(Piece::Token(SyntaxKind::TokenAsterisk, _)) = items.get(*at) {
+            *at += 1;
+        }
+    }
+    if signature.optional {
+        *at = past_spaces(items, *at);
+        // The first `]` past it closes it, a primed one (`]'`) too (see
+        // `push_pieces`), but not one in a group: groups are nodes of their
+        // own. Unclosed, `[` is text.
+        if let Some(Piece::Token(SyntaxKind::TokenLBracket, _)) = items.get(*at) {
+            // Up to the tail known to hold none, which may start before it.
+            let after = *at + 1;
+            let end = (items.len() - *unbracketed).max(after);
+            let close = items[after..end].iter().position(|piece| {
+                #[cfg(test)]
+                BRACKET_SCAN_STEPS.with(|n| n.set(n.get() + 1));
+                matches!(piece, Piece::Token(SyntaxKind::TokenRBracket, _))
+            });
+            match close {
+                Some(close) => *at = after + close + 1,
+                None => *unbracketed = (*unbracketed).max(items.len() - after),
+            }
+        }
+    }
     let mut required = Vec::new();
     while required.len() < signature.required {
         let next = past_spaces(items, *at);
-        // The parser joins a prime to what's before it (`It's`, `{B}'`),
-        // wrapped as its argument: the argument here is the first of what
-        // it joins, the rest read on.
-        if let Some(Piece::Node(joined)) = items.get(next)
-            && matches!(
-                joined.kind(),
-                SyntaxKind::ItemAttachComponent | SyntaxKind::ClauseArgument
-            )
-        {
-            let parts = pieces(joined);
-            items.splice(next..=next, parts);
-            continue;
-        }
         match items.get_mut(next) {
             Some(Piece::Node(group)) if group.kind() == SyntaxKind::ItemCurly => {
                 required.push(pieces(group));
@@ -448,15 +527,60 @@ fn push_text(inlines: &mut Vec<Inline>, text: &str) {
 }
 
 /// `inlines` without the spaces at their ends, a block's (`~` is kept).
+/// Line breaks at the ends go too: LaTeX ends no line there, and Markdown
+/// can't. So do those of an emphasis at an end, where Markdown wouldn't
+/// read it as one.
 fn trimmed(mut inlines: Vec<Inline>) -> Vec<Inline> {
-    if let Some(Inline::Text(first)) = inlines.first_mut() {
-        *first = first.trim_start_matches(' ').to_string();
-    }
-    if let Some(Inline::Text(last)) = inlines.last_mut() {
-        *last = last.trim_end_matches(' ').to_string();
-    }
+    trim_start(&mut inlines);
+    trim_end(&mut inlines);
     inlines.retain(|inline| !matches!(inline, Inline::Text(text) if text.is_empty()));
     inlines
+}
+
+fn trim_start(inlines: &mut Vec<Inline>) {
+    let mut gone = 0;
+    for inline in inlines.iter_mut() {
+        match inline {
+            Inline::LineBreak => {}
+            Inline::Text(text) => {
+                *text = text.trim_start_matches(' ').to_string();
+                if !text.is_empty() {
+                    break;
+                }
+            }
+            Inline::Emph(run) => {
+                trim_start(run);
+                if !run.is_empty() {
+                    break;
+                }
+            }
+            _ => break,
+        }
+        gone += 1;
+    }
+    inlines.drain(..gone);
+}
+
+fn trim_end(inlines: &mut Vec<Inline>) {
+    while let Some(last) = inlines.last_mut() {
+        match last {
+            Inline::LineBreak => {}
+            Inline::Text(text) => {
+                text.truncate(text.trim_end_matches(' ').len());
+                if !text.is_empty() {
+                    return;
+                }
+            }
+            Inline::Emph(run) => {
+                trim_end(run);
+                if !run.is_empty() {
+                    return;
+                }
+            }
+            _ => return,
+        }
+        inlines.pop();
+    }
 }
 
 #[cfg(test)]
@@ -623,8 +747,82 @@ mod tests {
         }
     }
 
+    /// `\\` takes a star and `[…]` past spaces, and the spaces after them;
+    /// at a paragraph's ends, where LaTeX ends no line, it's dropped.
+    #[test]
+    fn line_breaks_take_their_star_and_length() {
+        let a_b = || vec![text("a"), Inline::LineBreak, text("b")];
+        let cases: &[(&str, &[Vec<Inline>])] = &[
+            ("a\\\\b", &[a_b()]),
+            ("a\\\\ *  [2pt]  b", &[a_b()]),
+            ("a\\\\*\n[2pt]\nb", &[a_b()]),
+            // The first `]` closes it, but not one in a group.
+            ("a\\\\[{]}] b", &[a_b()]),
+            (
+                "a\\\\[2pt]'b ] c",
+                &[vec![text("a"), Inline::LineBreak, text("'b ] c")]],
+            ),
+            (
+                "a\\\\[x] y] b",
+                &[vec![text("a"), Inline::LineBreak, text("y] b")]],
+            ),
+            // Unclosed, `[` is text; past an empty line, a new paragraph.
+            (
+                "a\\\\ [b",
+                &[vec![text("a"), Inline::LineBreak, text("[b")]],
+            ),
+            ("a\\\\\n\n[2pt]b", &[vec![text("a")], vec![text("[2pt]b")]]),
+            ("\\\\a\\\\ ", &[vec![text("a")]]),
+            // Emphasized, it's in the emphasis, at its ends too.
+            (
+                "\\emph{a\\\\b}",
+                &[vec![emph(&[text("a"), Inline::LineBreak, text("b")])]],
+            ),
+            ("\\emph{ a\\\\}", &[vec![emph(&[text("a")])]]),
+        ];
+        for &(source, expected) in cases {
+            assert_eq!(paragraphs(source), expected, "{source}");
+        }
+    }
+
+    /// Unclosed `[`s, one after another, look for their `]` in what's after
+    /// them once, not once each.
+    #[test]
+    fn unclosed_optional_arguments_are_scanned_once() {
+        const COUNT: usize = 2000;
+        // Each `a\\[` is three pieces, and each `It's ` four, its prime
+        // taken apart beforehand: the first `[` scans past them all.
+        for (source, pieces) in [
+            ("a\\\\[".repeat(COUNT), 3 * COUNT),
+            (format!("a\\\\[{}", "It's ".repeat(COUNT)), 4 * COUNT),
+        ] {
+            BRACKET_SCAN_STEPS.with(|n| n.set(0));
+            // Read here, not on `read`'s thread, to count.
+            read_parsed(&source);
+            let steps = BRACKET_SCAN_STEPS.with(std::cell::Cell::get);
+            assert!((COUNT..=pieces).contains(&steps), "{steps}");
+        }
+    }
+
+    /// Arguments taken from primed words (`\emph It's`) again and again
+    /// are each its first letter, the parser's joining undone beforehand
+    /// rather than for each.
+    #[test]
+    fn arguments_from_primed_words_are_taken_in_turn() {
+        const COUNT: usize = 20_000;
+        let (doc, _) = read(&"\\emph It's ".repeat(COUNT));
+        let [Block::Paragraph(inlines)] = &doc.blocks[..] else {
+            panic!("{:?}", doc.blocks);
+        };
+        let emphases = inlines
+            .iter()
+            .filter(|inline| **inline == emph(&[text("I")]))
+            .count();
+        assert_eq!(emphases, COUNT);
+    }
+
     /// Emphases side by side and one in another come back from Markdown as
-    /// they're read, the text and only the text.
+    /// they're read, the text and only the text, and so do line breaks.
     #[test]
     fn emphases_survive_markdown() {
         use crate::converter::document::native::{read::markdown, write};
@@ -633,6 +831,8 @@ mod tests {
             "\\emph{a \\emph{b} c}",
             "\\emph{\\emph{x}}",
             "a\\emph{b}c",
+            "a\\\\b \\emph{c\\\\d} e\\\\",
+            "\\emph{ a\\\\}",
         ] {
             let (doc, _) = read(source);
             let written = write::markdown::write(&doc);
