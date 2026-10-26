@@ -14,5 +14,5 @@ pub use binaries::*;
 pub use conversion::*;
 pub use types::*;
 
-pub static PANDOC_PATH: OnceLock<Option<PathBuf>> = OnceLock::new();
-pub static PYMUPDF4LLM_PYTHON: OnceLock<Option<PathBuf>> = OnceLock::new();
+pub static PANDOC_PATH: OnceLock<PathBuf> = OnceLock::new();
+pub static PYMUPDF4LLM_PYTHON: OnceLock<PathBuf> = OnceLock::new();

@@ -3,6 +3,7 @@
 //! one they don't.
 
 use std::path::PathBuf;
+use std::sync::OnceLock;
 
 use super::{document, media};
 
@@ -93,6 +94,33 @@ impl Tool {
     pub fn require(self, found: Option<PathBuf>) -> Result<PathBuf, String> {
         found.ok_or_else(|| self.missing())
     }
+
+    /// The tool, from `cache` or else [`Tool::find`]. Only a tool found is
+    /// cached, so one installed while the app runs is found next time.
+    pub fn locate(self, cache: &OnceLock<PathBuf>) -> Result<PathBuf, String> {
+        self.locate_with(cache, || self.find())
+    }
+
+    fn locate_with(
+        self,
+        cache: &OnceLock<PathBuf>,
+        find: impl FnOnce() -> Option<PathBuf>,
+    ) -> Result<PathBuf, String> {
+        if let Some(path) = cache.get() {
+            return Ok(path.clone());
+        }
+        let path = self.require(find())?;
+        Ok(cache.get_or_init(|| path).clone())
+    }
+}
+
+/// Where versions before 2.0 downloaded ffmpeg and pandoc on Linux and
+/// Windows. Tools there are still found, but nothing is put there now.
+#[cfg(any(target_os = "linux", target_os = "windows"))]
+pub fn earlier_download_dir() -> PathBuf {
+    dirs::data_local_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("swift-shifter")
 }
 
 #[cfg(test)]
@@ -110,6 +138,21 @@ mod tests {
         }
         let found = PathBuf::from("/bin/ffmpeg");
         assert_eq!(Tool::Ffmpeg.require(Some(found.clone())), Ok(found));
+    }
+
+    #[test]
+    fn a_missing_tool_is_looked_for_again_and_a_found_one_is_kept() {
+        let cache = OnceLock::new();
+        let err = Tool::Pandoc.locate_with(&cache, || None).unwrap_err();
+        assert_eq!(err, Tool::Pandoc.missing());
+        assert_eq!(cache.get(), None);
+
+        // Installed since: found, then kept without looking again.
+        let pandoc = PathBuf::from("/usr/bin/pandoc");
+        let found = Tool::Pandoc.locate_with(&cache, || Some(pandoc.clone()));
+        assert_eq!(found.as_ref(), Ok(&pandoc));
+        let kept = Tool::Pandoc.locate_with(&cache, || panic!("looked again"));
+        assert_eq!(kept, Ok(pandoc));
     }
 
     #[test]

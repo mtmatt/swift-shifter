@@ -48,7 +48,7 @@ pub fn find_pandoc_binary() -> Option<PathBuf> {
         } else {
             "pandoc"
         };
-        let candidate = crate::downloader::user_tool_dir()
+        let candidate = crate::converter::tools::earlier_download_dir()
             .join("bin")
             .join(bin_name);
         if candidate.exists() {
@@ -56,57 +56,6 @@ pub fn find_pandoc_binary() -> Option<PathBuf> {
         }
     }
     None
-}
-
-#[cfg(target_os = "macos")]
-pub async fn brew_install(brew: &PathBuf, args: &[&str]) -> bool {
-    let out = crate::process::async_command(brew)
-        .args(args)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .await;
-
-    let out = match out {
-        Ok(o) => o,
-        Err(_) => return false,
-    };
-
-    if out.status.success() {
-        return true;
-    }
-
-    let stderr = String::from_utf8_lossy(&out.stderr);
-
-    if stderr.contains("has already locked") {
-        if let Some(lock_path) = extract_brew_incomplete_path(&stderr) {
-            let _ = std::fs::remove_file(&lock_path);
-        }
-        return crate::process::async_command(brew)
-            .args(args)
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .await
-            .map(|s| s.success())
-            .unwrap_or(false);
-    }
-
-    false
-}
-
-#[cfg(target_os = "macos")]
-pub fn extract_brew_incomplete_path(stderr: &str) -> Option<String> {
-    let marker = "has already locked ";
-    let start = stderr.find(marker)? + marker.len();
-    let rest = &stderr[start..];
-    let end = rest.find('\n').unwrap_or(rest.len());
-    let path = rest[..end].trim().trim_end_matches('.');
-    if path.ends_with(".incomplete") {
-        Some(path.to_string())
-    } else {
-        None
-    }
 }
 
 #[cfg(target_os = "macos")]
@@ -121,51 +70,6 @@ pub fn find_brew_binary() -> Option<PathBuf> {
         }
     }
     None
-}
-
-pub async fn ensure_pandoc(app: &tauri::AppHandle) -> Result<(), String> {
-    if PANDOC_PATH.get().is_some() {
-        return Ok(());
-    }
-
-    if let Some(path) = find_pandoc_binary() {
-        PANDOC_PATH.set(Some(path)).ok();
-        return Ok(());
-    }
-
-    app.emit("pandoc:missing", ()).ok();
-
-    #[cfg(target_os = "macos")]
-    {
-        if let Some(brew) = find_brew_binary() {
-            app.emit("pandoc:installing", ()).ok();
-            let ok = brew_install(&brew, &["install", "pandoc"]).await;
-
-            if ok && let Some(path) = find_pandoc_binary() {
-                PANDOC_PATH.set(Some(path)).ok();
-                app.emit("pandoc:installed", ()).ok();
-                return Ok(());
-            }
-        }
-    }
-
-    #[cfg(any(target_os = "linux", target_os = "windows"))]
-    {
-        app.emit("pandoc:installing", ()).ok();
-        match crate::downloader::ensure_tool(app, "pandoc").await {
-            Ok(path) => {
-                PANDOC_PATH.set(Some(path)).ok();
-                app.emit("pandoc:installed", ()).ok();
-                return Ok(());
-            }
-            Err(e) => {
-                app.emit("pandoc:failed", &e).ok();
-            }
-        }
-    }
-
-    PANDOC_PATH.set(None).ok();
-    Ok(())
 }
 
 /// Where pipx may keep its venvs: `PIPX_HOME` when it's set; otherwise the
@@ -289,55 +193,12 @@ pub fn find_pymupdf4llm_python() -> Option<PathBuf> {
     candidates.into_iter().find(python_has_pymupdf4llm)
 }
 
-pub async fn ensure_pymupdf4llm(app: &tauri::AppHandle) -> Result<(), String> {
-    if PYMUPDF4LLM_PYTHON.get().is_some() {
-        return Ok(());
-    }
-
-    if let Some(path) = find_pymupdf4llm_python() {
-        PYMUPDF4LLM_PYTHON.set(Some(path)).ok();
-        return Ok(());
-    }
-
-    app.emit("pymupdf:missing", ()).ok();
-    app.emit("pymupdf:installing", ()).ok();
-
-    // Install via pipx (isolated venv, works with externally-managed Python)
-    // --include-deps is required because pymupdf4llm exposes no CLI entry points itself
-    if let Ok(pipx_path) = which::which("pipx") {
-        let ok = crate::process::async_command(&pipx_path)
-            .args(["install", "pymupdf4llm", "--include-deps"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .await
-            .map(|s| s.success())
-            .unwrap_or(false);
-        if ok && let Some(path) = find_pymupdf4llm_python() {
-            PYMUPDF4LLM_PYTHON.set(Some(path)).ok();
-            app.emit("pymupdf:installed", ()).ok();
-            return Ok(());
-        }
-    }
-
-    let err = "pymupdf4llm not found — install with: pipx install pymupdf4llm".to_string();
-    PYMUPDF4LLM_PYTHON.set(None).ok();
-    app.emit("pymupdf:failed", err).ok();
-    Ok(())
-}
-
 pub fn get_pymupdf4llm_python() -> Result<PathBuf, String> {
-    match PYMUPDF4LLM_PYTHON.get() {
-        Some(Some(p)) => Ok(p.clone()),
-        _ => Tool::Pymupdf4llm.require(find_pymupdf4llm_python()),
-    }
+    Tool::Pymupdf4llm.locate(&PYMUPDF4LLM_PYTHON)
 }
 
 pub fn get_pandoc() -> Result<PathBuf, String> {
-    match PANDOC_PATH.get() {
-        Some(Some(p)) => Ok(p.clone()),
-        _ => Tool::Pandoc.require(find_pandoc_binary()),
-    }
+    Tool::Pandoc.locate(&PANDOC_PATH)
 }
 
 pub fn get_marker() -> Result<PathBuf, String> {
