@@ -19,13 +19,12 @@ A featherweight, always-on file converter that lives in your menu bar. Press a h
   - Documents: Markdown, plain text, HTML, LaTeX, Typst, PDF, EPUB, MOBI (native engine + embedded typst for PDF; pandoc, pymupdf4llm/marker-pdf and Calibre for the rest)
 - **PDF merge** -- combine multiple PDF files into one in a dedicated merge mode
 - **Clipboard integration** -- paste (⌘V) to load clipboard content for conversion; result written back to clipboard or saved to disk (configurable)
-- **Local LLM post-processing** -- optional Ollama integration cleans up extracted PDF text (configurable model and endpoint)
 - **Output next to source** -- converted file lands in the same folder as the input (configurable)
 - **Batch conversion** -- drop multiple files at once; common formats shown in a shared toolbar
 - **Progress indicator** -- lightweight inline progress bar per file, no modal dialogs
 - **Click to reveal** -- success label opens the output folder in Finder
 - **Auto-update** -- checks for new releases on startup; installs in the background
-- **Settings panel** -- configure output folder, JPEG/AVIF quality, concurrency, PDF conversion engine, and local LLM
+- **Settings panel** -- configure output folder, JPEG/AVIF quality, concurrency and PDF conversion engine
 
 ## Tech Stack
 
@@ -39,7 +38,6 @@ A featherweight, always-on file converter that lives in your menu bar. Press a h
 | PDF output             | [typst](https://typst.app) compiler linked in (no install, CJK font selection, TeX math via `mitex`)                         |
 | PDF ↔ EPUB / HTML / MD | `pymupdf4llm` (auto-installed via pipx); optional ML engine via `marker-pdf`                                                 |
 | MOBI conversion        | System `ebook-convert` / Calibre (auto-installed via Homebrew cask / winget / apt)                                           |
-| Local LLM              | [Ollama](https://ollama.com) (optional); cleans up PDF extraction output                                                     |
 | Data serialization     | `serde_json`, `serde_yaml`, `toml`, `csv` crates                                                                             |
 | Frontend UI            | TypeScript + [Vite](https://vitejs.dev) (plain DOM, no framework)                                                            |
 | Global hotkeys         | `tauri-plugin-global-shortcut`                                                                                               |
@@ -67,7 +65,6 @@ swift-shifter/
 │   │           ├── binaries.rs  # dependency detection and auto-install
 │   │           ├── conversion.rs # conversion logic per format
 │   │           ├── merge.rs     # PDF merge (combine multiple PDFs into one)
-│   │           ├── llm.rs       # Ollama LLM post-processing
 │   │           ├── types.rs
 │   │           └── utils.rs
 │   ├── capabilities/
@@ -106,7 +103,6 @@ swift-shifter/
 | pandoc      | any             | for document conversion; auto-installed via `brew` / winget / apt |
 | pymupdf4llm | any             | for PDF extraction; auto-installed via `pipx` if missing          |
 | Calibre     | any             | for MOBI conversion; auto-installed via `brew` / winget / apt     |
-| Ollama      | any             | optional; for LLM post-processing of PDF text (user-installed)    |
 
 ## Contribute to the Project
 
@@ -165,7 +161,6 @@ This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Push
 - [x] EPUB <-> PDF
 - [x] MOBI <-> PDF/EPUB/HTML/MD
 - [x] PDF/EPUB/MOBI -> HTML and Markdown
-- [x] Local LLM post-processing for PDF conversions (Ollama)
 - [x] PDF merge (combine multiple PDFs into one)
 - [x] M4A audio format support
 - [x] Clipboard integration (paste to convert; copy result back to clipboard)
@@ -183,8 +178,6 @@ This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Push
 - [ ] AI Background Removal: Remove image backgrounds locally using RMBG/ONNX models
 - [ ] Super Resolution: Local AI upscaling for low-res images
 - [ ] Privacy Shield: Auto-detect and blur faces or sensitive information (PII) before conversion
-- [x] Offline LLM Support: Ollama integration for local LLM post-processing of PDF text
-- [ ] Deeper LLM integration: document translation and summarization via local models
 - [ ] Video/Audio to Markdown, text, or SRT subtitle files using local Whisper.cpp.
 - [ ] Swift Shifter indexes the metadata and AI-generated tags of your recently converted files, allowing you to hit the hotkey and type "that picture of a dog I converted yesterday" to locate it.
 - [ ] Drop an image with an aspect ratio constraint (e.g., "convert to 16:9") and use local Stable Diffusion/Burn to intelligently fill the missing background rather than cropping or stretching.
@@ -200,7 +193,7 @@ This syncs `package.json`, `Cargo.toml`, and `tauri.conf.json` in one step. Push
 
 ### Deep OS & Hardware Symbiosis
 
-- [ ] Automatically pause or throttle heavy operations (like video encoding or local LLM tasks) when a laptop switches to battery power or enters low-power mode.
+- [ ] Automatically pause or throttle heavy operations (like video encoding) when a laptop switches to battery power or enters low-power mode.
 - [ ] Register Swift Shifter into the native Windows Explorer and macOS Finder right-click context menus for users who prefer mouse-driven workflows over drag-and-drop.
 - [ ] Convert a file and immediately generate a temporary local-network QR code or link to securely download the output on a mobile device without touching the cloud.
 - [ ] Auto-detect Apple Silicon (Metal), Nvidia (CUDA), or Intel (QuickSync) hardware on first boot and dynamically compile or select the optimal ffmpeg and ONNX backend configurations.

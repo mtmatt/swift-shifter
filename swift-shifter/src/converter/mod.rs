@@ -99,32 +99,21 @@ async fn run_single_hop(
             return document::native::convert_document(app, path, to, out_dir).await;
         }
         Hop::PdfToMobi => {
-            let llm = pdf_llm_cfg(config);
-            document::convert_pdf_to_mobi(app, path, out_dir, config.use_marker_pdf, llm).await
+            document::convert_pdf_to_mobi(app, path, out_dir, config.use_marker_pdf).await
         }
         Hop::PdfToHtml => document::convert_pdf_to_html(app, path, out_dir).await,
         Hop::PdfToMd => {
-            let llm = pdf_llm_cfg(config);
-            document::convert_pdf_to_md(app, path, out_dir, config.use_marker_pdf, llm).await
+            document::convert_pdf_to_md(app, path, out_dir, config.use_marker_pdf).await
         }
         Hop::PdfToEpubOrMarker => {
-            let llm = pdf_llm_cfg(config);
             if config.use_marker_pdf && document::marker_available() {
-                document::convert_pdf_with_marker(app, path, out_dir, llm).await
+                document::convert_pdf_with_marker(app, path, out_dir).await
             } else {
-                document::convert_pdf_to_epub(app, path, out_dir, llm).await
+                document::convert_pdf_to_epub(app, path, out_dir).await
             }
         }
     }?;
     Ok(Converted::whole(output))
-}
-
-fn pdf_llm_cfg(config: &Config) -> document::LlmCfg {
-    document::LlmCfg {
-        enabled: config.use_local_llm,
-        model: config.local_llm_model.clone(),
-        url: config.local_llm_url.clone(),
-    }
 }
 
 /// Convert `path` to `target_format`, chaining hops through a temp dir when no

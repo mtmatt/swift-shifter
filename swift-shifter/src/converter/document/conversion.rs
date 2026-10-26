@@ -1,6 +1,5 @@
 use crate::converter::Converted;
 use crate::converter::document::binaries::*;
-use crate::converter::document::llm::*;
 use crate::converter::document::pdf;
 use crate::converter::document::types::*;
 use crate::converter::document::utils::*;
@@ -25,7 +24,6 @@ pub async fn convert_pdf_with_marker(
     app: &tauri::AppHandle,
     path: &str,
     output_dir: Option<&str>,
-    llm: LlmCfg,
 ) -> Result<String, String> {
     let marker = find_marker_binary()
         .ok_or_else(|| "marker not found — install with: pip install marker-pdf".to_string())?;
@@ -207,18 +205,15 @@ pub async fn convert_pdf_with_marker(
 
     if !status.success() || find_md_file(&output_dir).is_none() {
         let _ = std::fs::remove_dir_all(&tmp_base);
-        return convert_pdf_to_epub(app, path, user_output_dir, llm).await;
+        return convert_pdf_to_epub(app, path, user_output_dir).await;
     }
 
     let md_file =
         find_md_file(&output_dir).ok_or_else(|| "marker produced no Markdown file".to_string())?;
 
-    let mut content = tokio::fs::read_to_string(&md_file)
+    let content = tokio::fs::read_to_string(&md_file)
         .await
         .map_err(|e| format!("Failed to read marker's output: {e}"))?;
-    if llm.enabled {
-        content = llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
-    }
 
     app.emit(
         "convert:progress",
@@ -576,7 +571,6 @@ pub async fn convert_pdf_to_epub(
     app: &tauri::AppHandle,
     path: &str,
     output_dir: Option<&str>,
-    llm: LlmCfg,
 ) -> Result<String, String> {
     let python = get_pymupdf4llm_python()?;
     let out = output_path(path, "epub", output_dir)?;
@@ -640,16 +634,13 @@ pub async fn convert_pdf_to_epub(
     .ok();
 
     let read = tokio::fs::read_to_string(&tmp_md).await;
-    let mut content = match read {
+    let content = match read {
         Ok(content) => content,
         Err(e) => {
             let _ = std::fs::remove_dir_all(&tmp_dir);
             return Err(format!("Failed to read pymupdf4llm's output: {e}"));
         }
     };
-    if llm.enabled {
-        content = llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
-    }
 
     app.emit(
         "convert:progress",
@@ -807,7 +798,6 @@ pub async fn convert_pdf_to_mobi(
     path: &str,
     output_dir: Option<&str>,
     use_marker: bool,
-    llm: LlmCfg,
 ) -> Result<String, String> {
     let out = output_path(path, "mobi", output_dir)?;
 
@@ -817,7 +807,7 @@ pub async fn convert_pdf_to_mobi(
             unique_tmp_suffix()
         ));
         let tmp_epub_dir = tmp_epub.parent().map(|p| p.to_string_lossy().to_string());
-        let epub_path = convert_pdf_with_marker(app, path, tmp_epub_dir.as_deref(), llm).await?;
+        let epub_path = convert_pdf_with_marker(app, path, tmp_epub_dir.as_deref()).await?;
         if std::path::Path::new(&epub_path) != tmp_epub {
             let _ = std::fs::rename(&epub_path, &tmp_epub);
         }
@@ -928,7 +918,6 @@ async fn convert_pdf_to_md_via_pymupdf4llm(
     app: &tauri::AppHandle,
     path: &str,
     output_dir: Option<&str>,
-    llm: LlmCfg,
 ) -> Result<String, String> {
     let python = get_pymupdf4llm_python()?;
     let out = output_path(path, "md", output_dir)?;
@@ -991,13 +980,6 @@ async fn convert_pdf_to_md_via_pymupdf4llm(
     )
     .ok();
 
-    if llm.enabled
-        && let Ok(content) = tokio::fs::read_to_string(&tmp_md).await
-    {
-        let processed = llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
-        let _ = tokio::fs::write(&tmp_md, processed).await;
-    }
-
     let copy_result = std::fs::copy(&tmp_md, &out);
     let _ = std::fs::remove_dir_all(&tmp_dir);
     copy_result.map_err(|e| format!("Failed to copy output: {e}"))?;
@@ -1018,19 +1000,17 @@ pub async fn convert_pdf_to_md(
     path: &str,
     output_dir: Option<&str>,
     use_marker: bool,
-    llm: LlmCfg,
 ) -> Result<String, String> {
     if use_marker && marker_available() {
-        return convert_pdf_with_marker_to_md(app, path, output_dir, llm).await;
+        return convert_pdf_with_marker_to_md(app, path, output_dir).await;
     }
-    convert_pdf_to_md_via_pymupdf4llm(app, path, output_dir, llm).await
+    convert_pdf_to_md_via_pymupdf4llm(app, path, output_dir).await
 }
 
 pub(crate) async fn convert_pdf_with_marker_to_md(
     app: &tauri::AppHandle,
     path: &str,
     output_dir: Option<&str>,
-    llm: LlmCfg,
 ) -> Result<String, String> {
     let marker = find_marker_binary()
         .ok_or_else(|| "marker not found — install with: pip install marker-pdf".to_string())?;
@@ -1085,7 +1065,7 @@ pub(crate) async fn convert_pdf_with_marker_to_md(
 
     if !status.success() || find_md_file(&output_dir_tmp).is_none() {
         let _ = std::fs::remove_dir_all(&tmp_base);
-        return convert_pdf_to_md_via_pymupdf4llm(app, path, output_dir, llm).await;
+        return convert_pdf_to_md_via_pymupdf4llm(app, path, output_dir).await;
     }
 
     app.emit(
@@ -1099,13 +1079,6 @@ pub(crate) async fn convert_pdf_with_marker_to_md(
 
     let md_file = find_md_file(&output_dir_tmp)
         .ok_or_else(|| "marker produced no Markdown file".to_string())?;
-
-    if llm.enabled
-        && let Ok(content) = tokio::fs::read_to_string(&md_file).await
-    {
-        let processed = llm_postprocess_markdown(app, content, path, &llm.url, &llm.model).await;
-        let _ = tokio::fs::write(&md_file, processed).await;
-    }
 
     std::fs::copy(&md_file, &out).map_err(|e| format!("Failed to copy marker output: {e}"))?;
 
