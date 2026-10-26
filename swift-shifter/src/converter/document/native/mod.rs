@@ -2951,8 +2951,27 @@ Ref[^code].\n\n\
         if let Some(back) = pandoc_read_back(&tex, &["-t", "native"]) {
             let first = back.split("\n, ").next().unwrap();
             assert!(first.contains("Str \"B\""), "{back}\n{text}");
-            assert!(back.contains("Str \"Inner\""), "{back}");
+            // A pandoc older than 3.9.0.1 (Ubuntu's, in CI) drops the text
+            // of `\footnotetext`, the notes inside notes among it; the PDF
+            // above shows them.
+            if pandoc_reads_footnotetext(dir.path()) {
+                assert!(back.contains("Str \"Inner\""), "{back}");
+            }
         }
+    }
+
+    /// Whether the pandoc installed reads the text of `\footnotetext`, as
+    /// it does from 3.9.0.1 on.
+    fn pandoc_reads_footnotetext(dir: &Path) -> bool {
+        let probe = dir.join("footnotetext.tex");
+        std::fs::write(
+            &probe,
+            "\\documentclass{article}\n\\begin{document}\n\
+             A\\footnotemark\\footnotetext{Probe}\n\\end{document}\n",
+        )
+        .unwrap();
+        pandoc_read_back(&probe, &["-t", "native"])
+            .is_some_and(|back| back.contains("Str \"Probe\""))
     }
 
     /// Regression for #44: a note in a place that can't hold its text, a
