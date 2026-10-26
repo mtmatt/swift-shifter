@@ -11,10 +11,6 @@ interface ProgressPayload {
   path: string;
   percent: number;
 }
-interface InstallLogPayload {
-  line: string;
-  phase: string;
-}
 
 interface ChainedTarget {
   format: string;
@@ -107,17 +103,6 @@ const files = new Map<string, FileEntry>();
 const progressUnlisteners = new Map<string, () => void>();
 const dropZone = document.getElementById("drop-zone") as HTMLDivElement;
 const fileList = document.getElementById("file-list") as HTMLDivElement;
-const installPanel = document.getElementById("install-panel") as HTMLDivElement;
-const installTitle = document.getElementById(
-  "install-title",
-) as HTMLParagraphElement;
-const installSubtitle = document.getElementById(
-  "install-subtitle",
-) as HTMLParagraphElement;
-const installLogWrap = document.getElementById(
-  "install-log-wrap",
-) as HTMLDivElement;
-const installLog = document.getElementById("install-log") as HTMLDivElement;
 const bottomStatus = document.getElementById(
   "bottom-status",
 ) as HTMLSpanElement;
@@ -192,32 +177,6 @@ function updateTrimFooter(): void {
 }
 
 const appWindow = getCurrentWindow();
-
-// ─── Dep install tracking ─────────────────────────────────────────────────
-
-/** Set of dep keys currently being installed in the background. */
-const depsInstalling = new Set<string>();
-
-const DEP_DISPLAY: Record<string, string> = {
-  ffmpeg: "ffmpeg",
-  pandoc: "pandoc",
-  pymupdf: "PyMuPDF",
-};
-
-/** Map error substrings → dep key, for friendly "installing" messages. */
-const DEP_ERROR_FRAGMENTS: [string, string][] = [
-  ["pandoc not found", "pandoc"],
-  ["pymupdf4llm not found", "pymupdf"],
-  ["ffmpeg not found", "ffmpeg"],
-];
-
-function installingDepForError(msg: string): string | null {
-  const lower = msg.toLowerCase();
-  for (const [fragment, dep] of DEP_ERROR_FRAGMENTS) {
-    if (lower.includes(fragment) && depsInstalling.has(dep)) return dep;
-  }
-  return null;
-}
 
 // ─── Clear all ────────────────────────────────────────────────────────────
 
@@ -349,7 +308,6 @@ function removeFile(path: string): void {
 }
 
 function setFileListVisible(visible: boolean): void {
-  installPanel.hidden = true;
   if (visible) {
     dropZone.hidden = true;
     fileList.hidden = false;
@@ -365,16 +323,6 @@ function setFileListVisible(visible: boolean): void {
     mergeFooter.hidden = true;
     trimFooter.hidden = true;
   }
-}
-
-function showInstallPanel(title: string, subtitle = ""): void {
-  dropZone.hidden = true;
-  fileList.hidden = true;
-  btnClearAll.hidden = true;
-  installLog.innerHTML = "";
-  installTitle.textContent = title;
-  installSubtitle.textContent = subtitle;
-  installPanel.hidden = false;
 }
 
 function buildFileItem(
@@ -879,15 +827,8 @@ async function trimAll(): Promise<void> {
       } else {
         pr?.remove();
         const status = document.createElement("span");
-        const errStr = result.error ?? "Unknown error";
-        const installingDep = installingDepForError(errStr);
-        if (installingDep) {
-          status.className = "file-status warning";
-          status.textContent = `⏳ Installing ${DEP_DISPLAY[installingDep]}, please try again…`;
-        } else {
-          status.className = "file-status error";
-          status.textContent = `✗ ${errStr}`;
-        }
+        status.className = "file-status error";
+        status.textContent = `✗ ${result.error ?? "Unknown error"}`;
         item.appendChild(status);
         if (tb) tb.disabled = false;
       }
@@ -1037,15 +978,8 @@ async function startConversion(
   } catch (err) {
     progressRow.remove();
     const status = document.createElement("span");
-    const errStr = String(err);
-    const installingDep = installingDepForError(errStr);
-    if (installingDep) {
-      status.className = "file-status warning";
-      status.textContent = `⏳ Installing ${DEP_DISPLAY[installingDep]}, please try again…`;
-    } else {
-      status.className = "file-status error";
-      status.textContent = `✗ ${errStr}`;
-    }
+    status.className = "file-status error";
+    status.textContent = `✗ ${String(err)}`;
     item.appendChild(status);
     item
       .querySelectorAll<HTMLButtonElement>(".fmt-btn")
@@ -1125,16 +1059,9 @@ async function startTrim(
     }, 600);
   } catch (err) {
     progressRow.remove();
-    const errStr = String(err);
     const status = document.createElement("span");
-    const installingDep = installingDepForError(errStr);
-    if (installingDep) {
-      status.className = "file-status warning";
-      status.textContent = `⏳ Installing ${DEP_DISPLAY[installingDep]}, please try again…`;
-    } else {
-      status.className = "file-status error";
-      status.textContent = `✗ ${errStr}`;
-    }
+    status.className = "file-status error";
+    status.textContent = `✗ ${String(err)}`;
     item.appendChild(status);
     if (trimBtn) trimBtn.disabled = false;
   } finally {
@@ -1311,15 +1238,8 @@ async function startBatchConversion(targetFormat: string): Promise<void> {
       } else {
         pr?.remove();
         const status = document.createElement("span");
-        const errStr = result.error ?? "Unknown error";
-        const installingDep = installingDepForError(errStr);
-        if (installingDep) {
-          status.className = "file-status warning";
-          status.textContent = `⏳ Installing ${DEP_DISPLAY[installingDep]}, please try again…`;
-        } else {
-          status.className = "file-status error";
-          status.textContent = `✗ ${errStr}`;
-        }
+        status.className = "file-status error";
+        status.textContent = `✗ ${result.error ?? "Unknown error"}`;
         item.appendChild(status);
         item
           .querySelectorAll<HTMLButtonElement>(".fmt-btn")
@@ -1370,109 +1290,3 @@ function showInlineError(path: string, message: string): void {
   fileList.appendChild(item);
   setFileListVisible(true);
 }
-
-// ─── Install progress ─────────────────────────────────────────────────────
-
-listen("brew:installing", () => {
-  showInstallPanel("Installing Homebrew", "needed to install ffmpeg");
-  bottomStatus.className = "warning";
-  bottomStatus.textContent = "installing Homebrew…";
-}).catch(console.error);
-
-listen("brew:installed", () => {
-  installTitle.textContent = "Homebrew installed ✓";
-  installSubtitle.textContent = "installing ffmpeg…";
-  bottomStatus.className = "ok";
-  bottomStatus.textContent = "Homebrew installed ✓";
-}).catch(console.error);
-
-listen("ffmpeg:missing", () => {
-  depsInstalling.add("ffmpeg");
-  bottomStatus.className = "warning";
-  bottomStatus.textContent = "ffmpeg not found — installing…";
-}).catch(console.error);
-
-listen("ffmpeg:installing", () => {
-  depsInstalling.add("ffmpeg");
-  showInstallPanel(
-    "Installing ffmpeg",
-    "required for video & audio conversion",
-  );
-  bottomStatus.className = "warning";
-  bottomStatus.textContent = "installing ffmpeg…";
-}).catch(console.error);
-
-listen("ffmpeg:installed", () => {
-  depsInstalling.delete("ffmpeg");
-  installPanel.hidden = true;
-  bottomStatus.className = "ok";
-  bottomStatus.textContent = "ffmpeg installed ✓";
-  // Return to drop zone if no files are loaded
-  if (files.size === 0) setFileListVisible(false);
-  setTimeout(() => {
-    bottomStatus.textContent = "";
-    bottomStatus.className = "";
-  }, 4000);
-}).catch(console.error);
-
-listen("ffmpeg:failed", (ev) => {
-  depsInstalling.delete("ffmpeg");
-  installTitle.textContent = "Installation failed";
-  installSubtitle.textContent = String(ev.payload);
-  installLogWrap.classList.add("visible");
-  installLog.scrollTop = installLog.scrollHeight;
-  bottomStatus.className = "warning";
-  bottomStatus.textContent = "ffmpeg unavailable";
-}).catch(console.error);
-
-// ─── Background dep install status (pandoc, PyMuPDF) ──────────────────────
-
-const BACKGROUND_DEPS: [string, string][] = [
-  ["pandoc", "pandoc"],
-  ["pymupdf", "PyMuPDF"],
-];
-
-for (const [dep, label] of BACKGROUND_DEPS) {
-  listen(`${dep}:missing`, () => {
-    depsInstalling.add(dep);
-    bottomStatus.className = "warning";
-    bottomStatus.textContent = `installing ${label}…`;
-  }).catch(console.error);
-
-  listen(`${dep}:installing`, () => {
-    depsInstalling.add(dep);
-    bottomStatus.className = "warning";
-    bottomStatus.textContent = `installing ${label}…`;
-  }).catch(console.error);
-
-  listen(`${dep}:installed`, () => {
-    depsInstalling.delete(dep);
-    bottomStatus.className = "ok";
-    bottomStatus.textContent = `${label} installed ✓`;
-    setTimeout(() => {
-      if (bottomStatus.textContent === `${label} installed ✓`) {
-        bottomStatus.textContent = "";
-        bottomStatus.className = "";
-      }
-    }, 4000);
-  }).catch(console.error);
-
-  listen(`${dep}:failed`, () => {
-    depsInstalling.delete(dep);
-    bottomStatus.className = "warning";
-    bottomStatus.textContent = `${label} unavailable`;
-  }).catch(console.error);
-}
-
-// Buffer log lines silently — only visible if an error occurs
-listen<InstallLogPayload>("install:log", (ev) => {
-  const line = ev.payload.line.trim();
-  if (!line) return;
-  const el = document.createElement("div");
-  el.textContent = line;
-  installLog.appendChild(el);
-  // Cap buffer at 300 lines
-  while (installLog.children.length > 300) {
-    installLog.removeChild(installLog.firstChild!);
-  }
-}).catch(console.error);

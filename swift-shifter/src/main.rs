@@ -182,7 +182,7 @@ fn main() {
             get_config,
             set_config,
             check_marker,
-            install_marker,
+            marker_install_hint,
             open_output_folder,
             check_update,
             install_update,
@@ -440,9 +440,10 @@ fn check_marker() -> bool {
     converter::document::marker_available()
 }
 
+/// How to install marker-pdf on this platform, for Settings to show.
 #[tauri::command]
-async fn install_marker(app: tauri::AppHandle) -> Result<(), String> {
-    converter::document::install_marker(&app).await
+fn marker_install_hint() -> &'static str {
+    converter::tools::Tool::Marker.install_hint()
 }
 
 #[tauri::command]

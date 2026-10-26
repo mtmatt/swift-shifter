@@ -33,10 +33,10 @@ A featherweight, always-on file converter that lives in your menu bar. Press a h
 | App shell              | [Tauri v2](https://tauri.app)                                                                                                |
 | Backend logic          | Rust                                                                                                                         |
 | Image processing       | [`image`](https://crates.io/crates/image) crate + [`ravif`](https://crates.io/crates/ravif) for AVIF + macOS `sips` for HEIC |
-| Video / audio          | System `ffmpeg` (auto-installed via Homebrew if missing)                                                                     |
-| Document conversion    | Native Rust engine for Markdown / plain text / HTML / EPUB / Typst; `pandoc` for LaTeX input (auto-installed if missing)     |
+| Video / audio          | System `ffmpeg` (install it yourself; the app says how)                                                                      |
+| Document conversion    | Native Rust engine for Markdown / plain text / HTML / EPUB / Typst; `pandoc` for LaTeX input (install it yourself)           |
 | PDF output             | [typst](https://typst.app) compiler linked in (no install, CJK font selection, TeX math via `mitex`)                         |
-| PDF ↔ EPUB / HTML / MD | `pymupdf4llm` (auto-installed via pipx); optional ML engine via `marker-pdf`                                                 |
+| PDF ↔ EPUB / HTML / MD | `pymupdf4llm` (install it with pipx); optional ML engine via `marker-pdf`                                                    |
 | Data serialization     | `serde_json`, `serde_yaml`, `toml`, `csv` crates                                                                             |
 | Frontend UI            | TypeScript + [Vite](https://vitejs.dev) (plain DOM, no framework)                                                            |
 | Global hotkeys         | `tauri-plugin-global-shortcut`                                                                                               |
@@ -61,7 +61,7 @@ swift-shifter/
 │   │       ├── data.rs      # JSON/YAML/TOML/CSV converters
 │   │       └── document/    # native engine + embedded typst, pandoc, pymupdf4llm/marker-pdf
 │   │           ├── mod.rs
-│   │           ├── binaries.rs  # dependency detection and auto-install
+│   │           ├── binaries.rs  # finding the external tools
 │   │           ├── conversion.rs # conversion logic per format
 │   │           ├── merge.rs     # PDF merge (combine multiple PDFs into one)
 │   │           ├── types.rs
@@ -93,13 +93,17 @@ swift-shifter/
 
 ## Prerequisites
 
-| Tool        | Version         | Notes                                                             |
-| ----------- | --------------- | ----------------------------------------------------------------- |
-| Rust        | stable (≥ 1.78) | via `rustup`                                                      |
-| Node.js     | ≥ 24            | for Tauri CLI and Vite                                            |
-| ffmpeg      | ≥ 6             | for video/audio; auto-installed via `brew` if missing             |
-| pandoc      | any             | for document conversion; auto-installed via `brew` / winget / apt |
-| pymupdf4llm | any             | for PDF extraction; auto-installed via `pipx` if missing          |
+| Tool        | Version         | Notes                                      |
+| ----------- | --------------- | ------------------------------------------ |
+| Rust        | stable (≥ 1.78) | via `rustup`                               |
+| Node.js     | ≥ 24            | for Tauri CLI and Vite                     |
+| ffmpeg      | ≥ 6             | for video/audio                            |
+| pandoc      | any             | for LaTeX (`.tex`) input                   |
+| pymupdf4llm | any             | for PDF extraction; install it with `pipx` |
+
+The app never installs these: when one is missing, the conversion that
+needs it says how to install it, and `swift-shifter doctor` lists which
+are found.
 
 ## Contribute to the Project
 

@@ -1,7 +1,6 @@
 use crate::converter::document::{PANDOC_PATH, PYMUPDF4LLM_PYTHON};
 use crate::converter::tools::Tool;
 use std::path::PathBuf;
-use tauri::Emitter;
 
 #[cfg(target_os = "macos")]
 pub const BREW_PATHS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
@@ -51,20 +50,6 @@ pub fn find_pandoc_binary() -> Option<PathBuf> {
         let candidate = crate::converter::tools::earlier_download_dir()
             .join("bin")
             .join(bin_name);
-        if candidate.exists() {
-            return Some(candidate);
-        }
-    }
-    None
-}
-
-#[cfg(target_os = "macos")]
-pub fn find_brew_binary() -> Option<PathBuf> {
-    if let Ok(p) = which::which("brew") {
-        return Some(p);
-    }
-    for dir in BREW_PATHS {
-        let candidate = PathBuf::from(dir).join("brew");
         if candidate.exists() {
             return Some(candidate);
         }
@@ -254,107 +239,6 @@ pub fn find_marker_binary() -> Option<PathBuf> {
 
 pub fn marker_available() -> bool {
     find_marker_binary().is_some()
-}
-
-pub fn marker_step(app: &tauri::AppHandle, msg: &str) {
-    app.emit("marker:step", msg).ok();
-}
-
-pub async fn run_silent(program: &PathBuf, args: &[&str]) -> Result<(), String> {
-    let out = crate::process::async_command(program)
-        .args(args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .output()
-        .await
-        .map_err(|e| e.to_string())?;
-
-    if out.status.success() {
-        return Ok(());
-    }
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    let stdout = String::from_utf8_lossy(&out.stdout);
-    Err([stderr.trim(), stdout.trim()]
-        .iter()
-        .find(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| format!("exited with code {}", out.status.code().unwrap_or(-1))))
-}
-
-pub async fn install_marker(app: &tauri::AppHandle) -> Result<(), String> {
-    let pipx = if let Some(p) = find_any_binary(&["pipx"]) {
-        Some(p)
-    } else {
-        marker_step(app, "Setting up package installer…");
-        #[cfg(target_os = "macos")]
-        if let Some(brew) = find_brew_binary() {
-            run_silent(&brew, &["install", "pipx"]).await.ok();
-        }
-        #[cfg(target_os = "windows")]
-        if which::which("winget").is_ok() {
-            run_silent(
-                &PathBuf::from("winget"),
-                &["install", "--id", "pypa.pipx", "-e", "--silent"],
-            )
-            .await
-            .ok();
-        }
-        #[cfg(target_os = "linux")]
-        if let Some(python) = find_any_binary(&["python3", "python"]) {
-            // Install pipx to user space — no sudo needed
-            run_silent(&python, &["-m", "pip", "install", "--user", "pipx"])
-                .await
-                .ok();
-        }
-        find_any_binary(&["pipx"])
-    };
-
-    if let Some(ref pipx) = pipx {
-        marker_step(app, "Downloading marker-pdf — this may take a few minutes…");
-        match run_silent(pipx, &["install", "marker-pdf"]).await {
-            Ok(()) => {
-                run_silent(pipx, &["inject", "marker-pdf", "psutil"])
-                    .await
-                    .ok();
-                return Ok(());
-            }
-            Err(e) => {
-                marker_step(app, &format!("pipx install failed ({e}), trying pip…"));
-            }
-        }
-    }
-
-    let pip = if let Some(p) = find_any_binary(&["pip3", "pip"]) {
-        Some(p)
-    } else {
-        marker_step(app, "Setting up Python…");
-        #[cfg(target_os = "macos")]
-        if let Some(brew) = find_brew_binary() {
-            run_silent(&brew, &["install", "python3"]).await.ok();
-        }
-        #[cfg(target_os = "windows")]
-        if which::which("winget").is_ok() {
-            run_silent(
-                &PathBuf::from("winget"),
-                &["install", "--id", "Python.Python.3", "-e", "--silent"],
-            )
-            .await
-            .ok();
-        }
-        find_any_binary(&["pip3", "pip"])
-    };
-
-    if let Some(ref pip) = pip {
-        marker_step(app, "Downloading marker-pdf — this may take a few minutes…");
-        return run_silent(pip, &["install", "--user", "marker-pdf", "psutil"])
-            .await
-            .map_err(|e| format!("Installation failed: {e}"));
-    }
-
-    Err(
-        "Could not install marker-pdf automatically. Please install pipx or pip and try again."
-            .to_string(),
-    )
 }
 
 #[cfg(test)]
