@@ -7,6 +7,7 @@
 //! does (see `graph::route_hop`).
 
 pub mod files;
+pub mod paths;
 mod verbatim;
 
 use mitex_parser::CommandSpec;
