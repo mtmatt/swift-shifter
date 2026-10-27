@@ -10,6 +10,7 @@ mod bench;
 
 use std::collections::BTreeSet;
 
+use bench::run::each_document;
 use bench::{bench, compile, failure, manifest, xelatex};
 
 /// The only licences a document may have: CC BY or CC0 for arXiv papers,
@@ -110,30 +111,12 @@ fn every_document_compiles_with_xelatex() {
     let Some(xelatex) = xelatex() else { return };
     let manifest = manifest();
     let scratch = tempfile::tempdir().unwrap();
-    let threads = std::thread::available_parallelism().map_or(2, |n| n.get());
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    let failures = std::sync::Mutex::new(Vec::new());
-    std::thread::scope(|scope| {
-        for _ in 0..threads {
-            scope.spawn(|| {
-                while let Some(doc) = manifest
-                    .document
-                    .get(next.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
-                {
-                    match compile(doc, &xelatex, scratch.path()) {
-                        Ok(pdf) if pdf.is_file() => {}
-                        Ok(pdf) => failures.lock().unwrap().push(format!(
-                            "{}: no {}",
-                            doc.dir,
-                            pdf.display()
-                        )),
-                        Err(why) => failures.lock().unwrap().push(format!("{}: {why}", doc.dir)),
-                    }
-                }
-            });
+    let (_, failures) = each_document(&manifest.document, |doc| {
+        match compile(doc, &xelatex, scratch.path())? {
+            pdf if pdf.is_file() => Ok(()),
+            pdf => Err(format!("no {}", pdf.display())),
         }
     });
-    let failures = failures.into_inner().unwrap();
     assert!(
         failures.is_empty(),
         "{} of {} documents don't compile:\n\n{}",

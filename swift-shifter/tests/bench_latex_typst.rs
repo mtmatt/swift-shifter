@@ -20,6 +20,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use bench::cli::{cli_converts, convert, pdf_text, required};
+use bench::run::{each_document, keep_scores, last_line};
 use bench::{Document, compile, manifest, xelatex};
 
 /// One document's scores.
@@ -178,27 +179,10 @@ fn latex_to_typst_scores() {
     if let Err(why) = cli_converts(scratch.path()) {
         panic!("the CLI doesn't convert here, so nothing can be scored: {why}");
     }
-    let threads = std::thread::available_parallelism().map_or(2, |n| n.get());
-    let next = std::sync::atomic::AtomicUsize::new(0);
-    let scores = std::sync::Mutex::new(Vec::new());
-    let unscored = std::sync::Mutex::new(Vec::new());
-    std::thread::scope(|scope| {
-        for _ in 0..threads {
-            scope.spawn(|| {
-                while let Some(doc) = manifest
-                    .document
-                    .get(next.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
-                {
-                    match score(doc, &xelatex, scratch.path()) {
-                        Ok(scored) => scores.lock().unwrap().push(scored),
-                        Err(why) => unscored.lock().unwrap().push(format!("{}: {why}", doc.dir)),
-                    }
-                }
-            });
-        }
+    let (scores, unscored) = each_document(&manifest.document, |doc| {
+        score(doc, &xelatex, scratch.path())
     });
     // Scores for some documents only would read as a different benchmark.
-    let unscored = unscored.into_inner().unwrap();
     assert!(
         unscored.is_empty(),
         "{} of {} documents couldn't be scored:\n\n{}",
@@ -206,27 +190,12 @@ fn latex_to_typst_scores() {
         manifest.document.len(),
         unscored.join("\n\n")
     );
-    let mut scores = scores.into_inner().unwrap();
-    scores.sort_by(|a, b| a.dir.cmp(&b.dir));
     let total = total(&scores);
+    keep_scores("latex-typst", &scores, &total);
 
-    let results = serde_json::json!({
-        "commit": std::env::var("GITHUB_SHA").ok(),
-        "date": chrono::Utc::now().format("%Y-%m-%d").to_string(),
-        "documents": scores,
-        "total": total,
-    });
-    let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/bench");
-    std::fs::create_dir_all(&out).unwrap();
-    let file = out.join("latex-typst.json");
-    let json = serde_json::to_string_pretty(&results).unwrap();
-    std::fs::write(&file, &json).unwrap();
-
-    // To stdout itself, not through `println!`, which the test harness
-    // keeps from a test that passes: the scores are for the run's log.
-    // The table comes last, where a long log's end shows it.
+    // To stdout itself, as `keep_scores` writes, after the scores: the
+    // table comes last, where a long log's end shows it.
     let mut log = std::io::stdout().lock();
-    writeln!(log, "scores, in {}:\n{json}", file.display()).unwrap();
     // Formulas: in the Typst / in the LaTeX, and how many don't parse.
     let formulas = |f: Formulas| format!("{}/{} ({})", f.output, f.source, f.parse_errors);
     writeln!(
@@ -244,13 +213,8 @@ fn latex_to_typst_scores() {
             s.text_similarity.map_or("-".into(), |t| format!("{t:.3}")),
             formulas(s.formulas),
             s.warnings.count,
-            // Its last line: what failed comes after what the app's
-            // toolkit says on the way (`dbind-WARNING`). All of it is in
-            // the scores above.
-            s.error
-                .as_deref()
-                .and_then(|e| e.lines().rfind(|line| !line.trim().is_empty()))
-                .unwrap_or("")
+            // All of it is in the scores above.
+            last_line(s.error.as_deref())
         )
         .unwrap();
     }

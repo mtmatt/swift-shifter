@@ -4,6 +4,7 @@
 
 pub mod cli;
 pub mod formulas;
+pub mod run;
 pub mod text;
 
 use std::path::{Path, PathBuf};
