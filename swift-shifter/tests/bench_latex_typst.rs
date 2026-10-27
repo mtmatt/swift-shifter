@@ -56,7 +56,7 @@ struct Warnings {
 }
 
 /// The scores of every document together.
-#[derive(serde::Serialize, Debug, PartialEq)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, PartialEq)]
 struct Total {
     /// The share of documents whose Typst compiled.
     compile_rate: f64,
@@ -410,4 +410,64 @@ fn formulas_are_scored_all_added_up() {
     // None to keep, or none kept, is no share.
     let none = total(&[doc(0, 0, 0)]);
     assert_eq!((none.formulas_kept, none.formulas_parse), (None, None));
+}
+
+/// The baseline (`bench/baseline/latex-typst.json`), scores a run wrote,
+/// holds every document, and its total is its documents' as this scorer
+/// totals them.
+#[test]
+fn the_baseline_holds_every_document_and_their_total() {
+    let file = bench::bench().join("baseline/latex-typst.json");
+    let text = std::fs::read_to_string(&file).expect("the baseline");
+    let baseline: serde_json::Value = serde_json::from_str(&text).expect("the baseline parses");
+    let documents = baseline["documents"].as_array().expect("its documents");
+    let count = |value: &serde_json::Value| value.as_u64().expect("a count") as usize;
+    let scores: Vec<Scores> = documents
+        .iter()
+        .map(|d| Scores {
+            dir: d["dir"].as_str().expect("its dir").to_string(),
+            compiled: d["compiled"].as_bool().expect("whether it compiled"),
+            text_similarity: d["text_similarity"].as_f64(),
+            formulas: Formulas {
+                source: count(&d["formulas"]["source"]),
+                output: count(&d["formulas"]["output"]),
+                parse_errors: count(&d["formulas"]["parse_errors"]),
+            },
+            warnings: Warnings {
+                count: count(&d["warnings"]),
+                messages: Vec::new(),
+            },
+            ..Scores::default()
+        })
+        .collect();
+
+    let mut listed: Vec<_> = manifest().document.into_iter().map(|d| d.dir).collect();
+    let mut scored: Vec<_> = scores.iter().map(|s| s.dir.clone()).collect();
+    listed.sort();
+    scored.sort();
+    assert_eq!(scored, listed, "the baseline and documents.toml differ");
+
+    let expected: Total =
+        serde_json::from_value(baseline["total"].clone()).expect("its total parses");
+    let totalled = total(&scores);
+    // As written and read back: JSON keeps a float to its last digit or so.
+    let close = |a: Option<f64>, b: Option<f64>| match (a, b) {
+        (Some(a), Some(b)) => (a - b).abs() < 1e-12,
+        (a, b) => a == b,
+    };
+    assert!(
+        close(Some(totalled.compile_rate), Some(expected.compile_rate))
+            && close(
+                Some(totalled.text_similarity),
+                Some(expected.text_similarity)
+            )
+            && close(
+                totalled.text_similarity_compiled,
+                expected.text_similarity_compiled
+            )
+            && close(totalled.formulas_kept, expected.formulas_kept)
+            && close(totalled.formulas_parse, expected.formulas_parse)
+            && totalled.warnings == expected.warnings,
+        "{totalled:?} isn't the baseline's {expected:?}"
+    );
 }

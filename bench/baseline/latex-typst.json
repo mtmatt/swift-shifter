@@ -1,0 +1,184 @@
+{
+  "route": "pandoc",
+  "run": "https://github.com/mtmatt/swift-shifter/actions/runs/40486708190",
+  "commit": "b4184ee025e5cbee46873851eca9c444a5657425",
+  "date": "2026-10-27",
+  "documents": [
+    {
+      "dir": "arxiv-2409.00068",
+      "compiled": false,
+      "error": "main.typ:43:57: expected label, found string",
+      "text_similarity": null,
+      "formulas": { "source": 216, "output": 212, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "arxiv-2409.00087",
+      "compiled": false,
+      "error": "main.typ:121:55: the character `\\` is not valid in code",
+      "text_similarity": null,
+      "formulas": { "source": 191, "output": 190, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "arxiv-2409.00095",
+      "compiled": false,
+      "error": "revision-version1-09-23.typ:1332:17: unclosed label",
+      "text_similarity": null,
+      "formulas": { "source": 630, "output": 588, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "arxiv-2409.00117",
+      "compiled": false,
+      "error": "main.typ:1095:20: expected comma",
+      "text_similarity": null,
+      "formulas": { "source": 801, "output": 1645, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "arxiv-2409.00136",
+      "compiled": false,
+      "error": "main.typ:170:27: unclosed label",
+      "text_similarity": null,
+      "formulas": { "source": 361, "output": 355, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "arxiv-2409.00161",
+      "compiled": false,
+      "error": "ArXiV.typ:42:36: the character `\\` is not valid in code",
+      "text_similarity": null,
+      "formulas": { "source": 41, "output": 27, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "arxiv-2409.00172",
+      "compiled": false,
+      "error": "guided.typ:48:48: the character `\\` is not valid in code",
+      "text_similarity": null,
+      "formulas": { "source": 827, "output": 797, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "arxiv-2409.00176",
+      "compiled": false,
+      "error": "arXivV2.typ:1906:34: the character `\\` is not valid in code",
+      "text_similarity": null,
+      "formulas": { "source": 915, "output": 881, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "arxiv-2409.00177",
+      "compiled": false,
+      "error": "main.typ:7:34: expected label, found string",
+      "text_similarity": null,
+      "formulas": { "source": 647, "output": 559, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "arxiv-2409.00178",
+      "compiled": false,
+      "error": "main.typ:434:23: unclosed label",
+      "text_similarity": null,
+      "formulas": { "source": 731, "output": 671, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "arxiv-2409.00188",
+      "compiled": false,
+      "error": "main.typ:33:52: expected label, found string",
+      "text_similarity": null,
+      "formulas": { "source": 984, "output": 932, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "arxiv-2409.00212",
+      "compiled": false,
+      "error": "LNL-Osada-1.typ:166:68: unknown variable: diff",
+      "text_similarity": null,
+      "formulas": { "source": 79, "output": 46, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "arxiv-2409.00219",
+      "compiled": false,
+      "error": "rwii.typ:507:57: the character `\\` is not valid in code",
+      "text_similarity": null,
+      "formulas": { "source": 894, "output": 867, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "arxiv-2409.00245",
+      "compiled": false,
+      "error": "main.typ:484:35: the character `#` is not valid in code",
+      "text_similarity": null,
+      "formulas": { "source": 3853, "output": 3736, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "arxiv-2410.00109",
+      "compiled": false,
+      "error": "odd_gammaSF.typ:591:44: the character `\\` is not valid in code",
+      "text_similarity": null,
+      "formulas": { "source": 540, "output": 523, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "arxiv-2410.00141",
+      "compiled": false,
+      "error": "manuscript.typ:10:38: expected label, found string",
+      "text_similarity": null,
+      "formulas": { "source": 171, "output": 141, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "arxiv-2410.00143",
+      "compiled": false,
+      "error": "rho.typ:16:51: expected label, found string",
+      "text_similarity": null,
+      "formulas": { "source": 616, "output": 610, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "en-tables",
+      "compiled": false,
+      "error": "main.typ:104:19: unknown variable: sect",
+      "text_similarity": null,
+      "formulas": { "source": 9, "output": 9, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "zh-math",
+      "compiled": false,
+      "error": "main.typ:5:5: label `<eq:frobenius>` does not exist in the document",
+      "text_similarity": null,
+      "formulas": { "source": 26, "output": 26, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "zh-tables",
+      "compiled": true,
+      "error": null,
+      "text_similarity": 0.7408256880733946,
+      "formulas": { "source": 1, "output": 1, "parse_errors": 0 },
+      "warnings": 0
+    },
+    {
+      "dir": "zh-twocolumn",
+      "compiled": true,
+      "error": null,
+      "text_similarity": 0.11237553342816498,
+      "formulas": { "source": 16, "output": 16, "parse_errors": 0 },
+      "warnings": 0
+    }
+  ],
+  "total": {
+    "compile_rate": 0.09523809523809523,
+    "text_similarity": 0.04062862959531236,
+    "text_similarity_compiled": 0.42660061075077976,
+    "formulas_kept": 0.9552952426488166,
+    "formulas_parse": 1.0,
+    "warnings": 0
+  }
+}
