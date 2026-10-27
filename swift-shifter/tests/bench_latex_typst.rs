@@ -64,8 +64,10 @@ struct Total {
     text_similarity: f64,
     /// The mean of those whose Typst compiled.
     text_similarity_compiled: Option<f64>,
-    /// The documents' formulas in the Typst over those in the LaTeX, all
-    /// added up, as much as 1; none where the LaTeX has none.
+    /// The documents' formulas kept over those in the LaTeX, all added up;
+    /// none where the LaTeX has none. A document keeps as many as its
+    /// Typst has, as many as its LaTeX has at most, so that one with more
+    /// (a formula split in two) doesn't make up for others' losses.
     formulas_kept: Option<f64>,
     /// Of the formulas in the Typst, all added up, the share that parse;
     /// none where there are none.
@@ -101,13 +103,16 @@ fn total(scores: &[Scores]) -> Total {
         output: all.output + s.formulas.output,
         parse_errors: all.parse_errors + s.formulas.parse_errors,
     });
+    let kept: usize = scores
+        .iter()
+        .map(|s| s.formulas.output.min(s.formulas.source))
+        .sum();
     Total {
         compile_rate: compiled.len() as f64 / documents,
         text_similarity: similarity / documents,
         text_similarity_compiled: (!compiled.is_empty())
             .then(|| similarity / compiled.len() as f64),
-        formulas_kept: (formulas.source > 0)
-            .then(|| (formulas.output as f64 / formulas.source as f64).min(1.0)),
+        formulas_kept: (formulas.source > 0).then(|| kept as f64 / formulas.source as f64),
         formulas_parse: (formulas.output > 0)
             .then(|| (formulas.output - formulas.parse_errors) as f64 / formulas.output as f64),
         warnings: scores.iter().map(|s| s.warnings.count).sum(),
@@ -395,8 +400,13 @@ fn formulas_are_scored_all_added_up() {
     let all = total(&[doc(10, 8, 1), doc(2, 1, 0), doc(0, 0, 0)]);
     assert_eq!(all.formulas_kept, Some(0.75));
     assert_eq!(all.formulas_parse, Some(8.0 / 9.0));
-    // More in the Typst than in the LaTeX keeps them all, no more.
+    // More in the Typst than in the LaTeX keeps them all, no more, and
+    // doesn't make up for another document's losses.
     assert_eq!(total(&[doc(2, 3, 0)]).formulas_kept, Some(1.0));
+    assert_eq!(
+        total(&[doc(10, 20, 0), doc(10, 5, 0)]).formulas_kept,
+        Some(0.75)
+    );
     // None to keep, or none kept, is no share.
     let none = total(&[doc(0, 0, 0)]);
     assert_eq!((none.formulas_kept, none.formulas_parse), (None, None));
