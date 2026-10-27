@@ -43,7 +43,7 @@ license = "http://creativecommons.org/licenses/by/4.0/"
 subject = "Combinatorics (math.CO)"
 fetched = "2026-10-26"
 covers = ["math", "macros", "bibliography"]
-changes = "\\usepackage{pdfsync} (pdfTeX's source-to-PDF sync, doesn't change the output) commented out in main.tex"
+changes = "in main.tex, commented out: \\usepackage[latin1]{inputenc} (XeLaTeX takes UTF-8 only and stops at it; the file is ASCII), and \\usepackage{pdfsync} (pdfTeX's source-to-PDF sync, not what stopped XeLaTeX, but it doesn't change the output and isn't checked under XeLaTeX)"
 
 [[document]]
 dir = "arxiv-2409.00188"
