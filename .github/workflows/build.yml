@@ -30,19 +30,89 @@ jobs:
     name: Build (${{ matrix.name }})
     runs-on: ${{ matrix.os }}
     container: ${{ matrix.container }}
+    env:
+      # Ubuntu's system dependencies, installed as the Tests job installs its
+      # own (see there).
+      APT_PACKAGES: >-
+        libwebkit2gtk-4.1-dev
+        libgtk-3-dev
+        libayatana-appindicator3-dev
+        librsvg2-dev
+        patchelf
+        nasm
 
     steps:
+      - name: Key the cache of apt's downloads
+        if: matrix.name == 'Ubuntu'
+        id: apt-key
+        run: &apt-key |
+          # The runner image's Ubuntu and the packages installed, and the
+          # month: a cache can't be updated, so a new one each month keeps
+          # the packages updated since. It starts from the last month's.
+          prefix="apt-$ImageOS-$(printf %s "$APT_PACKAGES" | sha256sum | cut -c1-16)-"
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+          echo "key=$prefix$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore apt's downloads
+        if: matrix.name == 'Ubuntu'
+        id: apt-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: ${{ steps.apt-key.outputs.key }}
+          restore-keys: ${{ steps.apt-key.outputs.prefix }}
+
+      # A mirror can be slow rather than down, which apt's own retries don't
+      # catch: past 8 minutes, downloading is given up on, and the next try
+      # goes to Ubuntu's own mirror in place of the runner's. Only then is
+      # anything installed. A restored cache's downloads are used where
+      # they're the versions the index lists.
       - name: Install Ubuntu system dependencies
         if: matrix.name == 'Ubuntu'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            patchelf \
-            nasm
+        timeout-minutes: 26
+        run: &apt-install |
+          if [ -d ~/apt-archives ]; then
+            sudo find ~/apt-archives -name '*.deb' -exec mv -t /var/cache/apt/archives {} +
+          fi
+          for attempt in 1 2 3; do
+            if [ "$attempt" -gt 1 ]; then
+              echo "::warning::apt download $((attempt - 1)) failed or took over 8 minutes; trying archive.ubuntu.com"
+              for sources in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+                if [ -f "$sources" ]; then
+                  sudo sed -i -E \
+                    -e 's#https?://azure\.archive\.ubuntu\.com/ubuntu/?#http://archive.ubuntu.com/ubuntu/#g' \
+                    -e 's#mirror\+file:/etc/apt/apt-mirrors\.txt#http://archive.ubuntu.com/ubuntu/#g' \
+                    "$sources"
+                fi
+              done
+            fi
+            if timeout -k 30s 8m bash -c 'sudo apt-get update && sudo apt-get install -y \
+                --download-only -o Acquire::Retries=3 -o Acquire::http::Timeout=60 \
+                $APT_PACKAGES'; then
+              break
+            elif [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+          done
+          sudo apt-get install -y -o APT::Keep-Downloaded-Packages=true $APT_PACKAGES
+
+      # Only the downloads, not apt's lock or partial/, and as the runner's,
+      # which the cache saves as; not those of versions the index no longer
+      # lists, which a cache from an earlier month may hold.
+      - name: Keep apt's downloads
+        if: matrix.name == 'Ubuntu' && steps.apt-cache.outputs.cache-hit != 'true'
+        run: &apt-keep |
+          sudo apt-get autoclean
+          mkdir -p ~/apt-archives
+          find /var/cache/apt/archives -maxdepth 1 -name '*.deb' -exec cp -t ~/apt-archives {} +
+          du -sh ~/apt-archives
+
+      - name: Save apt's downloads
+        if: matrix.name == 'Ubuntu' && steps.apt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: ${{ steps.apt-key.outputs.key }}
 
       - name: Install Fedora system dependencies
         if: matrix.name == 'Fedora'
@@ -127,40 +197,66 @@ jobs:
   # pymupdf4llm (#114). In CI, a test fails rather than skip without one.
   # Not tectonic: it downloads its bundle while the tests run, and TeX
   # Live's XeLaTeX compiles our LaTeX already. On the Ubuntu its tools are
-  # known to install on, as `ubuntu-latest` moves to Ubuntu 26. Past half an
-  # hour, a run is stuck: a slow mirror once took that long for a tenth of
-  # its packages.
+  # known to install on, as `ubuntu-latest` moves to Ubuntu 26. apt's
+  # downloads are cached, keyed by the runner's Ubuntu and the packages,
+  # and a slow mirror is given up on (see the Ubuntu build). Past 40
+  # minutes, a run is stuck: three tries at downloading take up to 24.
   test:
     name: Tests
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
+    env:
+      APT_PACKAGES: >-
+        libwebkit2gtk-4.1-dev
+        libgtk-3-dev
+        libayatana-appindicator3-dev
+        librsvg2-dev
+        nasm
+        texlive-latex-recommended
+        texlive-latex-extra
+        texlive-plain-generic
+        texlive-xetex
+        texlive-luatex
+        texlive-lang-cjk
+        texlive-lang-japanese
+        fonts-noto-cjk
+        lmodern
+        epubcheck
+        pandoc
+        poppler-utils
+        xvfb
 
     steps:
+      - name: Key the cache of apt's downloads
+        id: apt-key
+        run: *apt-key
+
+      - name: Restore apt's downloads
+        id: apt-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: ${{ steps.apt-key.outputs.key }}
+          restore-keys: ${{ steps.apt-key.outputs.prefix }}
+
       - name: Install system dependencies and the tools tests check with
-        run: |
-          sudo apt-get update
-          # A download the mirror stalls on is tried again, not waited on.
-          sudo apt-get install -y -o Acquire::Retries=3 -o Acquire::http::Timeout=60 \
-            libwebkit2gtk-4.1-dev \
-            libgtk-3-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev \
-            nasm \
-            texlive-latex-recommended \
-            texlive-latex-extra \
-            texlive-plain-generic \
-            texlive-xetex \
-            texlive-luatex \
-            texlive-lang-cjk \
-            texlive-lang-japanese \
-            fonts-noto-cjk \
-            lmodern \
-            epubcheck \
-            pandoc \
-            poppler-utils \
-            xvfb
-          # Where the app looks for it first; pinned to the version tested.
-          pipx install --include-deps pymupdf4llm==1.27.2.3
+        timeout-minutes: 26
+        run: *apt-install
+
+      - name: Keep apt's downloads
+        if: steps.apt-cache.outputs.cache-hit != 'true'
+        run: *apt-keep
+
+      - name: Save apt's downloads
+        if: steps.apt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: ${{ steps.apt-key.outputs.key }}
+
+      # Where the app looks for it first; pinned to the version tested.
+      - name: Install pymupdf4llm
+        run: pipx install --include-deps pymupdf4llm==1.27.2.3
 
       - uses: actions/checkout@v4
 
