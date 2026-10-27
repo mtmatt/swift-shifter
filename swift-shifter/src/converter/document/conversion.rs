@@ -301,24 +301,7 @@ pub async fn convert_document(
         None
     };
 
-    let mut cmd = crate::process::async_command(&pandoc);
-    cmd.args([
-        "-f",
-        from_fmt,
-        "-t",
-        to_fmt,
-        "-o",
-        out.to_str().unwrap_or(""),
-    ]);
-
-    if let Some(latex) = latex {
-        cmd.args(&latex.args);
-        if let Some(path) = latex.path {
-            cmd.env("PATH", path);
-        }
-    }
-
-    cmd.arg(source);
+    let mut cmd = pandoc_command(&pandoc, source, from_fmt, to_fmt, &out, latex)?;
     cmd.stdout(std::process::Stdio::null());
     cmd.stderr(std::process::Stdio::piped());
 
@@ -359,6 +342,52 @@ pub async fn convert_document(
     .ok();
 
     Ok(out.to_string_lossy().to_string())
+}
+
+/// Pandoc converting `source` (`from_fmt`) to `out` (`to_fmt`), through
+/// the LaTeX engine `latex` sets up where there is one.
+fn pandoc_command(
+    pandoc: &Path,
+    source: &Path,
+    from_fmt: &str,
+    to_fmt: &str,
+    out: &Path,
+    latex: Option<pdf::LatexSetup>,
+) -> Result<tokio::process::Command, String> {
+    let out = std::path::absolute(out)
+        .map_err(|e| format!("Failed to resolve {}: {e}", out.display()))?;
+    let mut cmd = crate::process::async_command(pandoc);
+    let source = in_source_folder(&mut cmd, source)?;
+    cmd.args([
+        "-f",
+        from_fmt,
+        "-t",
+        to_fmt,
+        "-o",
+        out.to_str().unwrap_or(""),
+    ]);
+    if let Some(latex) = latex {
+        cmd.args(&latex.args);
+        if let Some(path) = latex.path {
+            cmd.env("PATH", path);
+        }
+    }
+    cmd.arg(source);
+    Ok(cmd)
+}
+
+/// Runs `cmd`, pandoc on `source`, in `source`'s folder: there it finds
+/// what `source` names (`\input`, `\include`, images) as LaTeX would, not
+/// in the app's working directory, which is `/` when it's started from
+/// macOS. `source`, absolute, for the command. A `TEXINPUTS` of the user's
+/// still holds, but its relative folders are now from `source`'s folder,
+/// not the app's (a known limit: the app started from macOS doesn't get
+/// a shell's `TEXINPUTS`).
+fn in_source_folder(cmd: &mut tokio::process::Command, source: &Path) -> Result<PathBuf, String> {
+    let source = std::path::absolute(source)
+        .map_err(|e| format!("Failed to resolve {}: {e}", source.display()))?;
+    cmd.current_dir(source.parent().unwrap_or(Path::new("/")));
+    Ok(source)
 }
 
 /// PDF via pandoc's typst writer and the embedded typst compiler, for tex
@@ -479,7 +508,12 @@ async fn pandoc_metadata(
     {
         return meta;
     }
-    let Ok(output) = crate::process::async_command(pandoc)
+    // A title in an `\input` file is the document's too.
+    let mut cmd = crate::process::async_command(pandoc);
+    let Ok(source) = in_source_folder(&mut cmd, source) else {
+        return meta;
+    };
+    let Ok(output) = cmd
         .args(["-f", from_fmt, "-t", "plain", "--wrap=none"])
         .arg(format!("--template={}", template.display()))
         .arg(source)
@@ -1022,6 +1056,69 @@ mod tests {
         if let Some(text) = pdf_text(&pdf) {
             assert!(text.contains("Real Title"), "{text}");
             assert!(text.contains("Included part text."), "{text}");
+        }
+    }
+
+    /// From the app, pandoc used to run in the app's working directory (`/`
+    /// when it's started from macOS) and miss what `\input` names (#182).
+    /// The test runs in the crate's folder, not the document's: the files
+    /// are found, for every target and for the metadata, in a folder whose
+    /// name has a `:` too (where the system allows one, not on Windows), and
+    /// a `TEXINPUTS` of the user's still holds.
+    #[test]
+    fn tex_finds_its_input_files_from_another_working_directory() {
+        let Some(pandoc) = installed("pandoc", find_pandoc_binary()) else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join("shared");
+        std::fs::create_dir_all(&shared).unwrap();
+        std::fs::write(shared.join("common.tex"), "Shared text.\n").unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let folders: &[&str] = if cfg!(windows) {
+            &["book"]
+        } else {
+            &["book", "book:notes"]
+        };
+        for folder in folders {
+            let book = dir.path().join(folder);
+            std::fs::create_dir_all(book.join("chapters")).unwrap();
+            std::fs::write(book.join("title.tex"), "\\title{Input Title}\n").unwrap();
+            std::fs::write(book.join("chapters/one.tex"), "Chapter one text.\n").unwrap();
+            let tex = book.join("main.tex");
+            std::fs::write(
+                &tex,
+                "\\documentclass{book}\n\\input{title}\n\\begin{document}\n\
+                 Main text.\n\\input{chapters/one}\n\\input{common}\n\\end{document}\n",
+            )
+            .unwrap();
+            for target in ["md", "html", "txt", "typst"] {
+                let out = book.join(format!("out.{target}"));
+                let mut cmd = pandoc_command(
+                    &pandoc,
+                    &tex,
+                    "latex",
+                    ext_to_pandoc_format(target),
+                    &out,
+                    None,
+                )
+                .unwrap();
+                // As pandoc reads it, on every system: split at `:`, its
+                // relative folders from the document's (see
+                // `in_source_folder`); the trailing empty entry keeps TeX's
+                // default search path.
+                let status = runtime
+                    .block_on(async { cmd.env("TEXINPUTS", "../shared:").status().await })
+                    .unwrap();
+                assert!(status.success(), "{folder} {target}");
+                let text = std::fs::read_to_string(&out).unwrap();
+                assert!(
+                    text.contains("Chapter one text.") && text.contains("Shared text."),
+                    "{folder} {target}: {text}"
+                );
+            }
+            let meta = runtime.block_on(pandoc_metadata(&pandoc, &tex, "latex", dir.path()));
+            assert_eq!(meta.title.as_deref(), Some("Input Title"), "{folder}");
         }
     }
 }
