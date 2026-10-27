@@ -4,7 +4,8 @@
 //! - whether the Typst compiled;
 //! - how alike the two PDFs' text is (see `bench::text`);
 //! - the warnings the conversion reported;
-//! - formulas kept, a place for it, not yet scored.
+//! - the formulas the Typst kept, and those of them that parse (see
+//!   `bench::formulas`).
 //!
 //! The scores go to `target/bench/latex-typst.json`, for later runs to
 //! compare against, and to stdout, as a table and in full, for the run's
@@ -31,10 +32,20 @@ struct Scores {
     error: Option<String>,
     /// See `bench::text::similarity`; none where there's nothing to compare.
     text_similarity: Option<f64>,
-    /// Not yet scored (#150).
-    formulas: Option<()>,
+    formulas: Formulas,
     warnings: Warnings,
     seconds: f64,
+}
+
+/// A document's formulas, counted as `bench::formulas` counts them.
+#[derive(serde::Serialize, Default, Debug, PartialEq, Clone, Copy)]
+struct Formulas {
+    /// In the LaTeX.
+    source: usize,
+    /// In the Typst; none where there's no Typst.
+    output: usize,
+    /// Of those in the Typst, the ones holding a syntax error.
+    parse_errors: usize,
 }
 
 #[derive(serde::Serialize, Default, Debug, PartialEq)]
@@ -53,7 +64,12 @@ struct Total {
     text_similarity: f64,
     /// The mean of those whose Typst compiled.
     text_similarity_compiled: Option<f64>,
-    formulas: Option<()>,
+    /// The documents' formulas in the Typst over those in the LaTeX, all
+    /// added up, as much as 1; none where the LaTeX has none.
+    formulas_kept: Option<f64>,
+    /// Of the formulas in the Typst, all added up, the share that parse;
+    /// none where there are none.
+    formulas_parse: Option<f64>,
     warnings: usize,
 }
 
@@ -80,12 +96,20 @@ fn total(scores: &[Scores]) -> Total {
         .map(|s| s.text_similarity.unwrap_or(0.0))
         .collect();
     let similarity: f64 = compiled.iter().sum();
+    let formulas = scores.iter().fold(Formulas::default(), |all, s| Formulas {
+        source: all.source + s.formulas.source,
+        output: all.output + s.formulas.output,
+        parse_errors: all.parse_errors + s.formulas.parse_errors,
+    });
     Total {
         compile_rate: compiled.len() as f64 / documents,
         text_similarity: similarity / documents,
         text_similarity_compiled: (!compiled.is_empty())
             .then(|| similarity / compiled.len() as f64),
-        formulas: None,
+        formulas_kept: (formulas.source > 0)
+            .then(|| (formulas.output as f64 / formulas.source as f64).min(1.0)),
+        formulas_parse: (formulas.output > 0)
+            .then(|| (formulas.output - formulas.parse_errors) as f64 / formulas.output as f64),
         warnings: scores.iter().map(|s| s.warnings.count).sum(),
     }
 }
@@ -170,9 +194,16 @@ fn score(doc: &Document, xelatex: &Path, scratch: &Path) -> Result<Scores, Strin
     std::fs::rename(&answer, &kept).map_err(|e| format!("{}: {e}", answer.display()))?;
     let main = scratch.join(&doc.dir).join(&doc.main);
     let work = main.parent().unwrap();
+    scores.formulas.source =
+        bench::formulas::in_latex(&main).map_err(|e| format!("formulas: {e}"))?;
     let converted = match convert(work, "typst", &main)? {
         Ok((typst, stderr)) => {
             scores.warnings = warnings(&stderr);
+            // Counted whether or not it compiles.
+            let source =
+                std::fs::read_to_string(&typst).map_err(|e| format!("{}: {e}", typst.display()))?;
+            (scores.formulas.output, scores.formulas.parse_errors) =
+                bench::formulas::in_typst(&source);
             convert(work, "pdf", &typst)?
         }
         Err(why) => Err(why),
@@ -254,19 +285,22 @@ fn latex_to_typst_scores() {
     // The table comes last, where a long log's end shows it.
     let mut log = std::io::stdout().lock();
     writeln!(log, "scores, in {}:\n{json}", file.display()).unwrap();
+    // Formulas: in the Typst / in the LaTeX, and how many don't parse.
+    let formulas = |f: Formulas| format!("{}/{} ({})", f.output, f.source, f.parse_errors);
     writeln!(
         log,
-        "{:<20} {:<9} {:>6} {:>9}  error",
-        "document", "compiled", "text", "warnings"
+        "{:<20} {:<9} {:>6} {:>16} {:>9}  error",
+        "document", "compiled", "text", "formulas", "warnings"
     )
     .unwrap();
     for s in &scores {
         writeln!(
             log,
-            "{:<20} {:<9} {:>6} {:>9}  {}",
+            "{:<20} {:<9} {:>6} {:>16} {:>9}  {}",
             s.dir,
             if s.compiled { "yes" } else { "no" },
             s.text_similarity.map_or("-".into(), |t| format!("{t:.3}")),
+            formulas(s.formulas),
             s.warnings.count,
             // Its last line: what failed comes after what the app's
             // toolkit says on the way (`dbind-WARNING`). All of it is in
@@ -278,9 +312,10 @@ fn latex_to_typst_scores() {
         )
         .unwrap();
     }
+    let share = |share: Option<f64>| share.map_or("-".into(), |s| format!("{s:.3}"));
     writeln!(
         log,
-        "{:<20} {:<9} {:>6.3} {:>9}",
+        "{:<20} {:<9} {:>6.3} {:>16} {:>9}",
         "total",
         format!(
             "{}/{}",
@@ -288,6 +323,11 @@ fn latex_to_typst_scores() {
             scores.len()
         ),
         total.text_similarity,
+        format!(
+            "{} ({})",
+            share(total.formulas_kept),
+            share(total.formulas_parse)
+        ),
         total.warnings
     )
     .unwrap();
@@ -333,9 +373,31 @@ fn a_document_that_doesnt_compile_scores_no_text() {
             compile_rate: 0.5,
             text_similarity: 0.35,
             text_similarity_compiled: Some(0.7),
-            formulas: None,
+            formulas_kept: None,
+            formulas_parse: None,
             warnings: 3,
         }
     );
     assert_eq!(total(&[]).text_similarity_compiled, None);
+}
+
+#[test]
+fn formulas_are_scored_all_added_up() {
+    let doc = |source, output, parse_errors| Scores {
+        formulas: Formulas {
+            source,
+            output,
+            parse_errors,
+        },
+        ..Scores::default()
+    };
+    // 9 of 12 kept, 1 of 9 not parsing, whether the Typst compiled or not.
+    let all = total(&[doc(10, 8, 1), doc(2, 1, 0), doc(0, 0, 0)]);
+    assert_eq!(all.formulas_kept, Some(0.75));
+    assert_eq!(all.formulas_parse, Some(8.0 / 9.0));
+    // More in the Typst than in the LaTeX keeps them all, no more.
+    assert_eq!(total(&[doc(2, 3, 0)]).formulas_kept, Some(1.0));
+    // None to keep, or none kept, is no share.
+    let none = total(&[doc(0, 0, 0)]);
+    assert_eq!((none.formulas_kept, none.formulas_parse), (None, None));
 }
