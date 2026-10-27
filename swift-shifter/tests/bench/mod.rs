@@ -2,6 +2,7 @@
 //! (`bench/documents.toml`), and compiling one with XeLaTeX into the PDF
 //! the benchmark scores against.
 
+pub mod cli;
 pub mod formulas;
 pub mod text;
 
