@@ -1,0 +1,157 @@
+name: Benchmark
+permissions:
+  contents: read
+
+# The conversion benchmark (#150), apart from the Tests job: it's slow, and
+# its documents need TeX Live packages the Tests job doesn't install. It
+# runs on a PR that changes the benchmark, every week, and by hand.
+on:
+  pull_request:
+    paths:
+      - bench/**
+      - swift-shifter/tests/bench_*.rs
+      - .github/workflows/bench.yml
+  schedule:
+    - cron: "0 3 * * 1" # Mondays, 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  bench:
+    name: Benchmark
+    runs-on: ubuntu-24.04
+    # TeX Live is most of it, and three tries at downloading it take up to
+    # 24 minutes.
+    timeout-minutes: 60
+    env:
+      # The app's build dependencies, as the test binary links it, and the
+      # TeX Live the documents compile with, beyond the Tests job's: REVTeX
+      # (publishers), physics, mhchem and tensor (science), tikz-cd and xy
+      # (pictures), fontawesome5, bbm and mathalfa (fonts-extra), ctex
+      # (lang-chinese), and mathtext with Cyrillic fonts (lang-cyrillic).
+      APT_PACKAGES: >-
+        libwebkit2gtk-4.1-dev
+        libgtk-3-dev
+        libayatana-appindicator3-dev
+        librsvg2-dev
+        nasm
+        texlive-latex-recommended
+        texlive-latex-extra
+        texlive-fonts-recommended
+        texlive-fonts-extra
+        texlive-plain-generic
+        texlive-xetex
+        texlive-publishers
+        texlive-science
+        texlive-pictures
+        texlive-lang-cjk
+        texlive-lang-chinese
+        texlive-lang-cyrillic
+        fonts-noto-cjk
+        lmodern
+        poppler-utils
+      # The Build workflow's Tests job's packages, exactly as listed there:
+      # its apt cache is keyed by them (see below).
+      TESTS_APT_PACKAGES: >-
+        libwebkit2gtk-4.1-dev
+        libgtk-3-dev
+        libayatana-appindicator3-dev
+        librsvg2-dev
+        nasm
+        texlive-latex-recommended
+        texlive-latex-extra
+        texlive-plain-generic
+        texlive-xetex
+        texlive-luatex
+        texlive-lang-cjk
+        texlive-lang-japanese
+        fonts-noto-cjk
+        lmodern
+        epubcheck
+        pandoc
+        poppler-utils
+        xvfb
+
+    # Installed as the Build workflow installs its own (see there), but
+    # with the Tests job's cache, which main's runs keep in use, and none
+    # of its own: one used weekly would mostly be gone after 7 days unused,
+    # and while kept, would push out the caches main uses daily. The
+    # packages the Tests job has are restored; the others are downloaded.
+    steps:
+      - name: Key the Tests job's cache of apt's downloads
+        id: apt-key
+        run: |
+          prefix="apt-$ImageOS-$(printf %s "$TESTS_APT_PACKAGES" | sha256sum | cut -c1-16)-"
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+          echo "key=$prefix$(date -u +%Y-%m)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the Tests job's apt downloads
+        id: apt-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/apt-archives
+          key: ${{ steps.apt-key.outputs.key }}
+          restore-keys: ${{ steps.apt-key.outputs.prefix }}
+
+      # Missing it only makes the downloads longer.
+      - name: Say if it wasn't there
+        if: steps.apt-cache.outputs.cache-matched-key == ''
+        run: echo "::warning::no apt cache of the Tests job's; is TESTS_APT_PACKAGES its list in build.yml?"
+
+      # A mirror can be slow rather than down, which apt's own retries don't
+      # catch: past 8 minutes, downloading is given up on, and the next try
+      # goes to Ubuntu's own mirror in place of the runner's. Only then is
+      # anything installed. A restored cache's downloads are used where
+      # they're the versions the index lists.
+      - name: Install system dependencies and TeX Live
+        timeout-minutes: 26
+        run: |
+          if [ -d ~/apt-archives ]; then
+            sudo find ~/apt-archives -name '*.deb' -exec mv -t /var/cache/apt/archives {} +
+          fi
+          for attempt in 1 2 3; do
+            if [ "$attempt" -gt 1 ]; then
+              echo "::warning::apt download $((attempt - 1)) failed or took over 8 minutes; trying archive.ubuntu.com"
+              for sources in /etc/apt/sources.list /etc/apt/sources.list.d/*; do
+                if [ -f "$sources" ]; then
+                  sudo sed -i -E \
+                    -e 's#https?://azure\.archive\.ubuntu\.com/ubuntu/?#http://archive.ubuntu.com/ubuntu/#g' \
+                    -e 's#mirror\+file:/etc/apt/apt-mirrors\.txt#http://archive.ubuntu.com/ubuntu/#g' \
+                    "$sources"
+                fi
+              done
+            fi
+            if timeout -k 30s 8m bash -c 'sudo apt-get update && sudo apt-get install -y \
+                --download-only -o Acquire::Retries=3 -o Acquire::http::Timeout=60 \
+                $APT_PACKAGES'; then
+              break
+            elif [ "$attempt" -eq 3 ]; then
+              exit 1
+            fi
+          done
+          sudo apt-get install -y $APT_PACKAGES
+
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: swift-shifter
+
+      # tauri's generate_context! embeds ui/dist.
+      - name: Build frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Compile every benchmark document
+        working-directory: swift-shifter
+        run: cargo test --test bench_documents -- --include-ignored
