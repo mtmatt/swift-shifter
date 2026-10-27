@@ -136,6 +136,12 @@ jobs:
           done
           sudo apt-get install -y $APT_PACKAGES
 
+      # The PDF scores convert PDF to Markdown with the app's CLI, which
+      # takes it through pymupdf4llm: installed as the Tests job installs
+      # it, where the app looks for it first, at the version tested.
+      - name: Install pymupdf4llm
+        run: pipx install --include-deps pymupdf4llm==1.27.2.3
+
       - uses: actions/checkout@v4
 
       - name: Setup Node.js
