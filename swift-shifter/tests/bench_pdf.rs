@@ -1,7 +1,10 @@
 //! The benchmark's PDF → Markdown scores (#150): each test document's
 //! XeLaTeX PDF converted to Markdown with the app's CLI, as a user
-//! converts it. Per document and in total, how alike the Markdown's text
-//! is to the PDF's (see `bench::text`).
+//! converts it. Per document and in total:
+//! - how alike the Markdown's text is to the PDF's (see `bench::text`);
+//! - the formulas the app read and wrote, as its HTML of the Markdown has
+//!   them, against those in the LaTeX (see `bench::formulas`), and those
+//!   of them it couldn't parse.
 //!
 //! The scores go to `target/bench/pdf-md.json` and to stdout, as a table
 //! and in full, for the run's log. A low score doesn't fail the run.
@@ -26,11 +29,26 @@ use comrak::nodes::NodeValue;
 struct Scores {
     dir: String,
     converted: bool,
-    /// Why there's no Markdown: the conversion that failed and all it said.
+    /// Why there's no Markdown, or no HTML of it: the conversion that
+    /// failed and all it said.
     error: Option<String>,
     /// See `bench::text::similarity`; none where there's no Markdown.
     text_similarity: Option<f64>,
+    formulas: Formulas,
     seconds: f64,
+}
+
+/// A document's formulas: those in its LaTeX, and those the app read in
+/// its PDF and wrote, not the PDF's own, which nothing here can count.
+#[derive(serde::Serialize, Default, Debug, PartialEq, Clone, Copy)]
+struct Formulas {
+    /// In the LaTeX, as `bench::formulas` counts them.
+    source: usize,
+    /// In the app's HTML of its Markdown (see [`in_html`]); none where
+    /// there's no HTML.
+    output: usize,
+    /// Of those, the ones the app couldn't parse.
+    parse_errors: usize,
 }
 
 /// The scores of every document together.
@@ -42,6 +60,13 @@ struct Total {
     text_similarity: f64,
     /// The mean of those converted.
     text_similarity_converted: Option<f64>,
+    /// As in `bench_latex_typst`: the formulas kept, each document's as
+    /// many as its LaTeX has at most, over those in the LaTeX; none where
+    /// the LaTeX has none.
+    formulas_kept: Option<f64>,
+    /// Of the formulas written, the share that parse; none where there are
+    /// none.
+    formulas_parse: Option<f64>,
 }
 
 fn total(scores: &[Scores]) -> Total {
@@ -53,12 +78,28 @@ fn total(scores: &[Scores]) -> Total {
         .collect();
     // An empty sum is -0.0, which would read "-0.000"; adding 0.0 makes it 0.
     let similarity: f64 = converted.iter().sum::<f64>() + 0.0;
+    let sum = |count: fn(&Formulas) -> usize| -> usize {
+        scores.iter().map(|s| count(&s.formulas)).sum()
+    };
+    let (source, output) = (sum(|f| f.source), sum(|f| f.output));
+    let kept = sum(|f| f.output.min(f.source));
+    let parse_errors = sum(|f| f.parse_errors);
     Total {
         convert_rate: converted.len() as f64 / documents,
         text_similarity: similarity / documents,
         text_similarity_converted: (!converted.is_empty())
             .then(|| similarity / converted.len() as f64),
+        formulas_kept: (source > 0).then(|| kept as f64 / source as f64),
+        formulas_parse: (output > 0).then(|| (output - parse_errors) as f64 / output as f64),
     }
+}
+
+/// The formulas in the app's HTML, and of them those it couldn't parse:
+/// it writes a formula as MathML (`<math`), or, where it can't parse it,
+/// as its TeX (`<code class="math">`).
+fn in_html(html: &str) -> (usize, usize) {
+    let unparsed = html.matches("<code class=\"math\">").count();
+    (html.matches("<math").count() + unparsed, unparsed)
 }
 
 /// `markdown`'s text, without its markup (`#`, list markers, table rules,
@@ -129,20 +170,34 @@ fn score(doc: &Document, xelatex: &Path, scratch: &Path) -> Result<Scores, Strin
         ..Scores::default()
     };
     let pdf = compile(doc, xelatex, scratch).map_err(|e| format!("XeLaTeX: {e}"))?;
-    match convert(pdf.parent().unwrap(), "md", &pdf)? {
+    let main = scratch.join(&doc.dir).join(&doc.main);
+    scores.formulas.source =
+        bench::formulas::in_latex(&main).map_err(|e| format!("formulas: {e}"))?;
+    let work = pdf.parent().unwrap();
+    let html = match convert(work, "md", &pdf)? {
         Ok((markdown, _)) => {
             scores.converted = true;
-            let markdown = std::fs::read_to_string(&markdown)
-                .map_err(|e| format!("{}: {e}", markdown.display()))?;
+            let text = read(&markdown)?;
             scores.text_similarity = Some(bench::text::similarity(
                 &pdf_text(&pdf)?,
-                &markdown_text(&markdown),
+                &markdown_text(&text),
             ));
+            convert(work, "html", &markdown)?
+        }
+        Err(why) => Err(why),
+    };
+    match html {
+        Ok((html, _)) => {
+            (scores.formulas.output, scores.formulas.parse_errors) = in_html(&read(&html)?);
         }
         Err(why) => scores.error = Some(why),
     }
     scores.seconds = started.elapsed().as_secs_f64();
     Ok(scores)
+}
+
+fn read(file: &Path) -> Result<String, String> {
+    std::fs::read_to_string(file).map_err(|e| format!("{}: {e}", file.display()))
 }
 
 /// Slow, and needs what the benchmark workflow installs (TeX Live,
@@ -176,34 +231,43 @@ fn pdf_to_markdown_scores() {
 
     // To stdout itself, as `keep_scores` writes: the table last.
     let mut log = std::io::stdout().lock();
+    // Formulas: written / in the LaTeX, and how many don't parse.
+    let formulas = |f: Formulas| format!("{}/{} ({})", f.output, f.source, f.parse_errors);
     writeln!(
         log,
-        "{:<20} {:<10} {:>6}  error",
-        "document", "converted", "text"
+        "{:<20} {:<10} {:>6} {:>16}  error",
+        "document", "converted", "text", "formulas"
     )
     .unwrap();
     for s in &scores {
         writeln!(
             log,
-            "{:<20} {:<10} {:>6}  {}",
+            "{:<20} {:<10} {:>6} {:>16}  {}",
             s.dir,
             if s.converted { "yes" } else { "no" },
             s.text_similarity.map_or("-".into(), |t| format!("{t:.3}")),
+            formulas(s.formulas),
             // All of it is in the scores above.
             last_line(s.error.as_deref())
         )
         .unwrap();
     }
+    let share = |share: Option<f64>| share.map_or("-".into(), |s| format!("{s:.3}"));
     writeln!(
         log,
-        "{:<20} {:<10} {:>6.3}",
+        "{:<20} {:<10} {:>6.3} {:>16}",
         "total",
         format!(
             "{}/{}",
             scores.iter().filter(|s| s.converted).count(),
             scores.len()
         ),
-        total.text_similarity
+        total.text_similarity,
+        format!(
+            "{} ({})",
+            share(total.formulas_kept),
+            share(total.formulas_parse)
+        )
     )
     .unwrap();
 }
@@ -227,10 +291,45 @@ fn a_document_not_converted_scores_no_text() {
             convert_rate: 0.5,
             text_similarity: 0.35,
             text_similarity_converted: Some(0.7),
+            formulas_kept: None,
+            formulas_parse: None,
         }
     );
     assert_eq!(total(&[]).text_similarity_converted, None);
     assert_eq!(total(&[]).text_similarity.to_string(), "0");
+}
+
+#[test]
+fn formulas_are_scored_all_added_up() {
+    let doc = |source, output, parse_errors| Scores {
+        formulas: Formulas {
+            source,
+            output,
+            parse_errors,
+        },
+        ..Scores::default()
+    };
+    // 9 of 12 kept, 1 of 9 not parsing; one with more written than in its
+    // LaTeX keeps them all, no more.
+    let all = total(&[doc(10, 8, 1), doc(2, 1, 0), doc(0, 0, 0)]);
+    assert_eq!(all.formulas_kept, Some(0.75));
+    assert_eq!(all.formulas_parse, Some(8.0 / 9.0));
+    assert_eq!(
+        total(&[doc(10, 20, 0), doc(10, 5, 0)]).formulas_kept,
+        Some(0.75)
+    );
+    let none = total(&[doc(0, 0, 0)]);
+    assert_eq!((none.formulas_kept, none.formulas_parse), (None, None));
+}
+
+#[test]
+fn formulas_are_counted_in_the_apps_html() {
+    let html = "<p>Let <math display=\"inline\"><mi>x</mi></math> and \
+                <code class=\"math\">\\frac{1}</code>.</p>\n\
+                <div class=\"math-display\"><math display=\"block\"><mtable></mtable></math></div>\n\
+                <pre><code class=\"language-rust\">&lt;math</code></pre>";
+    assert_eq!(in_html(html), (3, 1));
+    assert_eq!(in_html("<p>none</p>"), (0, 0));
 }
 
 #[test]
