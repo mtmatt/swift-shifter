@@ -33,6 +33,16 @@ macros, tables, two columns, multiple files, bibliographies, Chinese).
 
 Nothing goes in without a clear licence.
 
+## Baseline
+
+`baseline/latex-typst.json` holds the LaTeX → Typst scores of today's
+route (pandoc), from the Benchmark workflow run it names: the scores the
+native LaTeX reader (#73) is to beat. They're the scorer's
+(`swift-shifter/tests/bench_latex_typst.rs`), less what depends on the
+machine (seconds), with each error's last line, and the run and commit
+they came from. `cargo test` checks that the baseline holds every
+document and that its total is its documents' as the scorer totals them.
+
 ## Adding a document
 
 1. Check the licence on the arXiv abstract page (`https://arxiv.org/abs/<id>`):
