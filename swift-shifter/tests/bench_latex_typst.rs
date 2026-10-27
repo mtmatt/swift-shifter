@@ -251,7 +251,9 @@ fn latex_to_typst_scores() {
 
     // To stdout itself, not through `println!`, which the test harness
     // keeps from a test that passes: the scores are for the run's log.
+    // The table comes last, where a long log's end shows it.
     let mut log = std::io::stdout().lock();
+    writeln!(log, "scores, in {}:\n{json}", file.display()).unwrap();
     writeln!(
         log,
         "{:<20} {:<9} {:>6} {:>9}  error",
@@ -266,10 +268,12 @@ fn latex_to_typst_scores() {
             if s.compiled { "yes" } else { "no" },
             s.text_similarity.map_or("-".into(), |t| format!("{t:.3}")),
             s.warnings.count,
-            // All of it is in the scores below.
+            // Its last line: what failed comes after what the app's
+            // toolkit says on the way (`dbind-WARNING`). All of it is in
+            // the scores above.
             s.error
                 .as_deref()
-                .and_then(|e| e.lines().next())
+                .and_then(|e| e.lines().rfind(|line| !line.trim().is_empty()))
                 .unwrap_or("")
         )
         .unwrap();
@@ -287,7 +291,6 @@ fn latex_to_typst_scores() {
         total.warnings
     )
     .unwrap();
-    writeln!(log, "scores, in {}:\n{json}", file.display()).unwrap();
 }
 
 #[test]
