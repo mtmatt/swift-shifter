@@ -97,7 +97,8 @@ fn total(scores: &[Scores]) -> Total {
         .filter(|s| s.compiled)
         .map(|s| s.text_similarity.unwrap_or(0.0))
         .collect();
-    let similarity: f64 = compiled.iter().sum();
+    // An empty sum is -0.0, which would read "-0.000"; adding 0.0 makes it 0.
+    let similarity: f64 = compiled.iter().sum::<f64>() + 0.0;
     let formulas = scores.iter().fold(Formulas::default(), |all, s| Formulas {
         source: all.source + s.formulas.source,
         output: all.output + s.formulas.output,
@@ -336,6 +337,117 @@ fn latex_to_typst_scores() {
         total.warnings
     )
     .unwrap();
+
+    // Against the baseline (`bench/baseline/`): each drop a warning the
+    // run's page shows, though it doesn't fail the run (#150).
+    let (base_scores, base_total) = baseline();
+    writeln!(
+        log,
+        "{:<20} {:<9} {:>+6.3} {:>16}",
+        "vs baseline",
+        format!(
+            "{:+}",
+            scores.iter().filter(|s| s.compiled).count() as i64
+                - base_scores.iter().filter(|s| s.compiled).count() as i64
+        ),
+        total.text_similarity - base_total.text_similarity,
+        format!(
+            "{} ({})",
+            change(total.formulas_kept, base_total.formulas_kept),
+            change(total.formulas_parse, base_total.formulas_parse)
+        )
+    )
+    .unwrap();
+    for drop in drops(&scores, &total, &base_scores, &base_total) {
+        writeln!(log, "::warning::{drop}").unwrap();
+    }
+}
+
+/// `now - then`, signed, or `-` where either is none.
+fn change(now: Option<f64>, then: Option<f64>) -> String {
+    match (now, then) {
+        (Some(now), Some(then)) => format!("{:+.3}", now - then),
+        _ => "-".into(),
+    }
+}
+
+/// How much a total may fall below the baseline's before it's a drop: the
+/// same conversion scores a little differently from run to run (fonts,
+/// TeX Live's version).
+const DROP: f64 = 0.01;
+
+/// What fell below the baseline, said for a warning each: a total that
+/// fell by more than [`DROP`], and a document whose Typst compiled in the
+/// baseline but doesn't now. Not the text similarity of those that
+/// compiled, which a document compiling now and not before can lower.
+fn drops(scores: &[Scores], total: &Total, base_scores: &[Scores], base: &Total) -> Vec<String> {
+    let mut drops = Vec::new();
+    let shares = [
+        (
+            "compile rate",
+            Some(total.compile_rate),
+            Some(base.compile_rate),
+        ),
+        (
+            "text similarity",
+            Some(total.text_similarity),
+            Some(base.text_similarity),
+        ),
+        ("formulas kept", total.formulas_kept, base.formulas_kept),
+        (
+            "formulas that parse",
+            total.formulas_parse,
+            base.formulas_parse,
+        ),
+    ];
+    for (name, now, then) in shares {
+        if let (Some(now), Some(then)) = (now, then)
+            && then - now > DROP
+        {
+            drops.push(format!(
+                "LaTeX to Typst: {name} fell from {then:.3} to {now:.3} (baseline)"
+            ));
+        }
+    }
+    for base in base_scores.iter().filter(|s| s.compiled) {
+        if scores.iter().any(|s| s.dir == base.dir && !s.compiled) {
+            drops.push(format!(
+                "LaTeX to Typst: {} compiled in the baseline, and doesn't now",
+                base.dir
+            ));
+        }
+    }
+    drops
+}
+
+/// The baseline (`bench/baseline/latex-typst.json`): its documents' scores,
+/// as far as it keeps them, and its total.
+fn baseline() -> (Vec<Scores>, Total) {
+    let file = bench::bench().join("baseline/latex-typst.json");
+    let text = std::fs::read_to_string(&file).expect("the baseline");
+    let baseline: serde_json::Value = serde_json::from_str(&text).expect("the baseline parses");
+    let documents = baseline["documents"].as_array().expect("its documents");
+    let count = |value: &serde_json::Value| value.as_u64().expect("a count") as usize;
+    let scores = documents
+        .iter()
+        .map(|d| Scores {
+            dir: d["dir"].as_str().expect("its dir").to_string(),
+            compiled: d["compiled"].as_bool().expect("whether it compiled"),
+            text_similarity: d["text_similarity"].as_f64(),
+            formulas: Formulas {
+                source: count(&d["formulas"]["source"]),
+                output: count(&d["formulas"]["output"]),
+                parse_errors: count(&d["formulas"]["parse_errors"]),
+            },
+            warnings: Warnings {
+                count: count(&d["warnings"]),
+                messages: Vec::new(),
+            },
+            ..Scores::default()
+        })
+        .collect();
+    let total = serde_json::from_value(baseline["total"].clone()).expect("its total parses");
+    (scores, total)
 }
 
 #[test]
@@ -417,38 +529,13 @@ fn formulas_are_scored_all_added_up() {
 /// totals them.
 #[test]
 fn the_baseline_holds_every_document_and_their_total() {
-    let file = bench::bench().join("baseline/latex-typst.json");
-    let text = std::fs::read_to_string(&file).expect("the baseline");
-    let baseline: serde_json::Value = serde_json::from_str(&text).expect("the baseline parses");
-    let documents = baseline["documents"].as_array().expect("its documents");
-    let count = |value: &serde_json::Value| value.as_u64().expect("a count") as usize;
-    let scores: Vec<Scores> = documents
-        .iter()
-        .map(|d| Scores {
-            dir: d["dir"].as_str().expect("its dir").to_string(),
-            compiled: d["compiled"].as_bool().expect("whether it compiled"),
-            text_similarity: d["text_similarity"].as_f64(),
-            formulas: Formulas {
-                source: count(&d["formulas"]["source"]),
-                output: count(&d["formulas"]["output"]),
-                parse_errors: count(&d["formulas"]["parse_errors"]),
-            },
-            warnings: Warnings {
-                count: count(&d["warnings"]),
-                messages: Vec::new(),
-            },
-            ..Scores::default()
-        })
-        .collect();
-
+    let (scores, expected) = baseline();
     let mut listed: Vec<_> = manifest().document.into_iter().map(|d| d.dir).collect();
     let mut scored: Vec<_> = scores.iter().map(|s| s.dir.clone()).collect();
     listed.sort();
     scored.sort();
     assert_eq!(scored, listed, "the baseline and documents.toml differ");
 
-    let expected: Total =
-        serde_json::from_value(baseline["total"].clone()).expect("its total parses");
     let totalled = total(&scores);
     // As written and read back: JSON keeps a float to its last digit or so.
     let close = |a: Option<f64>, b: Option<f64>| match (a, b) {
@@ -469,5 +556,39 @@ fn the_baseline_holds_every_document_and_their_total() {
             && close(totalled.formulas_parse, expected.formulas_parse)
             && totalled.warnings == expected.warnings,
         "{totalled:?} isn't the baseline's {expected:?}"
+    );
+}
+
+#[test]
+fn a_drop_below_the_baseline_is_flagged() {
+    let doc = |dir: &str, compiled, text: Option<f64>| Scores {
+        dir: dir.into(),
+        compiled,
+        text_similarity: text,
+        formulas: Formulas {
+            source: 10,
+            output: 10,
+            parse_errors: 0,
+        },
+        ..Scores::default()
+    };
+    let base = [doc("a", true, Some(0.8)), doc("b", false, None)];
+    let base_total = total(&base);
+    // The same, or a little lower, isn't a drop; nor is one that compiles
+    // now and didn't.
+    let same = [doc("a", true, Some(0.795)), doc("b", true, Some(0.1))];
+    assert_eq!(
+        drops(&same, &total(&same), &base, &base_total),
+        Vec::<String>::new()
+    );
+    // One that no longer compiles is, and so are the totals it takes down.
+    let worse = [doc("a", false, None), doc("b", false, None)];
+    assert_eq!(
+        drops(&worse, &total(&worse), &base, &base_total),
+        [
+            "LaTeX to Typst: compile rate fell from 0.500 to 0.000 (baseline)",
+            "LaTeX to Typst: text similarity fell from 0.400 to 0.000 (baseline)",
+            "LaTeX to Typst: a compiled in the baseline, and doesn't now",
+        ]
     );
 }

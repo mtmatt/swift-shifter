@@ -43,6 +43,12 @@ machine (seconds), with each error's last line, and the run and commit
 they came from. `cargo test` checks that the baseline holds every
 document and that its total is its documents' as the scorer totals them.
 
+Each run is compared with it. A total more than 0.01 below the
+baseline's, or a document whose Typst compiled there and doesn't now, is
+a warning on the run's page; it doesn't fail the run, as scores vary a
+little from run to run. A change that improves the scores updates the
+baseline in the same PR.
+
 ## Adding a document
 
 1. Check the licence on the arXiv abstract page (`https://arxiv.org/abs/<id>`):
