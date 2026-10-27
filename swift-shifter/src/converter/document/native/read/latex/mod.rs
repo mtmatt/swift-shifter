@@ -12,8 +12,9 @@ use mitex_parser::CommandSpec;
 use mitex_parser::syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 use verbatim::Verbatim;
 
+use super::lists::loosens;
 use crate::converter::document::native::Warning;
-use crate::converter::document::native::ast::{Block, Document, Inline};
+use crate::converter::document::native::ast::{Block, Document, Inline, List, ListItem};
 
 /// The stack reading takes per level the parser and the reader recurse
 /// into, in a debug build, which takes more than a release one: 553 bytes
@@ -32,7 +33,8 @@ const STACK_BASE: usize = 1 << 20;
 const MAX_STACK: usize = 1 << 30;
 
 /// `source`, and, where it might nest too deep to parse, a warning that it
-/// was read as plain text instead.
+/// was read as plain text instead, or one of what of it was (see
+/// [`read_parsed`]).
 pub fn read(source: &str) -> (Document, Option<Warning>) {
     // The parser and the reader recurse into nested groups, environments,
     // math and scripts, as deep as they go, so reading gets a stack of its
@@ -45,7 +47,7 @@ pub fn read(source: &str) -> (Document, Option<Warning>) {
             .spawn(move || read_parsed(&owned));
         if let Ok(reading) = reading {
             match reading.join() {
-                Ok(doc) => return (doc, None),
+                Ok(read) => return read,
                 Err(panic) => std::panic::resume_unwind(panic),
             }
         }
@@ -71,7 +73,9 @@ fn nesting_bound(source: &str) -> usize {
         .count()
 }
 
-fn read_parsed(source: &str) -> Document {
+/// `source`, parsed, and a warning of the lists nested too deep to keep
+/// (see [`MAX_LIST_NESTING`]).
+fn read_parsed(source: &str) -> (Document, Option<Warning>) {
     let cut = verbatim::cut(source);
     // Expanding macros, which may never end, would also parse more than
     // `source` holds, past `nesting_bound`.
@@ -84,21 +88,107 @@ fn read_parsed(source: &str) -> Document {
     reader.flow(pieces(&document_body(&root).unwrap_or(root)));
     reader.end_paragraph();
     level_headings(&mut reader.blocks);
-    Document {
+    let warning = (reader.unlisted > 0).then_some(Warning {
+        one: "list nested too deeply was read as its text",
+        many: "lists nested too deeply were read as their text",
+        count: reader.unlisted,
+        line: None,
+    });
+    let doc = Document {
         blocks: reader.blocks,
         ..Document::default()
-    }
+    };
+    (doc, warning)
 }
 
 /// The `document` environment, past the preamble; a fragment has none.
 fn document_body(root: &SyntaxNode) -> Option<SyntaxNode> {
-    root.descendants().find(|node| {
-        node.kind() == SyntaxKind::ItemEnv
-            && node
-                .first_child()
-                .and_then(|begin| begin.first_token())
-                .is_some_and(|name| name.text() == "document")
-    })
+    root.descendants()
+        .find(|node| node.kind() == SyntaxKind::ItemEnv && environment_name(node) == "document")
+}
+
+/// What a list's environment holds (see [`gather`]).
+#[derive(Default)]
+struct Gathered {
+    /// Whether `\tightlist` makes it tight.
+    tight: bool,
+    /// What's before the first `\item`; with none, all it holds.
+    before: Vec<Piece>,
+    /// Each `\item`'s task mark (see [`task`]), and what's up to the next.
+    items: Vec<(Option<bool>, Vec<Piece>)>,
+}
+
+/// The `\item`s of `items`, an `itemize` environment's, each what's up to
+/// the next. Only those of the environment's own: one in a group or
+/// another environment (`{\item a}`, `samepage`) is in its item's text, the
+/// group or environment left whole, so nothing in it is lost and a command
+/// keeps its argument. `\item[$\boxtimes$]` and `\item[$\square$]` make
+/// tasks, done or not; any other label leads its item's text. `\tightlist`
+/// before the first item makes it tight, as the LaTeX writer writes it.
+fn gather(mut items: Vec<Piece>) -> Gathered {
+    let mut gathered = Gathered::default();
+    let (mut at, mut unbracketed) = (0, 0);
+    while let Some(piece) = items.get(at).cloned() {
+        at += 1;
+        let name = match &piece {
+            Piece::Node(node) if node.kind() == SyntaxKind::ItemCmd => command_name(node),
+            _ => String::new(),
+        };
+        match name.as_str() {
+            "\\item" => {
+                let label = take_arguments(&mut items, &mut at, &mut unbracketed, ITEM).optional;
+                let task = label.as_deref().and_then(task);
+                let mut content = Vec::new();
+                if let Some(label) = label.filter(|_| task.is_none()) {
+                    content.extend(label);
+                    content.push(Piece::Token(SyntaxKind::TokenWhiteSpace, " ".into()));
+                }
+                gathered.items.push((task, content));
+            }
+            "\\tightlist" if gathered.items.is_empty() => gathered.tight = true,
+            _ => match gathered.items.last_mut() {
+                Some((_, content)) => content.push(piece),
+                None => gathered.before.push(piece),
+            },
+        }
+    }
+    gathered
+}
+
+/// Whether `label`, an `\item`'s, marks a task done or not: as the LaTeX
+/// writer marks them (`$\boxtimes$`, `$\square$`), or as their characters
+/// (`☒`, `☐`).
+fn task(label: &[Piece]) -> Option<bool> {
+    let label: String = source_text(label)
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '$')
+        .collect();
+    match label.as_str() {
+        "\\boxtimes" | "☒" => Some(true),
+        "\\square" | "☐" => Some(false),
+        _ => None,
+    }
+}
+
+/// The source `pieces` were parsed from, without the braces of the group
+/// they're an argument's (see [`take_arguments`]).
+fn source_text(pieces: &[Piece]) -> String {
+    pieces
+        .iter()
+        .map(|piece| match piece {
+            Piece::Token(SyntaxKind::TokenLBrace | SyntaxKind::TokenRBrace, _) => String::new(),
+            Piece::Token(_, text) => text.clone(),
+            Piece::Node(node) => node.text().to_string(),
+        })
+        .collect()
+}
+
+/// The name of `env`, an environment: what its `\begin` names.
+fn environment_name(env: &SyntaxNode) -> String {
+    env.first_child()
+        .and_then(|begin| begin.first_token())
+        .map(|name| name.text().to_string())
+        .unwrap_or_default()
 }
 
 /// A node's child, its text split into its tokens, which an argument may be
@@ -165,7 +255,16 @@ struct Reader {
     verbatims: Vec<Verbatim>,
     /// The command a placeholder is (see [`verbatim::Cut::mark`]).
     verbatim_mark: String,
+    /// How many lists the text being read is in.
+    lists: usize,
+    /// The lists past [`MAX_LIST_NESTING`], read as their text.
+    unlisted: usize,
 }
+
+/// How deep lists nest, past which one is read as its items' text: as deep
+/// as documents nest them, and no deeper than writing the document, or
+/// dropping it, recurses on the stack conversions run on.
+const MAX_LIST_NESTING: usize = 128;
 
 impl Reader {
     fn flow(&mut self, mut items: Vec<Piece>) {
@@ -194,6 +293,7 @@ impl Reader {
                         let args = match signature {
                             Some(signature) => {
                                 take_arguments(&mut items, &mut at, &mut unbracketed, signature)
+                                    .required
                             }
                             // Unknown: the groups right after it.
                             None => {
@@ -222,6 +322,10 @@ impl Reader {
                     SyntaxKind::ItemBlockComment | SyntaxKind::ItemTypstCode => {
                         self.non_space();
                         self.skip_spaces = true;
+                    }
+                    // An `enumerate` is read as its text, as yet (#160).
+                    SyntaxKind::ItemEnv if environment_name(&node) == "itemize" => {
+                        self.list(&node);
                     }
                     _ => self.flow(pieces(&node)),
                 },
@@ -287,6 +391,17 @@ impl Reader {
                 self.skip_spaces = true;
             }
             "\\par" => self.end_paragraph(),
+            // What a list starts with (see `Reader::list`): elsewhere, it
+            // shows nothing.
+            "\\tightlist" => {}
+            // An item that isn't a list's own (see `gather`) is a space in
+            // its text, and its groups' text follows.
+            "\\item" => {
+                self.space();
+                for group in args {
+                    self.flow(group);
+                }
+            }
             // A control space (`\ `, or `\` at a line's end) is a space of
             // its own, and the spaces after it go.
             "\\" => {
@@ -302,6 +417,48 @@ impl Reader {
                 }
             }
         }
+    }
+
+    /// An `itemize` environment: a list of its `\item`s (see [`gather`]),
+    /// tight where `\tightlist` makes it so and none of its items' blocks
+    /// would run together written that way (see [`loosens`]). Past
+    /// [`MAX_LIST_NESTING`], it's read as its items' text.
+    fn list(&mut self, env: &SyntaxNode) {
+        self.end_paragraph();
+        let pieces = pieces(env);
+        if self.lists >= MAX_LIST_NESTING {
+            self.unlisted += 1;
+            return self.flow(pieces);
+        }
+        let mut gathered = gather(pieces);
+        // With no item of its own, it's its text; what's before its first
+        // item is that item's, so nothing is lost.
+        let Some((_, first)) = gathered.items.first_mut() else {
+            return self.flow(gathered.before);
+        };
+        first.splice(0..0, gathered.before);
+        self.lists += 1;
+        let outer = std::mem::take(&mut self.blocks);
+        let items: Vec<ListItem> = gathered
+            .items
+            .into_iter()
+            .map(|(task, content)| {
+                self.flow(content);
+                self.end_paragraph();
+                ListItem {
+                    task,
+                    content: std::mem::take(&mut self.blocks),
+                }
+            })
+            .collect();
+        self.blocks = outer;
+        self.lists -= 1;
+        let tight = gathered.tight && !items.iter().any(|item| loosens(&item.content));
+        self.blocks.push(Block::List(List {
+            start: None,
+            tight,
+            items,
+        }));
     }
 
     /// A sectioning command's heading, at `level` in [`SECTIONS`] (see
@@ -459,6 +616,14 @@ const PLACEHOLDER: Signature = Signature {
     required: 1,
 };
 
+/// `\item`'s: its label (`\item[a)]`).
+const ITEM: Signature = Signature {
+    star: false,
+    optional: true,
+    unstarred_optional: false,
+    required: 0,
+};
+
 /// `\\`'s: `\\*[1em]`.
 const LINE_BREAK: Signature = Signature {
     star: true,
@@ -476,7 +641,7 @@ fn signature(name: &str) -> Option<Signature> {
             required: 1,
             ..Signature::default()
         }),
-        "\\par" | "\\" => Some(Signature::default()),
+        "\\par" | "\\" | "\\tightlist" => Some(Signature::default()),
         _ if ESCAPED.contains(&name) => Some(Signature::default()),
         _ if SECTIONS.contains(&name) => Some(Signature {
             star: true,
@@ -502,29 +667,39 @@ const SECTIONS: [&str; 7] = [
 /// `blocks`' headings, read at their command's level in [`SECTIONS`],
 /// risen so that the top one a document uses is level 1, as `\section` is
 /// in an article and `\chapter` in a book; past 6, they're 6.
+/// Those in lists too.
 fn level_headings(blocks: &mut [Block]) {
-    let levels = blocks.iter().filter_map(|block| match block {
-        Block::Heading { level, .. } => Some(*level),
-        _ => None,
+    let mut top: Option<u8> = None;
+    super::walk::for_each_block(blocks, &mut |block| {
+        if let Block::Heading { level, .. } = block {
+            top = Some(top.map_or(*level, |top| top.min(*level)));
+        }
     });
-    let Some(top) = levels.min() else {
+    let Some(top) = top else {
         return;
     };
-    for block in blocks {
+    super::walk::for_each_block(blocks, &mut |block| {
         if let Block::Heading { level, .. } = block {
             *level = (*level - top + 1).min(6);
         }
-    }
+    });
+}
+
+/// The arguments a command was given (see [`take_arguments`]).
+struct Arguments {
+    /// What's in its `[…]`, if it's given one.
+    optional: Option<Vec<Piece>>,
+    required: Vec<Vec<Piece>>,
 }
 
 /// Takes from `items[*at..]` what a command with `signature` takes, as TeX
-/// and LaTeX take it, and gives its required arguments: each a group or a
-/// single token (a word's first letter), looked for past spaces (see
+/// and LaTeX take it: its required arguments each a group or a single
+/// token (a word's first letter), looked for past spaces (see
 /// [`past_spaces`]). A missing one, before an empty line or a group's end,
-/// ends the taking. Its star and optional argument are taken but not
-/// given, as no command the reader knows shows them; LaTeX's
-/// `\@ifnextchar`, looking for them, takes the spaces before them even
-/// where they're not there.
+/// ends the taking. Its star is taken but not given, as no command the
+/// reader knows shows it; LaTeX's `\@ifnextchar`, looking for it and the
+/// optional argument, takes the spaces before them even where they're not
+/// there.
 ///
 /// `unbracketed` is how long a tail of `items` is known to hold no `]`:
 /// an unclosed `[` scans it once, not again for every `[` before it.
@@ -533,7 +708,8 @@ fn take_arguments(
     at: &mut usize,
     unbracketed: &mut usize,
     signature: Signature,
-) -> Vec<Vec<Piece>> {
+) -> Arguments {
+    let mut optional = None;
     let mut starred = false;
     if signature.star {
         *at = past_spaces(items, *at);
@@ -557,7 +733,10 @@ fn take_arguments(
                 matches!(piece, Piece::Token(SyntaxKind::TokenRBracket, _))
             });
             match close {
-                Some(close) => *at = after + close + 1,
+                Some(close) => {
+                    optional = Some(items[after..after + close].to_vec());
+                    *at = after + close + 1;
+                }
                 None => *unbracketed = (*unbracketed).max(items.len() - after),
             }
         }
@@ -593,7 +772,7 @@ fn take_arguments(
             }
         }
     }
-    required
+    Arguments { optional, required }
 }
 
 /// Where what's after `items[from..]`'s spaces starts: past spaces, a
@@ -1107,6 +1286,189 @@ mod tests {
         }
     }
 
+    fn list(tight: bool, items: &[(Option<bool>, &[Block])]) -> Block {
+        Block::List(List {
+            start: None,
+            tight,
+            items: items
+                .iter()
+                .map(|&(task, content)| ListItem {
+                    task,
+                    content: content.to_vec(),
+                })
+                .collect(),
+        })
+    }
+
+    /// Each row: the blocks the source reads as.
+    #[test]
+    fn itemize_is_a_list() {
+        let a = [para(&[text("a")])];
+        let b = [para(&[text("b")])];
+        let cases: &[(&str, &[Block])] = &[
+            // Each item the blocks up to the next, between paragraphs.
+            (
+                "x\n\\begin{itemize}\n\\item a\n\\item b\n\n  c\n\\end{itemize}\ny",
+                &[
+                    para(&[text("x")]),
+                    list(
+                        false,
+                        &[
+                            (None, &a),
+                            (None, &[para(&[text("b")]), para(&[text("c")])]),
+                        ],
+                    ),
+                    para(&[text("y")]),
+                ],
+            ),
+            // What's before the first item sets its spacing, and its text
+            // is the first item's.
+            (
+                "\\begin{itemize}\\tightlist kept \\item a\\item b\\end{itemize}",
+                &[list(
+                    true,
+                    &[(None, &[para(&[text("kept a")])]), (None, &b)],
+                )],
+            ),
+            // Tasks, and labels that lead their item.
+            (
+                "\\begin{itemize}\\item[$\\boxtimes$] a\\item [ $\\square$ ] b\\item[(i)] c\\end{itemize}",
+                &[list(
+                    false,
+                    &[
+                        (Some(true), &a),
+                        (Some(false), &b),
+                        (None, &[para(&[text("(i) c")])]),
+                    ],
+                )],
+            ),
+            // Nested, in its item.
+            (
+                "\\begin{itemize}\\item a\\begin{itemize}\\item b\\end{itemize}\\end{itemize}",
+                &[list(
+                    false,
+                    &[(None, &[para(&[text("a")]), list(false, &[(None, &b)])])],
+                )],
+            ),
+            // An `enumerate` is its text, in a list too (#160).
+            (
+                "\\begin{itemize}\\item a\\begin{enumerate}\\item b\\item c\\end{enumerate}\\end{itemize}",
+                &[list(false, &[(None, &[para(&[text("a b c")])])])],
+            ),
+            // Only its own items split it: one in a group or another
+            // environment is a space in its item's text, the group or
+            // environment whole, and nothing is lost. With none of its own,
+            // it's its text; what's before its first is that item's.
+            (
+                "\\begin{itemize}{\\item a}\\item \\emph{b\\item c} d\\end{itemize}",
+                &[list(
+                    false,
+                    &[(
+                        None,
+                        // Its own item takes the spaces after it, as
+                        // LaTeX's looks for a label past them.
+                        &[para(&[text("a"), emph(&[text("b c")]), text(" d")])],
+                    )],
+                )],
+            ),
+            (
+                "\\begin{itemize}\\begin{samepage}\\item alpha\\end{samepage}\\end{itemize}",
+                &[para(&[text("alpha")])],
+            ),
+            // Elsewhere, `\tightlist` shows nothing.
+            (
+                "\\begin{itemize}x\\end{itemize}\\tightlist y",
+                &[para(&[text("xy")])],
+            ),
+        ];
+        for &(source, expected) in cases {
+            assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
+    }
+
+    /// The bulleted lists the LaTeX writer writes, tasks among them, read
+    /// back as they were.
+    #[test]
+    fn our_latex_lists_read_back() {
+        use crate::converter::document::native::{read::markdown, write};
+        let source = "- [x] done\n- [ ] todo\n\n* one\n\n  more\n* two\n  - in\n";
+        let doc = markdown::read(source);
+        let tex = write::latex::write(&doc);
+        assert_eq!(read(&tex).0.blocks, doc.blocks, "{tex}");
+    }
+
+    /// `\tightlist` makes a list tight only where its items' blocks don't
+    /// run together written that way: they read back from Markdown as
+    /// they were.
+    #[test]
+    fn tight_lists_keep_their_items_blocks_apart() {
+        use crate::converter::document::native::{read::markdown, write};
+        let cases = [
+            (
+                "\\begin{itemize}\\tightlist\\item a\\item b\\end{itemize}",
+                true,
+            ),
+            // Two paragraphs in an item.
+            (
+                "\\begin{itemize}\\tightlist\\item Alpha.\\par Beta.\\end{itemize}",
+                false,
+            ),
+            // Text after a nested list, which would go on its last item.
+            (
+                "\\begin{itemize}\\tightlist\\item a\
+                 \\begin{itemize}\\tightlist\\item b\\end{itemize}\n\nc\\end{itemize}",
+                false,
+            ),
+        ];
+        for (source, tight) in cases {
+            let doc = read(source).0;
+            assert!(
+                matches!(&doc.blocks[..], [Block::List(list)] if list.tight == tight),
+                "{source}"
+            );
+            let written = write::markdown::write(&doc);
+            assert_eq!(markdown::read(&written).blocks, doc.blocks, "{written}");
+        }
+    }
+
+    /// Lists nested 20,000 deep keep their text, nested no deeper than
+    /// `MAX_LIST_NESTING`, so the document drops on the stack conversions
+    /// run on.
+    #[test]
+    fn deep_lists_are_read_as_text_past_the_nesting_bound() {
+        const DEPTH: usize = 20_000;
+        let source = format!(
+            "{}x{}",
+            "\\begin{itemize}\\item ".repeat(DEPTH),
+            "\\end{itemize}".repeat(DEPTH)
+        );
+        let (depth, warning) = std::thread::Builder::new()
+            .stack_size(2 << 20)
+            .spawn(move || {
+                // Dropped here, at the thread's end.
+                let (doc, warning) = read(&source);
+                let mut blocks = doc.blocks;
+                let mut depth = 0;
+                while let [Block::List(List { items, .. })] = &blocks[..] {
+                    depth += 1;
+                    blocks = items[0].content.clone();
+                }
+                assert_eq!(blocks, [para(&[text("x")])]);
+                (depth, warning)
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        assert_eq!(depth, MAX_LIST_NESTING);
+        assert_eq!(
+            warning.unwrap().message(),
+            format!(
+                "{} lists nested too deeply were read as their text",
+                DEPTH - MAX_LIST_NESTING
+            )
+        );
+    }
+
     /// The top level a document uses is level 1, and the levels under it
     /// follow, as far as 6.
     #[test]
@@ -1133,6 +1495,19 @@ mod tests {
             [1, 2, 3, 4, 5, 6, 6]
         );
         assert_eq!(levels("\\subsection{x}\\section{x}"), [2, 1]);
+        // In a list too.
+        assert_eq!(
+            read("\\section{A}\\begin{itemize}\\item a\\subsection{B}\\end{itemize}")
+                .0
+                .blocks,
+            [
+                heading(1, &[text("A")]),
+                list(
+                    false,
+                    &[(None, &[para(&[text("a")]), heading(2, &[text("B")])])]
+                ),
+            ]
+        );
     }
 
     /// Macros aren't expanded: one that expands forever doesn't hang it.
@@ -1228,7 +1603,7 @@ mod tests {
         let doc = match stack.parse::<usize>() {
             Ok(stack) => std::thread::Builder::new()
                 .stack_size(stack)
-                .spawn(move || read_parsed(&source))
+                .spawn(move || read_parsed(&source).0)
                 .unwrap()
                 .join()
                 .unwrap(),
