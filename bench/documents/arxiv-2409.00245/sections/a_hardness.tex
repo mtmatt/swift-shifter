@@ -1,0 +1,257 @@
+\section{Hardness results}
+\label{sec:hardness}
+
+First, we consider the NP-hardness of the following problem.
+
+\begin{problem}{\probname{$1$-Tight OCC Detection}}
+  \Input & A graph $G$.\\
+  \Prob & Output a non-empty $1$-tight OCC $(X_B,X_C,X_R)$ in $G$ or conclude that no non-empty $1$-tight OCC exists.
+\end{problem}
+
+To prove that this problem is NP-hard under Turing reductions,
+we consider the following version of \PrbOCT.
+
+\begin{problem}{\probname{Lower-Bounded OCT}}
+  \Input & A graph $G$ and $k$ vertex-disjoint odd cycles $\{C_i\}$ in $G$.\\
+  \Prob & Is there a set $S \subseteq V(G)$ of size at most $k$ such that $G-S$ is bipartite?
+\end{problem}
+
+We claim that \probname{$1$-Tight OCC Detection} is as hard as \probname{Lower-Bounded OCT}.
+
+% \bmp{The exposition in this section overlooks the distinction between NP-hardness under Turing reductions versus under Karp reductions. Typically, when one sees '$X$ is NP-hard', it means NP-hard under Karp reductions: for each problem~$Y$ in NP, there is a polynomial-time reduction that maps each instance of~$Y$ to a single instance of~$X$ with the same YES/NO answer. That is not the type of NP-hardness we get here, since we have to make \emph{multiple} calls to an algorithm for 1-tight OCC detection to solve lower-bounded OCT. Our proof effectively shows hardness under Turing reductions, i.e., if there was a poly-time algorithm for 1-tight OCC detection, then there would be a polynomial-time algorithm for all problems in NP. I suggest staying closer to the formulation from the journal version of the previous paper, or explicitly mentioning 'NP-hard under Turing reductions', to make this clear.}
+
+\begin{lemma}\label{lem:1-tight-occ-reduction}
+  Assuming $\textnormal{\textsf{P}} \neq \textnormal{\textsf{NP}}$,
+  if there is no polynomial-time algorithm for \probname{Lower-Bounded OCT}, then
+  there is no polynomial-time algorithm for \probname{$1$-Tight OCC Detection}.
+\end{lemma}
+
+\begin{proof}
+  Assume \probname{$1$-Tight OCC Detection} is solvable in polynomial time.
+  Then, consider the following algorithm for \probname{Lower-Bounded OCT}.
+
+  \begin{enumerate}
+    \item Let $C \gets \{C_i\}$. Initially, $|C|=k$.
+    \item Return \textsf{Yes} if $C=\emptyset$.
+    \item Run an algorithm for \probname{$1$-Tight OCC Detection} on $G$.
+    If it finds a non-empty $1$-tight OCC $(X_B,X_C,X_R)$, then
+    let $G \gets X_R$ and $C \gets \{C_i \in C \mid X_C \cap V(C_i) \neq \emptyset\}$,
+    i.e. remove odd cycles in $C$ that hit any vertex in $X_C$,
+    and then continue to Step 2.
+    %
+    Otherwise, return \textsf{No}.
+  \end{enumerate}
+
+  Let $S$ be the union of $X_C$ found in Step 3.
+  If the algorithm returns \textsf{Yes}, then
+  it is clear to see that $|S|=k$ and $G-S$ is bipartite.
+  $(G,\{C_i\})$ is a yes-instance for \probname{Lower-Bounded OCT}.
+%
+  If the algorithm returns \textsf{No}, then
+  there exists an induced subgraph $G'$ of $G$ such that
+  for any OCT $S$ of $G'$, there exists a cycle $C_i$ such that $|V(C_i) \cap S|>1$.
+  Hence, $\oct(G)>k$, and $(G,\{C_i\})$ is a no-instance.
+%
+  If \probname{$1$-Tight OCC Detection} is poly-time solvable,
+  then so is \probname{Lower-Bounded OCT}.
+\end{proof}
+
+Now, let us show that \probname{Lower-Bounded OCT} is actually NP-hard.
+We adopt an argument from \cite[Lemma 16]{DonkersJ19} but with simpler gadgets.
+
+\begin{lemma}\label{lem:lb-oct-reduction}
+  \probname{Lower-Bounded OCT} is NP-hard.
+\end{lemma}
+
+\begin{proof}
+  We reduce from \probname{3-SAT}, a version of \probname{Satisfiability (SAT)}
+  where every clause includes exactly $3$ literals, to \probname{Lower-Bounded OCT}.
+  %
+  Let $X=x_1,\ldots,x_n$ be the variables and $\Phi=\phi_1,\ldots,\phi_m$ be the clauses
+  appearing in a SAT instance.
+
+  We construct a graph $G$ as follows:
+  \begin{itemize}
+    \item For each variable $x_i$, create a new triangle and let $v_i$ and $\overline{v_i}$
+    be two of the triangle's vertices.
+    These vertices represent SAT literals $x_i$ and $\overline{x_i}$ as shown in \Cref{fig:proof-np-hardness} (left).
+    \item For each clause $\phi_j=\ell_{j1} \lor \ell_{j2} \lor \ell_{j3}$, introduce a gadget illustrated in \Cref{fig:proof-np-hardness} (right).
+    We then identify vertices $s_1, s_2, s_3$ and the vertices representing $\ell_{j1}$, $\ell_{j2}$, $\ell_{j3}$,
+    respectively.
+  \end{itemize}
+
+  It is clear to see that this construction can be done in polynomial time.
+  Also observe that there are $n$ disjoint triangles for SAT variables
+  and $2m$ disjoint triangles for clause gadgets.
+  %
+  By letting $k=n+2m$, we have that $G$ contains $k$ vertex-disjoint triangles, which are odd cycles.
+  We claim that $(X,\Phi)$ is satisfiable if and only if $G$ contains an OCT of size at most $k$.
+
+  First, assume $(X,\Phi)$ is satisfiable.
+  Let $U \subseteq V(G)$ be the vertices that correspond to a certificate,
+  and consider all odd cycles present in $G-U$.
+  %
+  For each variable gadget, we know that either $x_i$ or $\overline{x_i}$ is in $U$,
+  so no triangles remain in $G-U$.
+  %
+  For each clause gadget, we know that at least one of $s_1, s_2, s_3$ is in $U$.
+  In any cases, we can choose $2$ vertices hitting all remaining triangles.
+  %
+  Hence, $\oct(G-U) \leq 2m$ and $\oct(G) \leq n + 2m = k$.
+
+  Conversely, assume $G$ has an OCT $S \subseteq V(G)$ of size at most $k$.
+  Since $G$ has $k$ vertex-disjoint triangles, $S$ contains exactly one vertex from each of them.
+  For every variable gadget, exactly one vertex is in $S$.
+  For every clause gadget excluding $s_1$, $s_2$, $s_3$, exactly $2$ vertices must be in $S$,
+  which leads to the fact that at least one of $s_1$, $s_2$, $s_3$ is in $S$.
+  %
+  Finally, we construct a solution for \probname{3-SAT}.
+  For each $1 \leq i \leq n$,
+  we set $x_i$ to \textsf{true} if $v_i \in S$,
+  and \textsf{false} otherwise.
+  This by construction forms a certificate, and $(X,\Phi)$ is satisfiable.
+\end{proof}
+
+Combining \Cref{lem:1-tight-occ-reduction} and \Cref{lem:lb-oct-reduction},
+we obtain the following result.
+
+\begin{theorem} \label{thm:1tight:occ:nphard}
+  \probname{$1$-Tight OCC Detection} is NP-hard under Turing reductions.
+\end{theorem}
+
+Next, we show that finding a non-empty 1-tight OCC of bounded width is W[1]-hard,
+parameterized by the width.
+
+\begin{problem}{\probname{Bounded-Width $1$-Tight OCC Detection}}
+  \Input & A graph $G$ and an integer $k$.\\
+  Parameter: & $k$. \\
+  \Prob & Does $G$ admit a non-empty $1$-tight OCC $(X_B,X_C,X_R)$ with $|X_C|\leq k$?
+\end{problem}
+
+We will show the W[1]-hardness of this problem by a parameterized reduction from
+the well-known \probname{Multicolored Clique} problem.
+
+\begin{problem}{\probname{Multicolored Clique}}
+  \Input & A graph $G$, an integer $k$, and a partition of $V(G)$ into sets $V_1,\ldots,V_k$.\\
+  Parameter: & $k$. \\
+  \Prob & Does $G$ include as a subgraph such a clique $S$ such that
+  for each $1 \leq i \leq k$ we have $|S \cap V_i|=1$?
+\end{problem}
+
+\input{figures/proof_np_hardness.tex}
+
+\begin{theorem} \label{thm:tightocc:w1hard}
+  \probname{Bounded-Width $1$-Tight OCC Detection} is W[1]-hard.
+\end{theorem}
+
+\begin{proof}
+  Consider an instance $(G,\chi,k)$ of \probname{Multicolored Clique},
+  where $\chi\colon V(G) \to [k]$ denotes the \textit{color} of each vertex such that
+  $\chi(v)=\ell$ if and only if $v \in V_\ell$.
+%
+  Without loss of generality, we assume $k \geq 2$ and $n > k + 2$.
+%
+  Then, we construct an input $(G',k')$ for \probname{Bounded-Width $1$-Tight OCC Detection} as follows
+  (see \Cref{fig:proof-w1-hardness} for an illustration).
+%
+  \begin{enumerate}
+    \item For each vertex $i \in V(G)$, introduce ($k-1$) vertices $U_{i}:=\{u_{i\ell} \mid \ell \in [k] \setminus \{\chi(i)\}\}$ to $G'$.
+    \item For each edge $ij \in E(G)$, add $4$ vertices $x_{ij}$, $x_{ij}'$, $y_{ij}$, and $y_{ij}'$ to $G'$.
+    \item Insert edges to turn $\bigcup_{i \in V(G)}U_i$ into a clique in $G'$.
+    \item For each edge $ij \in E(G)$, add edges from $U_i \cup U_j$ to $x_{ij}$,
+    $x_{ij}$ to $x_{ij}'$, and $x_{ij}'$ to $u_{i \chi(j)}$.
+    Similarly, add edges from $U_i \cup U_j$ to $y_{ij}$,
+    $y_{ij}$ to $y_{ij}'$, and $y_{ij}'$ to $u_{j \chi(i)}$.
+  \end{enumerate}
+
+  Let $k'=k(k-1)$, and we claim that $(G',k')$ for \probname{Bounded-Width $1$-Tight OCC Detection}
+  \probname{Multicolored Clique}  is an equivalent instance to $(G,\chi,k)$ for \probname{Multicolored Clique}.
+
+  \begin{claim}\label{clm:w1-hardness-forward}
+    If $G$ has a multicolored clique of size $k$, then $G'$ has a non-empty $1$-tight OCC of width $k'$.
+  \end{claim}
+
+  \begin{claimproof}
+    Suppose $S$ is a multicolored clique of size $k$ in $G$.
+    Define a $1$-tight OCC $(X_B,X_C,X_R)$ as follows:
+    \begin{itemize}
+      \item $X_B = \bigcup_{i,j \in S:i \neq j} \{ x_{ij}, x_{ij}', y_{ij}, y_{ij}' \}$
+      \item $X_C = \bigcup_{i \in S} U_i$
+      \item $X_R = V(G') \setminus (X_B \cup X_C)$
+    \end{itemize}
+
+    It is clear to see that $|X_C|=k(k-1)=k'$.
+    Also, by construction, $N(X_C)=\bigcup_{i,j \in S \mid i \neq j} (U_i \cup U_j \cup \{ u_{i \chi (j)}, u_{j \chi (i)} \}) = \bigcup_{i \in S} U_i = X_C$,
+    which remains us to show that $G'[X_B \cup X_C]$ contains $k'$ vertex-disjoint odd cycles.
+%
+    Notice that $G'[X_B \cup X_C]$ contains the set of triangles
+    $T = \bigcup_{i,j \in S \mid i \neq j} \{u_{i \chi(j)}x_{ij}x_{ij}', u_{j \chi(i)}y_{ij}y_{ij}'\}$.
+    Since $|T|=\binom{k}{2}\cdot 2=k'$ and $x_{ij},x_{ij}',y_{ij},y_{ij}'$ are unique in $T$,
+    it suffices to show that $\left|\bigcup_{i,j\in S \mid i\neq j} \{u_{i\chi(j)}, u_{j\chi(i)}\}\right|=k'$.
+%
+    Since $S$ is a multicolored clique, for every pairwise distinct $i,j\in S$, we have $\chi(i) \neq \chi(j)$.
+    Hence, $\bigcup_{i,j\in S \mid i\neq j} \{u_{i\chi(j)}, u_{j\chi(i)}\}\supseteq
+    \bigcup_{i\in S} \left(\bigcup_{j \in S \setminus \{i\}} u_{i \chi(j)}\right)
+    =\bigcup_{i\in S} \bigcup_{\ell \in [k] \setminus \{\chi(i)\}}u_{i\ell}
+    =\bigcup_{i\in S} U_i$.
+    $T$ indeed consists of $\left| \bigcup_{i\in S} U_i \right|=k(k-1)=k'$ vertex-disjoint triangles,
+    and $(X_B,X_C,X_R)$ is a $1$-tight OCC.
+  \end{claimproof}
+
+  Finally, we show the backward implication.
+
+  \begin{claim}\label{clm:w1-hardness-backward}
+    If $G'$ has a non-empty $1$-tight OCC of size $k'$, then $G$ has a multicolored clique of size $k$.
+  \end{claim}
+
+  \begin{claimproof}
+    Let $(X_B,X_C,X_R)$ be a non-empty $1$-tight OCC of size $k'$ in $G'$.
+    We write $U$ for $\bigcup_{i\in S}U_i$ and $W$ for $\bigcup_{e \in E(G)} \{x_e, x_e', y_e, y_e'\}$.
+
+    First, we show that $X_B \subseteq W$.
+    Assume not.
+    Then, there exists a vertex $u \in X_B \cap U$.
+    Since $X_B$ is bipartite and $U$ forms a clique in $G'$,
+    we have $|X_B \cap U| \leq 2$.
+    %
+    We know that $N_{G'}(u) \subseteq X_B \cup X_C$,
+    and thus $|N_{G'}(u) \setminus X_B| \leq |X_C|$.
+    We have:
+    $|N_{G'}(u) \setminus X_B|\geq |N_{G'}(u)|-1
+    \geq (|U|-1)-1 = n(k-1)-2 > ((k+2)(k-1)-2) = k^2 + k - 4 \geq k^2-k=k'$.
+    %
+    This implies $|X_C|>k'$, a contradiction.
+
+    Next, we show that $X_C \subseteq U$.
+    For the sake of contradiction, assume there exists a vertex $x \in X_C \cap W$.
+    Then, there must be an odd cycle in $G'[\{x\} \cup X_B]$, but because
+    $\{x\} \cup X_B \subseteq W$ is bipartite, we reach a contradiction.
+
+    Now that we know $X_B \subseteq W$ and $X_C \subseteq U$,
+    for each $u \in X_B$, there is an odd cycle in $G'[\{u\} \cup X_B]$.
+    This happens only when $u x_e x_e'$ or $u y_e y_e'$ forms a triangle for some $e \in E(G)$,
+    which leads to $|X_B| \geq 2|X_C|$.
+
+    Let $E' = \{e \in E(G) \mid \{x_e, y_e\} \cap X_B \neq \emptyset\}$.
+    If $ij \in E'$, then all the vertices in $C_i \cup C_j$ are in $X_C$,
+    so we can write $X_C=\bigcup_{i \in V'}C_i$ for some $V' \subseteq V(G)$.
+    Furthermore, from $|X_C|=k'=k(k-1)$, we know $|V'|=k$.
+    %
+    From $E' \subseteq \binom{V'}{2}$, we have $|X_B| \leq 4|E'| \leq 2|V'|(|V'|-1)=2k'$.
+    On the other hand, $|X_B| \geq 2|X_C| = 2k'$.
+    These inequalities hold only when $E'=\binom{V'}{2}$.
+
+    We claim that $V'$ is a multicolored clique in $G$.
+    Let $ij$ be an edge in $E'$.
+    By construction, triangles $u_{i \chi(j)}x_{ij}x_{ij}'$ and $u_{j \chi(i)}y_{ij}y_{ij}'$
+    are in $G'[X_B \cup X_C]$, and thus $\chi(i)\neq \chi(j)$.
+    Since $V'$ forms a clique in $G$ such that any vertex pair has different colors,
+    $V'$ is a multicolored clique.
+  \end{claimproof}
+
+  From Claims \ref{clm:w1-hardness-forward} and \ref{clm:w1-hardness-backward},
+  we conclude that $(G,\chi,k)$ and $(G',k')$ are equivalent,
+  and \probname{Bounded-Width $1$-Tight OCC Detection} is W[1]-hard.
+\end{proof}
+
+\input{figures/proof_w1_hardness.tex}

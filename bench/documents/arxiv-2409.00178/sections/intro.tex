@@ -1,0 +1,60 @@
+\section{Introduction}
+\label{sec:intro}
+
+Generalised symmetries have been useful for understanding the infrared (IR) behaviour of quantum field theories (QFTs).
+Different phases of gauge theories are distinguished according to which of their global symmetries are spontaneously broken; this is often referred to as the `Landau paradigm'.
+The symmetry breaking pattern of
+generalised global symmetries has provided an important understanding of the phase structure of certain theories (see, e.g. \cite{McGreevy:2022oyu, Bhardwaj:2023fca, Bhardwaj:2024wlr} and references therein).
+For example, an unbroken 1-form symmetry signals a confining phase in certain theories \cite{Gaiotto2015GeneralizedSymmetries}.
+
+The application of the paradigm to higher-form global symmetries is nicely illustrated by Maxwell theory in $d$ dimensions. This has both an `electric' $U(1)$ 1-form symmetry and a `magnetic' $U(1)$ $(d-3)$-form symmetry. The former acts on Wilson loops while the latter acts on 't~Hooft operators, measuring their electric and magnetic charges respectively. A Coulomb phase is characterised by the spontaneous breaking of both of these symmetries, in which both large Wilson and large 't Hooft loops pick up a non-zero expectation value \cite{Gaiotto2015GeneralizedSymmetries}. Higher-form generalisations of Goldstone's theorem \cite{Hofman:2018lfz, Lake:2018dqm} then imply the existence of a massless mode, which can be identified as the photon. Indeed, the photon can be understood as a Nambu-Goldstone boson for the  shift symmetry under which $A\to A+\lambda$ (where $\lambda$ is a flat connection).
+This gives a satisfying explanation of the masslessness of the photon in terms of the breaking of a \emph{global} symmetry.
+The magnetic current generates a symmetry of the dual formulation, written in terms of a $(d-3)$-form connection $\tilde{A}$, where it acts as a shift symmetry $\tilde{A} \to \tilde{A} + \tilde{\lambda}$ (with $\tilde{\lambda}$ a flat $(d-3)$-form connection). The dual photon can be understood similarly as the Nambu-Goldstone associated with the spontaneous breaking of this symmetry.
+
+Another key feature of the higher-form symmetries of Maxwell theory is their mixed 't Hooft anomaly.
+Such anomalies are of great importance as they are preserved along renormalisation group (RG) flow, and therefore must be matched in the IR \cite{tHooft:1979rat}. 
+This places constraints on the low-energy dynamics of theories with such an anomaly, the classic example of which is the result of Lieb, Schultz and Mattis \cite{Lieb:1961fr} showing that certain spin chains cannot have a trivial gapped ground state.
+More recently, similar arguments involving anomaly matching for mixed 't Hooft anomalies of discrete and generalised symmetries have shed light on the IR structure of many gauge theories, including pure Yang-Mills (in particular at $\theta=\pi$) and QCD (see, e.g.\  \cite{Gaiotto:2017yup, Cordova:2019bsd, Cordova:2019jnf, Cordova:2019uob, Brennan:2024tlw, Brennan:2023ynm, Apte:2022xtu, Cordova:2019jqi}). 
+
+A novel perspective was provided in \cite{Delacretaz:2019brr}, where it was shown that a particular mixed 't Hooft anomaly between a pair of global higher-form $U(1)$ symmetries can be responsible for the existence of a gapless mode, without explicit reference to spontaneous symmetry breaking. Indeed, this reasoning is readily applied to the mixed anomaly of Maxwell theory, giving another explanation of the masslessness of the photon.\footnote{As in \cite{Delacretaz:2019brr, Hinterbichler2023GravitySymmetries}, we will refer to excitations whose masslessness is protected by a 't Hooft anomaly as Nambu-Goldstone modes, even when there is no explicit reference to spontaneous symmetry breaking.}
+
+A useful approach to the mixed anomaly is to consider the \emph{gauging} of the electric and magnetic generalised symmetries. This involves attempting to promote these global symmetries to local ones by coupling to suitable gauge fields.
+The mixed 't Hooft anomaly in the global symmetries manifests itself as an obstruction to simultaneously gauging the electric and magnetic symmetries, and finding this obstruction is a convenient way of calculating the anomaly \cite{Harvey:2005it}.
+
+Recently, there has been substantial interest in generalised symmetries in gravity \cite{Hinterbichler2023GravitySymmetries, Benedetti2022GeneralizedGraviton, Benedetti2023GeneralizedGravitons, BenedettiNoether, Cheung:2024ypq, Gomez-Fayren2023CovariantRelativity, Hull:2024mfb, Hull:2024xgo}, and in particular in the linearised theory.
+It has been argued that the linearised theory can emerge as the IR fixed point of gravity coupled to massive fields \cite{Farnsworth:2021zgj}, so one would hope that understanding its symmetries could give some insight into the non-linear theory.
+
+In \cite{Hinterbichler2023GravitySymmetries}, arguments similar to those outlined above were made for gravitons moving on a flat background spacetime.
+It was found that a mixed 't~Hooft anomaly between a pair of electric and magnetic `bi-form symmetries' is responsible for the masslessness of the graviton. 
+In that work, the electric symmetry used was a graviton shift of the form $h_{\mu\nu} \to h_{\mu\nu} + \partial^\rho \Lambda_{\rho\mu|\nu}$.
+This has the virtue of having an associated Noether current that is gauge-invariant but gives a rather different set-up than the one for the photon, and in particular it is not so natural to regard the graviton as a Nambu-Goldstone boson for this symmetry. 
+
+Here we consider instead the global symmetries consisting of general shifts of the graviton and of the dual graviton.
+These are global symmetries for restricted parameters\footnote{These restrictions on the parameters are analogous to the flatness condition $\dd\lambda=0$ on the shift of the photon $A\to A+\lambda$.}
+and we consider the gauging in which these are promoted to local symmetries.
+We find a significantly simpler structure for the gauging than was found for the shift considered in \cite{Hinterbichler2023GravitySymmetries}.
+The non-linearities of Einstein gravity explicitly break these symmetries and so if the linearised theory arose as an IR limit \cite{Farnsworth:2021zgj} they would be emergent symmetries.
+A key role in our analysis is played by gravitational duality \cite{Hull2000}: the free graviton theory has a dual formulation in terms of a dual graviton field, which is a bi-form,\footnote{A $[p,q]$ bi-form is in the tensor product of the space of $p$-forms with the space of $q$-forms; see section \ref{sec:biforms}. The dual graviton in $d$ dimensions is a $[d-3,1]$ bi-form gauge field.} and shifts of this field are a bi-form symmetry of the dual formulation.
+
+As for the photon, we find  a mixed 't Hooft anomaly for these two shift symmetries which can be understood in terms of an obstruction to simultaneously gauging them.
+This anomaly is closely related to the anomaly discussed in \cite{Hinterbichler2023GravitySymmetries}. In particular, the anomalous Ward identities which result from this mixed anomaly can be shown to imply anomalous Ward identities similar in form to those studied in \cite{Hinterbichler2023GravitySymmetries}. These in turn imply the masslessness of the graviton.
+
+The significant simplifications that result from considering these shift symmetries rather than the ones discussed in \cite{Hinterbichler2023GravitySymmetries} make the generalised symmetry structure and gauging considerably more transparent. In particular, it is natural to regard the graviton as the Nambu-Goldstone boson for the electric shift symmetry and the dual graviton as that for the magnetic shift symmetry.
+However, in our case, the associated Noether currents are \emph{not} invariant under the graviton gauge symmetry $h_{\mu\nu} \to h_{\mu\nu} + 2\partial_{(\mu} \xi_{\nu)}$ (or the dual graviton gauge symmetry in the dual formulation).
+The lack of gauge invariance means that these currents do not correspond to  well-defined local operators in the quantum theory, but gauge-invariant currents can be constructed from derivatives of these currents and these are local observables.
+The correlation functions of these observables are readily calculated from the correlation functions of our non-gauge-invariant currents. 
+
+Since the Noether currents associated with the global symmetries we consider are not fully anti-symmetric tensors, they cannot directly be integrated over submanifolds. However, gauge-invariant higher-dimensional topological operators
+can be constructed from our non-gauge-invariant currents. This is done
+by first contracting the current with a suitable background tensor
+to make a current that is a differential form which can then be integrated over a suitable surface to give a topological operator.\footnote{This situation is not unfamiliar. For example, the $\mathbb{Z}_k$ 1-form symmetry in $U(1)_k$ Chern-Simons theory is generated by topological Wilson lines \cite{Gaiotto2015GeneralizedSymmetries}, which are also a gauge-invariant integral of a non-gauge-invariant local density. The same is true of the topological defects in the well-known non-invertible construction of \cite{Choi:2022jqy}.}
+These operators then correspond to a set of (higher-form) symmetries.
+
+The remainder of this paper is set out as follows. In section~\ref{sec:maxwell}, we review the higher-form symmetries of Maxwell theory and their mixed 't Hooft anomaly. 
+In section~\ref{sec:graviton_symmetries} we consider the shift symmetry of the graviton and its gauging, as well as a dual symmetry.
+The dual graviton theory and its symmetries are studied in section~\ref{sec:shifts_for_dual}, with the result that the dual symmetry of the graviton can be interpreted as a shift symmetry of the dual graviton (see section~\ref{sec:relating_dual_theories}).
+The mixed 't Hooft anomaly between these two symmetries is described in section~\ref{sec:anomalies}. In section~\ref{sec:massless_graviton}, we discuss the implications of  this anomaly and its relation to the results of \cite{Hinterbichler2023GravitySymmetries}.
+Finally, in section \ref{sec:discussion}, we make some remarks about observables in the graviton theory and discuss further implications of our results.
+
+
+

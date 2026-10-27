@@ -1,0 +1,234 @@
+\section{Additional preliminaries} \label{sec:more:prelims}
+In this section we collect some additional preliminaries that are necessary for the upcoming proofs, but which were not relevant for the first part of the paper. 
+
+\subsection{Multiway cuts}
+The parameterized problem of computing a restricted multiway cut is well-known to be fixed-parameter tractable parameterized by solution size~\cite{CyganPPW13}.
+
+\begin{theorem}[{\cite[Corollary 2.6]{CyganPPW13}}] \label{thm:multiway:marx}
+There is an algorithm that, given an undirected $n$-vertex graph~$G$, terminal set~$T \subseteq V(G)$, and integer~$k$, runs in time~$2^{\Oh(k)} \cdot n^{\Oh(1)}$ and either outputs the minimum size of a vertex set~$U \subseteq V(G) \setminus T$ for which all vertices of~$T$ belong to a different connected component of~$G - U$, or determines that any such multiway cut has size larger than~$k$. 
+\end{theorem}
+
+While the original formulation of the theorem is stated in terms of simply solving the decision problem (is there a solution of size at most~$k$?), by running this algorithm for all possible~$k'$ in the range of~$\{0, \ldots, k\}$ we can identify the size of an optimal solution with only a polynomial factor overhead. Next, we show that with a small modification we can use the same algorithm to compute the size of a minimum multiway cut of an $s$-partition~$\mathcal{T} = (T_1, \ldots, T_s)$ of the terminal set~$T$ (or determine its size is larger than~$k$). To express the necessary modification on the graph, we need the following concept. The operation of \emph{identifying} a vertex set~$X$ in an undirected graph~$G$ yields the graph~$G'$ obtained from~$G$ by removing~$X$ while inserting a single new vertex~$x$ with~$N_{G'}(x) = N_G(X)$.
+
+\begin{observation} \label{obs:mwc:partition:or:set}
+Let~$G$ be an undirected graph with terminal set~$T$ and let~$\mathcal{T} = (T_1, \ldots, T_s)$ be an $s$-partition of~$T$. The following two conditions are equivalent for each vertex set~$U \subseteq V(G) \setminus T$:
+\begin{itemize}
+	\item The set~$U$ is a multiway cut of the partition~$\mathcal{T}$ in~$G$;
+	\item No connected component of~$G' - U$ contains more than one vertex of~$T'$, where~$G'$ is the graph obtained from~$G$ by identifying each non-empty vertex set~$T_i$ for~$i \in [s]$ into a single vertex~$t_i$, and~$T'$ is the set containing the vertices~$t_i$ resulting from these identifications. (The order in which the sets are identified does not affect the final result.)
+\end{itemize}
+\end{observation}
+
+The forward implication is trivial; the converse follows from the fact that any path between two distinct vertices of~$T'$ contains a subpath connecting vertices belonging to two different sets of the partition~$\mathcal{T}$, which must therefore be broken by any multiway cut for the partition~$\mathcal{T}$ in~$G$.
+
+\begin{lemma} \label{lem:multiway:alg}
+There is an algorithm that, given an undirected $n$-vertex graph~$G$, an integer~$s$, an $s$-partition~$\mathcal{T} = (T_1, \ldots, T_s)$ of a terminal set~$T \subseteq V(G)$, and integer~$k$, runs in time~$2^{\Oh(k)} \cdot n^{\Oh(1)}$ and either outputs the minimum size of a restricted multiway cut for~$\mathcal{T}$, or outputs~$\bot$ to indicate that any such restricted multiway cut has size larger than~$k$. 
+\end{lemma}
+\begin{proof}
+Apply the algorithm of \cref{thm:multiway:marx} to the graph~$G'$ and terminal set~$T'$ obtained by identifying each set~$T_i$ into a new terminal vertex~$t_i \in T'$, with a budget of~$k$. Correctness follows from \cref{obs:mwc:partition:or:set}.
+\end{proof}
+
+We will use \cref{lem:multiway:alg} to construct a \emph{deterministic} FPT-algorithm to compute a cut covering set later. For a vertex set~$U$ in an undirected graph~$G$, the operation of \emph{bypassing} vertex set~$U$ results in the graph~$\bypass_U(G)$ that is obtained as follows: starting from~$G - U$, add an edge $uv$ between every pair of distinct vertices $u,v$ which appear together in the same connected component of $G[U]$? Hence $\bypass_U(G)$ is a graph on vertex set~$V(G) \setminus U$ that has an edge~$uv$ whenever~$uv \in E(G)$ or there is a path from~$u$ to~$v$ for which all internal vertices belong to~$U$.
+	
+	\begin{observation} \label{obs:multiway:bypass}
+		Let~$G$ be an undirected graph with terminal set~$T \subseteq V(G)$, and let~$(T_1, \ldots, T_s)$ be a partition of~$T$. For any set~$R \subseteq V(G) \setminus T$ of bypassed vertices and any vertex set~$U \subseteq V(G) \setminus R$, the set~$U$ is a restricted multiway cut of~$(T_1, \ldots, T_s)$ in~$G$ if and only if~$U$ is a restricted multiway cut of~$(T_1, \ldots, T_s)$ in~$\bypass_R(G)$.
+	\end{observation}
+	
+	This observation implies that bypassing a set of non-terminal vertices can only make it \emph{harder} to form a multiway cut. 
+	
+\subsection{Covering multiway cuts for generalized partitions} \label{sec:coveringg:multiway}
+\lemCoveringCorollary*
+\begin{proof}
+% \yo{Can we say $Z \subseteq V(G) \setminus T$?}\bmpr{At this level of generality, no we cannot say that~$Z \subseteq V(G) \setminus T$. A generalized $s$-partition may assign vertices of~$T$ to the~$T_0$ part of the partition, so they are 'in the graph and available to be deleted by the multiway cut', and they may in fact be required to make an optimal multiway cut. But when you use a generalized $s$-partition with~$T_0 = \emptyset$ then the multiway cut that you get will be a subset of~$V(G) \setminus T$ since it is restricted.}
+%
+We present the algorithm first, which will be followed by its correctness proof and analysis. Given the graph~$G$ with terminal set~$T$ as input, the algorithm proceeds as follows.
+
+\begin{enumerate}
+	\item Number the vertices of~$V(G) \setminus T$ as~$v_1, \ldots, v_\ell$. Initialize a set~$R$ of \emph{redundant} vertices, initially empty.
+	\item For each~$i \in [\ell]$, do the following:
+	\begin{itemize}
+		\item Initialize a Boolean variable~$E[i]$ to keep track of whether~$v_i$ is essential, initially $\mathsf{false}$.
+		\item For each of the~$(s+2)^{|T|}$ distinct generalized $s$-partitions~$\mathcal{T}$ of the set~$T$, do the following.
+		\begin{enumerate}
+				\item Let~$X_{\mathcal{T}} \in \mathbb{N} \cup \{\bot\}$ be the result of invoking the algorithm from \cref{lem:multiway:alg} with parameter value~$k := |T| + 1$ on the graph~$\bypass_R(G - T_X)$ with partition~$\mathcal{T}$. 
+				\item Let~$Y_{\mathcal{T}} \in \mathbb{N} \cup \{\bot\}$ be the result of invoking the algorithm from \cref{lem:multiway:alg} with parameter value~$k := |T| + 1$ on the graph~$\bypass_{R \cup \{v_i\}}(G - T_X)$ with partition~$\mathcal{T}$. 
+				\item If~$X_\mathcal{T} \neq Y_{\mathcal{T}}$, then set~$E[i]$ to $\mathsf{true}$. We say that~$\mathcal{T}$ is a \emph{witness} to the fact that~$v_i$ is essential.
+		\end{enumerate}
+		\item If~$E[i]$ is still $\mathsf{false}$ after having considered all~$|T|^{s+2}$ generalized $s$-partitions of~$T$: add~$v_i$ to~$R$.
+	\end{itemize}
+	\item Let~$R^*$ denote the contents of the set~$R$ after completing the previous loop. 
+	\item Output~$Z := V(G) \setminus R^*$ as the cut covering set. (The vertices of~$T$ remain in the cut covering set despite the set covering restricted multiway cuts; their presence in a cut may be needed when they are placed in the ``free''~$T_0$ part of a generalized $s$-partition.)
+\end{enumerate}
+
+In summary, the algorithm tries the non-terminal vertices one at a time, testing for each of them whether there is a generalized $s$-partition that is affected by bypassing the vertex. We note the following important property of the algorithm above: for each generalized $s$-partition~$\mathcal{T}$ of~$T$ that admits a restricted multiway cut of size at most~$|T|$ in~$G$, we have~$\rmwc(G,\mathcal{T}) = \rmwc(\bypass_{R^*}(G), \mathcal{T}) = \rmwc(\bypass_R(G), \mathcal{T})$ for all~$R \subseteq R^*$. Conversely, any~$\mathcal{T}$ that does not admit a restricted multiway cut of size at most~$|T|$ in~$G$, does not admit such a cut in~$\bypass_{R^*}(G)$ either.
+
+We now analyze the algorithm and its output. The bound on the running time follows easily: the algorithm consists of~$\ell \leq n$ iterations. In each iteration, we consider all~$(s+2)^{|T|} \in 2^{\Oh(|T|)}$ generalized $s$-partitions of~$\mathcal{T}$. For each of them, we make two calls to the algorithm of \cref{lem:multiway:alg} that runs in time~$2^{\Oh(|T|)} \cdot n^{\Oh(1)}$. Hence the total running time is~$2^{\Oh(|T|)} \cdot n^{\Oh(1)}$. Next, we prove that the output~$Z$ covers restricted minimum multiway cuts in the claimed way.
+
+\begin{claim}
+For each generalized $s$-partition~$\mathcal{T}$ of~$T$, if there is a restricted multiway cut for~$\mathcal{T}$ of size at most~$|T|$ in~$G$, then the computed set~$Z$ contains a \emph{minimum} restricted multiway cut of~$\mathcal{T}$.
+\end{claim}
+\begin{claimproof}
+Consider a generalized $s$-partition~$\mathcal{T}$ of~$T$ that admits a restricted multiway cut of size at most~$|T|$ in~$G$. Let~$U$ be a minimum restricted multiway cut of~$\mathcal{T}$. Since the procedure has considered this partition~$\mathcal{T}$ in all its iterations, every time it added a vertex~$v_i$ to the set~$R$ we know that bypassing vertex~$v_i$ did not change the size of a restricted multiway cut for~$\mathcal{T}$ if that size was at most~$|T|$. Hence the graph~$\bypass_{R^*}(G)$ contains a restricted multiway cut~$U$ for~$\mathcal{T}$ of size~$\rmwc(G, \mathcal{T}) \leq |T|$. Note that~$U \subseteq V(G) \setminus R^*$ since~$\bypass_{R^*}(G)$ does not contain vertex set~$R^*$. By Observation~\ref{obs:multiway:bypass} and the fact that~$R^* \cap T = \emptyset$, the set~$U$ is also a restricted multiway cut for~$\mathcal{T}$ in graph~$G$, and since its size is at most~$\rmwc(G, \mathcal{T})$ it is minimum.
+\end{claimproof}
+
+To complete the proof of \cref{lem:covering:corollary}, it suffices to argue that~$|Z| \leq \Oh(|T|^{2s+s})$. To prove this bound, we will relate restricted multiway cuts in~$G$ of size at most~$|T|$ to non-restricted multiway cuts in an auxiliary graph~$G'$ with a somewhat larger terminal set~$T'$ that contains multiple copies of each terminal to prevent it from being deleted. We will then show that the algorithm by Kratsch and Wahlstr\"{o}m (\cref{thm:multiway-cover}) would have included every vertex of~$Z \setminus T$ in its cut covering set of~$G'$, which allows us to bound the size of~$Z \setminus T$ in terms of the output guarantee of \cref{thm:multiway-cover} with terminal set~$T'$.
+
+%The proof combines two ideas. First of all, by making~$|T|+1$ copies of each vertex of~$T$ we can effectively ensure that multiway cuts of size at most~$|T|$ do not contain any vertex of~$T$ and are therefore restricted. This will allow us to infer the existence of a set~$Z$ of size~$\Oh(|T|^{s+2})$ with the required properties from \Cref{thm:multiway-cover}. To find such a set deterministically, we will replace the use of a randomized polynomial-time algorithm by the use of a deterministic algorithm whose running time is fixed-parameter tractable in~$|T|$. The time bound allows us to consider all possible generalized $s$-partitions of~$\mathcal{T}$, and for each of them, to test whether a certain vertex of the graph can be avoided while making an optimal restricted multiway cut for it. A filtering step based on this insight will then allow us to compute a set~$Z$ as desired.
+
+We proceed to make these notions precise. Let~$G'$ be the undirected graph obtained as follows:
+\begin{enumerate}
+	\item Initialize~$G'$ as the graph~$\bypass_{R^*}(G)$ obtained from~$G$ by bypassing all vertices of~$R^*$.
+	\item For each terminal vertex~$t \in T$, insert~$|T|$ additional false-twin copies~$t^{(1)}, \ldots, t^{(|T|)}$ into~$G'$. Hence for each for each~$i \in [|T|]$, the set~$N_{G'}(t^{(i)})$ contains the (copies of) the neighbors of vertex~$t$ in~$\bypass_{R^*}(G)$. 
+	\item Let~$T' = T \cup \{ t^{(i)} \mid t \in T, i \in [|T|]\}$ denote the set of original terminals together with their copies. 
+\end{enumerate}
+Note that~$|T'| \in \Oh(|T|^2)$.
+
+Any generalized $s$-partition~$\mathcal{T} = (T_0, T_1, \ldots, T_s, T_X)$ of~$T$ maps to a generalized $s$-partition~$\mathcal{T}' = (T'_0, T'_1, \ldots, T'_s, T'_X)$ of~$T'$. Starting from the generalized $s$-partition~$\mathcal{T}$, we obtain~$\mathcal{T}'$ by allocating the copies~$t^{(i)} \in T' \setminus T$ of a vertex~$t \in T$ to sets of~$\mathcal{T}'$ as follows:
+\begin{itemize}
+	\item for each~$t \in T_0$, its copies~$t^{(i)}$ for~$i \in [|T|]$ belong to~$T'_X$;
+	\item for each~$t \in T_X$, its copies~$t^{(i)}$ for~$i \in [|T|]$ belong to~$T'_X$; and
+	\item for each~$t \in T_j$ with~$j \in [s]$, its copies~$t^{(i)}$ for~$i \in [|T|]$ belong to~$T'_j$.
+\end{itemize}
+We say that~$\mathcal{T}'$ is the generalized $s$-partition of~$T'$ that corresponds to~$\mathcal{T}$. The definition ensures that each vertex that is involved in a separation requirement is represented~$|T|+1$ times, so that such vertices cannot be contained in a multiway cut of size at most~$|T|$. Note that for vertices~$t \in T$ belonging to~$T_0$, which are allowed to be deleted by a restricted multiway cut, the original vertex~$t$ remains in~$T'_0$ but the copies are placed in~$T'_X$. This ensures that the existence of the copies does not make it more costly to delete such vertices.
+
+The following claim shows how restricted multiway cuts in~$\bypass_{R^*}(G)$ correspond to (non-restricted) multiway cuts in~$G'$.
+\begin{claim} \label{claim:multiway:restricted}
+Let~$\mathcal{T} = (T_0, T_1, \ldots, T_s, T_X)$ be a generalized $s$-partition of~$T$ and let~$\mathcal{T}' = (T'_0, T'_1, \ldots, T'_s, T'_X)$ be the corresponding generalized $s$-partition of~$T'$. The following holds:
+\begin{enumerate}
+	\item Any restricted multiway cut~$U$ of~$\mathcal{T}$ in~$\bypass_{R^*}(G)$ is a multiway cut of~$\mathcal{T}'$ in~$G'$.
+	\item If~$U'$ is a multiway cut of~$\mathcal{T}'$ in~$G'$ of size at most~$|T|$, then~$U := U' \setminus (\bigcup _{i=1}^s T_i)$ is a restricted multiway cut of~$\mathcal{T}$ in~$\bypass_{R^*}(G)$.
+\end{enumerate}
+\end{claim}
+\begin{claimproof}
+For the first item, consider an arbitrary restricted multiway cut~$U$ of~$\mathcal{T} = (T_0, T_1, \ldots,$ $ T_s, \linebreak[0] T_X)$ in~$\bypass_{R^*}(G)$. This means that~$U$ is a multiway cut for~$(T_1, \ldots, T_s)$ in the graph~$\bypass_{R^*}(G) - T_X$. Our definition of~$T'_X$ ensures that the graph~$G' - T'_X$ can be obtained from~$\bypass_{R^*}(G) - T_X$ by making false-twin copies of the vertices in~$\bigcup _{j \in [s]} T_j$; here we exploit the fact that the copies of vertices in~$T_0$ end up in~$T'_X$. No vertex of~$\bigcup _{j \in [s]} T_j$ is contained in~$U$ since it is a \emph{restricted} multiway cut for~$\mathcal{T}$. As making false-twin copies of a vertex does not affect which pairs of the remaining vertices can reach each other, it follows that~$U$ is also a multiway cut for~$(T_1, \ldots, T_s)$ in~$G' - T'_X$. Since~$(T'_1, \ldots, T'_s)$ is obtained from~$(T_1, \ldots, T_s)$ by making false-twin copies and placing them in the same set that holds the original, the set~$U$ is also a multiway cut for~$(T'_1, \ldots, T'_s)$ in~$G' - T'_X$. Hence~$U$ is a multiway cut for~$\mathcal{T}'$ in~$G'$, as required.
+
+Next, we establish the second item of the claim. Consider a multiway cut~$U'$ of~$\mathcal{T}'$ in~$G'$ of size at most~$|T|$. Hence~$U'$ is a multiway cut for~$(T'_1, \ldots, T'_s)$ in~$G' - T'_X$. We prove that~$U := U' \setminus (\bigcup _{i=1}^s T_i)$ is a restricted multiway cut for~$\mathcal{T}$ in~$\bypass_{R^*}(G)$. Assume for a contradiction that this is not the case. Since~$U$ is disjoint from~$\bigcup_{i=1}^s T_i$ by construction, it does not violate the requirement that the multiway cut is restricted. Hence~$U$ violates the separation requirement: there exist two different terminal sets~$T_i, T_j$ with~$1 \leq i < j \leq s$ and terminals~$t_i \in T_i, t_j \in T_j$ such that~$(\bypass_{R^*}(G) - T_X) - U$ contains a path~$P$ from~$t_i$ to~$t_j$. We show that~$P$ can be transformed into a path~$P'$ in~$(G' - T'_X) - U'$ that connects a vertex~$t'_i \in T'_i$ to a vertex~$t'_j \in T'_j$, which will contradict the assumption that~$U'$ is a multiway cut for~$\mathcal{T}'$ in~$G'$. To obtain~$P'$ from~$P$, it suffices to replace any vertex~$t$ on~$P$ that belongs to~$U' \cap (\bigcup _{i=1}^s T_i)$, by a copy~$t^{(i)}$ of~$t$ with~$t^{(i)} \notin U'$. Such a copy exists since~$|U'| \leq |T|$ by assumption, so that~$U'$ cannot contain all~$|T|$ copies of~$t$ together with the original vertex~$t \in U' \cap T$. The correspondence between~$\mathcal{T}$ and~$\mathcal{T}'$ ensures that the vertices~$t'_i, t'_j$ used to replace the endpoints of~$P$ (if needed) belong to distinct sets~$T'_i, T'_j$ of the generalized $s$-partition~$\mathcal{T}'$ with~$1 \leq i < j \leq s$. Hence~$P'$ contradicts the assumption that~$U'$ is a multiway cut for~$\mathcal{T}'$ in~$G'$, which concludes the proof.
+\end{claimproof}
+
+Using the preceding claim to translate between restricted and non-restricted multiway cuts, we now analyze the output of the algorithm.
+
+\begin{claim} \label{claim:z:essential:g}
+For each vertex~$v_i \in Z \setminus T$, there is a generalized $s$-partition~$\mathcal{T}$ of~$T$ such that:
+\begin{enumerate}
+	\item there is a restricted multiway cut~$U$ of size at most~$|T|$ for~$\mathcal{T}$ in~$\bypass_{R^*}(G)$, and
+	\item vertex~$v_i$ belongs to \emph{all} minimum restricted multiway cuts for~$\mathcal{T}$ in~$\bypass_{R^*}(G)$.
+\end{enumerate}
+\end{claim}
+\begin{claimproof}
+Consider an arbitrary vertex~$v_i \in Z \setminus T$ and recall that~$R^*$ denotes the contents of variable~$R$ upon termination. By definition of~$Z$, we have~$v_i \in V(G) \setminus R^*$. The fact that~$v_i \notin T$ means the algorithm performed an iteration in which it considered this vertex~$v_i$ as a candidate to add to~$R$. Let~$\hat{R}$ be the vertex set representing the contents of variable~$R$ just before the iteration for~$v_i$. Since~$v_i \notin R^*$, vertex~$v_i$ was not added to~$R$ in its iteration. Hence there is a witnessing partition $\mathcal{T} = (T_0, T_1, \ldots, T_s, T_X)$ of~$T$ for which the two calls to \cref{lem:multiway:alg} yielded different outcomes~$X_{\mathcal{T}} \neq Y_{\mathcal{T}}$. Let~$\mathsf{opt}_{\mathcal{T}}$ denote the minimum size of a restricted multiway cut for~$\mathcal{T}$ in~$\bypass_{\hat{R}}(G - T_X)$. Since bypassing a non-terminal vertex can only \emph{increase} the cost of a restricted multiway cut, the fact that~$\mathcal{T}$ is a witness for~$v_i$ implies that~$X_\mathcal{T} = \mathsf{opt}_{\mathcal{T}} \leq |T|$ and that either~$Y_{\mathcal{T}} > X_{\mathcal{T}}$ or~$Y_{\mathcal{T}} = \bot$.
+
+As noted above, the procedure for adding vertices to~$R$ is such that for any generalized $s$-partition that admits a restricted multiway cut of size at most~$|T|$, the size of a minimum restricted multiway cut is preserved whenever vertices are added to~$R$. Hence we have~$\rmwc(G, \mathcal{T}) = \rmwc(\bypass_{\hat{R}}(G), \mathcal{T}) = \rmwc(\bypass_{R^*}(G), \mathcal{T}) = \mathsf{opt}_{\mathcal{T}} \leq |T|$. Now assume for a contradiction that there is a minimum restricted multiway cut~$U$ of~$\mathcal{T}$ in~$\bypass_{R^*}(G)$ that does not contain~$v_i$; note that~$U$ is a subset of the vertices of~$\bypass_{R^*}(G)$, so that~$U \subseteq V(G) \setminus R^* = Z$. By the previous equality, we have~$|U| = \mathsf{opt}_{\mathcal{T}} \leq |T|$. Observation~\ref{obs:multiway:bypass} ensures that~$U$ is also a restricted multiway cut of~$\mathcal{T}$ in~$\bypass_{\hat{R}}(G)$. Since~$v_i \notin U$, another application of Observation~\ref{obs:multiway:bypass} shows that~$U$ is also a valid restricted multiway cut of~$\mathcal{T}$ in~$\bypass_{\hat{R} \cup \{v_i\}}(G)$. But then the graph~$\bypass_{\hat{R} \cup \{v_i\}}(G)$ has a restricted multiway cut of size~$\mathsf{opt}_{\mathcal{T}} = X_{\mathcal{T}} \leq |T|$ that the algorithm should have found; a contradiction to the assumption that~$Y_{\mathcal{T}} \neq X_{\mathcal{T}}$. This proves the claim.
+% So in this proof we use the fact that if you can avoid a vertex to make a small optimal solution after all the bypass operations, then you could also avoid the vertex halfway the procedure, together with the fact that bypassing operations preserve OPT for all partitions that have a small solution.
+\end{claimproof}
+
+The following claim translates the essentiality of vertices to restricted multiway cuts in~$\bypass_{R^*}(G)$, into the essentiality for unrestricted multiway cuts in~$G'$.
+
+\begin{claim} \label{claim:z:essential:gprime}
+For each vertex~$v_i \in Z \setminus T$, there is a generalized $s$-partition~$\mathcal{T}'$ of~$T'$ such that vertex~$v_i$ belongs to \emph{all} minimum (non-restricted) multiway cuts of~$\mathcal{T}'$ in~$G'$.
+\end{claim}
+\begin{claimproof}
+Let~$\mathcal{T} = (T_0, T_1, \ldots, T_s, T_X)$ be a generalized $s$-partition of~$T$ such that~$v_i$ belongs to all minimum restricted multiway cuts of~$\mathcal{T}$ in~$\bypass_{R^*}(G)$, and for which such minimum cuts have size at most~$|T|$. \cref{claim:z:essential:g} guarantees the existence of such~$\mathcal{T}$. Let~$\mathcal{T}' = (T'_0, T'_1, \ldots, T'_s, T'_X)$ be the generalized $s$-partition of~$T'$ corresponding to~$\mathcal{T}$. We argue that~$v_i$ belongs to all minimum (non-restricted) multiway cuts of~$\mathcal{T}'$ in~$G'$. 
+
+Assume for a contradiction that~$U' \not \ni v_i$ is a minimum multiway cut of~$\mathcal{T}'$ in~$G'$. Since there is a restricted multiway cut of~$\mathcal{T}$ in~$\bypass_{R^*}(G)$ of size at most~$|T|$, while bypassing a set of non-terminals can only increase the size of a cut, there is a restricted multiway cut of~$\mathcal{T}$ in~$G$ of size at most~$|T|$. Hence the procedure for computing~$Z$ considered~$\mathcal{T}$ in each iteration, so that~$\mathsf{opt}_{\mathcal{T}} := \rmwc(G,\mathcal{T}) = \rmwc(\bypass_{R^*}(G), \mathcal{T}) \leq |T|$. The first part of \cref{claim:multiway:restricted} then ensures that the unrestricted counterpart in~$G^*$ satisfies~$\mwc(G^*, \mathcal{T}') \leq \mathsf{opt}_{\mathcal{T}} \leq |T|$. Since~$U'$ is minimum, we have~$|U'| \leq \mathsf{opt}_{\mathcal{T}} \leq |T|$. Hence we can invoke the second part of \cref{claim:multiway:restricted} to infer that~$U := U' \setminus (\bigcup_{i=1}^s T_i)$ is a restricted multiway cut of~$\mathcal{T}$ in~$\bypass_{R^*}(G)$. Since~$v_i \notin U'$, we have~$v_i \notin U$. We have arrived at a contradiction:~$U$ is a restricted multiway cut of~$\mathcal{T}$ avoiding~$v_i$ of size at most~$\mathsf{opt}_{\mathcal{T}} = \rmwc(\bypass_{R^*}(G), \mathcal{T})$ and is therefore optimal for~$\bypass_{R^*}(G)$; this contradicts our choice of~$v_i$.
+\end{claimproof}
+
+We can now prove the desired bound on the size of~$Z$.
+
+\begin{claim}
+The set~$Z$ computed by the procedure has size~$\Oh(|T|^{s+2})$.
+\end{claim}
+\begin{claimproof}
+Consider the guarantee of \cref{thm:multiway-cover} when applied to graph~$G'$ with terminal set~$T'$ and the chosen value of~$s$. The theorem states that there is an algorithm that, with positive probability, computes a set~$\hat{Z}$ of size~$|\hat{Z}| = \Oh(|T'|^{s+1})$ that contains a minimum multiway cut of every generalized $s$-partition of~$T'$. So in particular, the theorem guarantees there \emph{exists} a set with these properties. So consider a set~$\hat{Z}$ of size~$\Oh(|T'|^{s+1}) = \Oh((|T|^2)^{s+1}) = \Oh(|T|^{2s+2})$ that contains a minimum multiway cut of every generalized $s$-partition. We argue that~$\hat{Z}$ contains~$Z \setminus T$, so that~$|Z| \leq |\hat{Z}| + |T| \in \Oh(|T|^{2s+2})$ which will establish the desired bound on~$|Z|$. It therefore suffices to argue that~$\hat{Z}$ contains all vertices of~$Z \setminus T$.
+
+Consider an arbitrary vertex~$v_i \in Z \setminus T$. By \cref{claim:z:essential:gprime}, there is a generalized $s$-partition~$\mathcal{T}'$ of~$T'$ such that~$z$ belongs to all minimum multiway cuts of~$\mathcal{T}'$ in~$G'$. By assumption on~$\hat{Z}$, there is a minimum multiway cut~$U'$ of~$\mathcal{T}'$ in~$G'$ with~$U' \subseteq \hat{Z}$. Since~$z \in U'$ by the guarantee of \cref{claim:z:essential:gprime}, we have~$z \in U' \subseteq \hat{Z}$, so that~$z \in \hat{Z}$. Since~$z$ was arbitrary, this establishes that~$Z \setminus T \subseteq \hat{Z}$.
+\end{claimproof}
+
+This concludes the proof of \cref{lem:covering:corollary}.
+%
+%\begin{claim}
+%For each generalized $s$-partition~$\mathcal{T}$ of~$T$ for which there is a restricted multiway cut in~$G$ of size at most~$|T|$, the set~$Z'$ contains a minimum restricted multiway cut of~$\mathcal{T}$.
+%\end{claim}
+%\begin{claimproof}
+%Consider a generalized $s$-partition~$\mathcal{T}$ of~$T$ that admits a restricted multiway cut of size at most~$|T|$, and let~$U$ be a restricted multiway cut for~$\mathcal{T}$ in~$G$ of minimum size. Let~$\mathcal{T}'$ be the generalized $s$-partition of~$G'$ that corresponds to~$\mathcal{T}$. By the first part of \Cref{claim:multiway:restricted}, the set~$U$ is a multiway cut of~$\mathcal{T}'$ in~$G'$. By assumption,~$Z'$ contains a minimum multiway cut~$U'$ of~$\mathcal{T}'$ in~$G'$. Since~$U'$ is a minimum multiway cut, we have~$|U'| \leq |U| \leq |T|$. By the second part of \Cref{claim:multiway:restricted}, the set~$U' \setminus (\bigcup _{i=1}^s T_i)$ is a restricted multiway cut of~$\mathcal{T}$ in~$G$. Since its size is bounded by~$|U'| \leq |U|$, while~$U$ is a minimum restricted multiway cut, the set~$U' \setminus (\bigcup _{i=1}^s T_i)$ is a \emph{minimum} restricted multiway cut for~$\mathcal{T}$ in~$G$. This proves the claim.
+%
+%Consider an arbitrary generalized $s$-partition~$\mathcal{T}$ of~$T$ that admits a restricted multiway cut of size at most~$|T|$. Let~$U$ be a minimum restricted multiway cut. By the first part of \Cref{claim:multiway:restricted}, the set~$U$ is a multiway cut of~$\mathcal{T}'$ in~$G'$. By Observation~\ref{obs:TODO}, the minimum size~$\mathsf{opt}_{\mathcal{T}'}$ of a minimum multiway cut of~$\mathcal{T'}$ in~$G'$ is identical to the minimum size of such a restricted multiway cut in~$\bypass_R(G')$. Let~$K$ be a minimum multiway cut of~$\mathcal{T'}$ in~$\bypass_R(G')$ of size~$\mathsf{opt}_{\mathcal{T}'}$. By \cref{obs:bypass:preserves:paths}, the set~$K$ is also a restricted multiway cut for~$\mathcal{T}'$ of size~$\mathsf{opt}_{\mathcal{T}'}$ in~$G'$. 
+%
+%By assumption,~$Z'$ contains a minimum multiway cut~$U'$ of~$\mathcal{T}'$ in~$G'$. Since~$U'$ is a minimum multiway cut, we have~$|U'| \leq |U| \leq |T|$. By the second part of \Cref{claim:multiway:restricted}, the set~$U' \setminus (\bigcup _{i=1}^s T_i)$ is a restricted multiway cut of~$\mathcal{T}$ in~$G$. Since its size is bounded by~$|U'| \leq |U|$, while~$U$ is a minimum restricted multiway cut, the set~$U' \setminus (\bigcup _{i=1}^s T_i)$ is a \emph{minimum} restricted multiway cut for~$\mathcal{T}$ in~$G$. This proves the claim.
+%\end{claimproof}
+%
+\end{proof}
+	
+  % \begin{corollary}\label{cor:multiway-cover}
+  %   Let~$G$ be an undirected graph on $n$ vertices with a set~$T \subseteq V(G)$ of terminal vertices,
+  %   and let~$s \in \mathbb{N}$ be a constant.
+  %   There is a set~$Z \subseteq V(G) \setminus T$ with~$|Z| \leq \binom{3|T|}{s+1}$
+  %   such that~$Z$ contains a minimum multiway cut \emph{with undeletable terminals} of every generalized $s$-partition~$\mathcal{T}^*$ of~$T$,
+  %   and we can compute such a set in randomized polynomial time
+  %   with failure probability~$\mathcal{O}(2^{-n})$.
+  %   %
+  %   Especially when $s=3$, we have $|Z|\leq \frac{27}{8}|T|^4$.
+		
+	% 	\bmp{I don't see how this statement follows from the previous. The previous statement only gives asymptotic bounds on~$|Z|$ while the statement gives an absolute bound. Also, in its current form I think this is false. Observe that when the terminals are not allowed to be deleted, the minimum size of a multiway cut can be arbitrarily much larger than~$|T|$. So even disregarding how you would compute such a set efficiently, you cannot even guarantee that there is a set~$Z$ that contains even \emph{one} multiway cut with undeletable terminals and whose size is bounded in terms of~$|T|$; let alone guarantee that there is a set that contains a multiway cut for all partitions, and whose size is bounded by a \emph{polynomial} function of~$|T|$.}
+	% 	\yo{I was missing a condition: if a restricted multiway cut of size at most $|T|$ exists...}
+  % \end{corollary}
+
+
+\subsection{Universal sets: the deterministic version of color coding} \label{sec:color:coding}
+
+For a set~$D$ of size~$n$ and integer~$k$ with~$n \geq k$, an~\emph{$(n,k)$-universal set} for~$D$ is a family~$\mathcal{U}$ of subsets of~$D$ such that for all~$S \subseteq D$ of size at most~$k$ we have~$\{S \cap U \mid U \in \mathcal{U}\} = 2^S$.
+
+\begin{theorem}[{\cite[Theorem~6]{NaorSS95}, cf.~\cite[Theorem~5.20]{CyganFKLMPPS15}}] \label{thm:universal-set}
+ For any set~$D$ and integers~$n$ and~$k$ with~$|D| = n \geq k$, an $(n,k)$-universal set~$\mathcal{U}$ for~$D$ with~$|\mathcal{U}| = 2^{\Oh(k)}\log n$ can be created in~$2^{\Oh(k)} n \log n$ time.
+\end{theorem}
+
+We extend the notion of universal set to the following notion of \emph{universal function family}.
+For sets $A$ of size $n$ and $B$ of size $q$ and an integer $k$ with $n \geq k$,
+an~\emph{$(n,k,q)$-universal function family} is a family~$\mathcal{F}$ of functions $A \to B$
+such that for all~$S \subseteq A$ of size at most~$k$, the family $\{{f|}_{S} \colon f \in \mathcal{F} \}$ contains all $q^k$ functions from $A$ to $B$. Here we write~$f|_{S}$ for the restriction of~$f$ to domain~$S$.
+
+\begin{corollary}\label{cor:universal-partition}
+  %
+	There is an algorithm that, given sets $A,B$ with $n=|A|$, $q=|B|$,
+	and a positive integer~$k \leq n$, constructs an~$(n,k,q)$-universal function family~$\mathcal{F}$ of size
+  $2^{\Oh(k q')} \log^{q'} n$
+  in $2^{\Oh(k q')} nq' \log^{q'} n$ time, where $q'=\lceil\log_2 q\rceil$.
+  %
+  In particular, when $q$ is a constant, both the size and construction time are $2^{\Oh(k)} n^{\Oh(1)}$.
+\end{corollary}
+
+\begin{proof}
+  Let $q'= \lceil \log_2 q \rceil$.
+	The algorithm starts by computing an~$(n,k)$-universal set for $A$ in $2^{\Oh(k)} n \log n$ time via \cref{thm:universal-set}.
+	We conceptually create~$q'$ copies of this universal set, denoted~$\mathcal{U}_i$ for~$i \in [q']$,
+	where each $\mathcal{U}_i$ has size $2^{\Oh(k)} \log n$.
+	Now consider the Cartesian product $\mathcal{U}_{\times} := \mathcal{U}_1 \times \ldots \times \mathcal{U}_{q'}$. 
+  %
+  For a set $X \subseteq A$ we denote its indicator function by $I_X \colon A \to \{0,1\}$, so that $I_X(x) = 1$ if $x \in X$ and $I_X(x)=0$ if $x \not\in X$.
+  %
+  Also, let $g \colon \{0,1\}^{q'} \to [2^{q'}]$ be a function that converts binary representations of
+  integers between $0$ and ($2^{q'}-1$) into integers in the range~$\{1, \ldots, 2^{q'}\}$; note that~$2^{q'} \geq q$.
+	%
+	Finally, define an arbitrary surjective function $h: [2^{q'}] \to B$.
+  %
+  Now, we construct a family of functions $\mathcal{F}$ as follows:
+  for each $(U_1,\ldots,U_{q'}) \in \mathcal{U}_\times$,
+  create a function $f \colon A \to B$ such that
+	$f(x)=h(g(I_{U_1}(x), \ldots, I_{U_{q'}}(x)))$.
+	% $f(x)=h(\min\{q, g(f_{U_1}(x), \ldots, f_{U_{q'}}(x))\})$.
+	% Note that we take the minimum with~$q$ to ensure that the input for the function $h$ is confined to~$[q]$,
+	% even though some binary representations might encode a larger number when~$q' > \log_2 q$. 
+  %
+  It is straightforward to see that $|\mathcal{F}| \leq |\mathcal{U}_\times| \leq |\mathcal{U}_1|^{q'} \leq 2^{\Oh(kq')}\log^{q'}n$.
+  %
+  This construction can be done in $\Oh(|\mathcal{F}|\cdot nq')$ time
+  because for each $f \in \mathcal{F}$, its values~$f(x)$ can be computed by sequentially scanning $(U_1,\ldots,U_{q'})$ in time $\Oh(nq')$.
+
+  We complete the proof by showing that $\mathcal{F}$ is an $(n,k,q)$-universal function family.
+  %
+  First, observe that for all $S \subseteq A$ of size at most $k$, for each~$i \in [q']$, 
+  the family $\{I_{U_i}|_S \colon U_i \in \mathcal{U}_i\}$ contains all functions from $S$ to $\{0,1\}$.
+  Consequently, $\{ g(I_{U_1}|_S, \ldots, I_{U_{q'}}|_S) \colon (U_1,\ldots,U_{q'}) \in \mathcal{U}_\times \}$ contains all functions from $S$ to $[2^{q'}]$.
+  %
+	Since the function $h$ is surjective,
+  % Since $[q] \subseteq [2^{q'}]$,
+	the family $\{{f|}_S : f \in \mathcal{F} \}$ includes all functions from $S$ to $B$.
+\end{proof}

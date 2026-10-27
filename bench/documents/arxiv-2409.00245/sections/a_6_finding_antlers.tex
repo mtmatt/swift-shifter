@@ -1,0 +1,287 @@
+\section{Proofs for Finding and Removing Tight OCCs} \label{sec:tight:occs-proof}
+
+The algorithm to extract a \zocc from a given coloring~$\chi$ of the vertices and edges of~$G$, is inspired by a corresponding step in previous work~\cite[Lemma 6.2]{DonkersJ24}. The main idea is to iteratively refine the coloring, by changing the colors of vertices and edges into~$\cR$ when the current coloring does not justify their membership in a \zocc. It turns out that after exhaustively refining the coloring in this way, we can ensure the vertices colored~$\cB$ and~$\cC$ actually form the bipartite part and head of a \zocc (assuming their union is nonempty). The most computationally expensive step of the algorithm comes from verifying the requirement that the coloring highlights an~$A_C$-certificate, consisting of connected components that each have an OCT of size at most~$z$. To verify this property, the algorithm will iterate over all sets~$C$ of at most~$z$ vertices colored~$\cC$ and test whether they form an optimal OCT for the subgraph induced by~$C$ together with the vertex sets of connected components colored~$\cB$ whose neighborhood is a subset of~$\cC$. This leads to the~$n^{\Oh(z)}$ term in the running time.
+
+\lemFindAntlerColored*
+
+\begin{proof}
+  Let $G_\chi := G - \chi^{-1}(\cR)$. Note that the value of this expression will change when the algorithm updates the coloring~$\chi$ below. 
+  We define a function $W_\chi\colon 2^{\chi_V^{-1}(\cC)} \to 2^{\chi_V^{-1}(\cB)}$ as follows:
+  for any $C \subseteq \chi_V^{-1}(\cC)$ let $W_\chi(C)$ denote the set of all vertices that are in
+  a component $B$ of $G_\chi[\chi_V^{-1}(\cB)]$ for which $N_{G_\chi}(B) \subseteq C$.
+  %
+  Intuitively, the function $W_\chi$ maps $\cC$-colored vertices $C$ to $\cB$-colored vertices $B$
+  such that $B$ could be used to build a $C$-certificate.
+  %
+  The following algorithm updates the coloring $\chi$ and recolors any vertex or edge
+  that is not part of a \zocc to color $\cR$.
+
+  \begin{enumerate}
+      \item Recolor all edges $uv$ to color $\cR$ if $\chi(u)=\cR$ or $\chi(v)=\cR$.
+          \label{alg:find-antler-colored:1}
+
+      \item For each component $B$ of $G[\chi_V^{-1}(\cB)]$,
+          recolor all vertices of $B$ and their incident edges to $\cR$
+          if $G[B]$ is not bipartite or $N_G(B) \not\subseteq \chi_V^{-1}(\cC)$.
+          \label{alg:find-antler-colored:2}
+
+      \item For each subset $C \subseteq \chi_V^{-1}(\cC)$ of size at most $z$,
+          mark all vertices in $C$ if $\oct(G_\chi[C \cup W_\chi(C)]) = |C|$.
+          \label{alg:find-antler-colored:3}
+
+      \item If $\chi_V^{-1}(\cC)$ contains unmarked vertices we recolor them to $\cR$,
+          clear markings made in Step \ref{alg:find-antler-colored:3}
+          and repeat from Step \ref{alg:find-antler-colored:1}.
+          \label{alg:find-antler-colored:4}
+
+      \item At this point, all vertices in $\chi_V^{-1}(\cC)$ are marked in Step \ref{alg:find-antler-colored:3}.
+          If $\chi_V^{-1}(\cB) \cup \chi_V^{-1}(\cC) \neq \emptyset$, then 
+          return $(\chi_V^{-1}(\cB), \chi_V^{-1}(\cC), \chi_V^{-1}(\cR))$ as a \zocc.
+          \label{alg:find-antler-colored:5}
+
+      \item Otherwise, report that $\chi$ does not $z$-properly color any \zocc.
+          \label{alg:find-antler-colored:6}
+  \end{enumerate}
+
+  % Notice that the algorithm returns $(\emptyset, \emptyset, V(G))$
+  % if no \zoccs are $z$-properly colored.
+  %
+  % \bmpr{
+  %     % I don't think it is acceptable to omit any correctness argument for this algorithm. We may be able to get away with it in the conference version (if reviewers fail to see it is missing), but definitely for a journal version I do not think we could get the paper published without saying anything about correctness of this step. 
+  % I suggest giving a succinct version of the correctness proof here and referring to the journal version of the previous paper for details.}
+
+  \subparagraph*{Running time.}
+  There will be at most $n$ iterations (Steps \ref{alg:find-antler-colored:1}-\ref{alg:find-antler-colored:4}) since in every iteration the number of vertices in $\chi_V^{-1}(\cR)$ increases.
+  Steps \ref{alg:find-antler-colored:1}, \ref{alg:find-antler-colored:2}, \ref{alg:find-antler-colored:4}, \ref{alg:find-antler-colored:5}, and \ref{alg:find-antler-colored:6}
+  can be performed in no more than $\Oh(n^2)$ time.
+  %
+  For Step \ref{alg:find-antler-colored:3} we solve \PrbOCTLong
+  in time $3^z n^{\Oh(1)}$~\cite{ReedSV04} (see~\cite[Thm. 4.17]{CyganFKLMPPS15}) for all $\Oh(n^z)$ subsets $C \subseteq \chi_V^{-1}(\cC)$ of size at most $z$.
+  Hence, the overall runtime is $n^{\Oh(z)}$.
+
+  \subparagraph*{Correctness.}
+  % Here we present a sketch of the correctness proof. Refer to \cite{DonkersJ24} for more details.
+  We first show that the algorithm preserves the properness of recoloring,
+  that is, if an arbitrary \zocc is $z$-properly colored prior to the recoloring,
+  it is also $z$-properly colored after the recoloring.
+  %
+  Second, we show that output in Step \ref{alg:find-antler-colored:5} is necessarily a \zocc in $G$.
+  Under these assumptions, if $\chi$ $z$-properly colors a \zocc, then the algorithm must output
+  a \zocc $(A_B,A_C,A_R)$ in $G$ such that for every $z$-properly colored \occ $(\hat{A}_B, \hat{A}_C, \hat{A}_R)$,
+  we have $\hat{A}_B \subseteq A_B$ and $\hat{A}_C \subseteq A_C$ as it does not exclude any 
+  $z$-properly colored \zoccs.
+  %
+  And if $\chi$ does not $z$-properly color any \zoccs, the algorithm should correctly report the absence
+  of $z$-properly colored \zoccs in Step \ref{alg:find-antler-colored:6}.
+
+  \begin{claim}\label{clm:find-antler-colored-properness}
+      All \zoccs $(\hat{A}_B, \hat{A}_C, \hat{A}_R)$ that are $z$-properly colored by $\chi$
+      prior to executing the algorithm are also $z$-properly colored by $\chi$ after termination of the algorithm.
+  \end{claim}
+  \begin{claimproof}
+      Suppose an arbitrary \zocc $(\hat{A}_B, \hat{A}_C, \hat{A}_R)$ is $z$-properly colored by $\chi$.
+      Then,
+      $\hat{A}_C \subseteq \chi_V^{-1}(\cC)$, 
+      $\hat{A}_B \subseteq \chi_V^{-1}(\cB)$, and
+      $G'=G[\hat{A}_B \cup \hat{A}_C] - \chi^{-1}(\cR)$ is an $\hat{A}_C$-certificate of order $z$.
+      %
+      We will show that (1) if a vertex $v$ is recolored, then $v \not\in \hat{A}_B \cup \hat{A}_C$
+      and (2) edges in $G[\hat{A}_B \cup \hat{A}_C]$ are never recolored.
+      With these conditions, we see that $(\hat{A}_B, \hat{A}_C, \hat{A}_R)$ is $z$-properly colored by $\chi$ at any time during the algorithm.
+
+      To show (1), analyze each step where a vertex is recolored.
+      Suppose a vertex $v$ is recolored in Step \ref{alg:find-antler-colored:2}.
+      Since $\chi$ $z$-properly colors $(\hat{A}_B, \hat{A}_C, \hat{A}_R)$,
+      we have $N(\hat{A}_B) \subseteq \hat{A}_C \subseteq \chi_V^{-1}(\cC)$.
+      We know that $\chi(v)=\cB$, so if $v \in \hat{A}_B$,
+      then the component $B$ of $G[\chi_V^{-1}(\cB)]$ with $v \in B$ must be entirely included in $\hat{A}_B$.
+      %
+      This implies that $G[B]$ is bipartite and $N(B) \subseteq N(\hat{A}_B) \subseteq \chi_V^{-1}(\cC)$, contradicting the recoloring condition in Step \ref{alg:find-antler-colored:2}.
+      
+      Next, suppose a vertex $v$ is recolored in Step \ref{alg:find-antler-colored:4}.
+      We know that $\chi(v)=\cC$, and $v$ was not marked during Step \ref{alg:find-antler-colored:3}.
+      Assume for the contradiction that $v \in \hat{A}_C$.
+      Since $G'$ is an $\hat{A}_C$-certificate of order $z$,
+      there exists a component $H$ of $G'$ such that $v \in H$ and $\oct(H)=|\hat{A}_C \cap V(H)| \leq z$.
+      %
+      From $\hat{A}_C \cap V(H) \subseteq \hat{A}_C \subseteq \chi_V^{-1}(\cC)$,
+      we know that in some iteration in Step \ref{alg:find-antler-colored:3}
+      we have $C=\hat{A}_C \cap V(H)$.
+      %
+      Vertex $v$ was marked if $\oct(G_\chi[C \cup W_\chi(C)]) = |C|$, which we want to show for a contradiction.
+      %
+      First, notice that $W_\chi(C) \subseteq \chi^{-1}(\cB)$, and at this point $\chi^{-1}(\cB)$ is
+      bipartite.
+      Hence, $\oct(G_\chi[C \cup W_\chi(C)]) \leq |C|$.
+      %
+      Next, we show that $H$ is a subgraph of $G_\chi[C \cup W_\chi(C)]$.
+      It is clear to see that a component $H'$ in $H-C$ is also a component in $G_\chi[\chi_V^{-1}(\cB)]$.
+      Since $H$ is a component of $G'$, $N_{G'}(H') \subseteq \hat{A}_C \cap V(H) = C$,
+      and hence $N_{G'}(V(H-C)) \subseteq C$.
+      Also, because $H$ is connected in $G'$, we have $V(H-C) \subseteq W_\chi(C)$,
+      implying that $H$ is a subgraph of $G_\chi[C \cup W_\chi(C)]$.
+      %
+      We have $\oct(G_\chi[C \cup W_\chi(C)]) \geq \oct(H) = |C|$.\looseness-1
+
+      For (2), edge recoloring takes place only when the edge is incident to a vertex colored $\cR$.
+      Every edge $e$ in $G[\hat{A}_B \cup \hat{A}_C]$ is not incident to
+      any vertex in $\chi_V^{-1}(\cR)$, so $e$ cannot be recolored.
+  \end{claimproof}
+
+  \begin{claim}\label{clm:find-antler-colored-output}
+      In Step \ref{alg:find-antler-colored:5}, $(\chi_V^{-1}(\cB), \chi_V^{-1}(\cC), \chi_V^{-1}(\cR))$ is a \zocc in $G$.
+  \end{claim}
+  \begin{claimproof}
+      In this proof, for any family of sets $X_1,\ldots,X_\ell$ indexed by $\{1,\ldots,\ell\}$
+      we define the following for all $1 \leq i \leq \ell$:
+      $X_{<i} := \bigcup_{1 \leq j < i}X_j$ and $X_{\leq i} := \bigcup{1 \leq j \leq i}X_j$.
+
+      From Step \ref{alg:find-antler-colored:2}, we know that $G[\chi_V^{-1}(\cB)]$ is bipartite
+      and $\chi_V^{-1}(\cB) \subseteq \chi_V^{-1}(\cC)$.
+      Also, Step \ref{alg:find-antler-colored:5} guarantees that $\chi_V^{-1}(\cB) \cup \chi_V^{-1}(\cC) \neq \emptyset$, so $(\chi_V^{-1}(\cB), \chi_V^{-1}(\cC), \chi_V^{-1}(\cR))$ is an \occ in $G$.
+      It remains to show that $G[\chi_V^{-1}(\cB) \cup \chi_V^{-1}(\cC)]$ contains a $\chi_V^{-1}(\cC)$-certificate of order $z$.
+
+      Let $\mathcal{C} \subseteq 2^{\chi_V^{-1}(\cC)}$ be the family of all subsets $C \subseteq \chi_V^{-1}(\cC)$ that have been considered and marked in Step \ref{alg:find-antler-colored:3}, i.e. $\oct(G_\chi[C \cup W_\chi(C)]) = |C| \leq z$ for every $C \in \mathcal{C}$.
+      %
+      Let $C_1,\ldots,C_{|\mathcal{C}|}$ be the sets in $\mathcal{C}$ in an arbitrary order
+      and define $D_i := C_i \setminus C_{<i}$ for all $1 \leq i \leq |\mathcal{C}|$.
+      Also define vertex-disjoint subgraphs $G_i := G_\chi[D_i \cup (W_\chi(D_{\leq i})) \setminus W_\chi(D_{<i})]$ for all $1 \leq i \leq |\mathcal{C}|$.
+      %
+      For any $i<j$, we have $D_i \cap D_j = \emptyset$ by definition, and 
+      $(W_\chi(D_{\leq i}) \setminus W_\chi(D_{<i})) \cap (W_\chi(D_{\leq j}) \setminus W_\chi(D_{<j})) = \emptyset$ because $W_\chi(D_{\leq i}) \subseteq W_\chi(D_{<j})$.
+      Hence, $V(G_i) \cap V(G_j) = \emptyset$.
+      % The proof of that they are indeed vertex disjoint is in \cite[Lemma 6.2]{DonkersJ24}.
+
+      From $\oct(G_\chi[C_i \cup W_\chi(C_i)]) = |C_i|$, we have
+      $\oct(G_\chi[C_i \cup W_\chi(C_i)] - (C_i \setminus D_i)) = \oct(G_\chi[D_i \cup W_\chi(C_i)]) = |D_i|$.
+      Furthermore, in $G_\chi[D_i \cup W_\chi(C_i)]$,
+      the vertices $W_\chi(C_i) \cap W_\chi(C_{<i})$ induce a bipartite graph
+      and are disconnected from $D_i \cup W_\chi(C_i) \setminus W_\chi(C_{<i})$;
+      by construction, there are no edges between $D_i$ and $W_\chi(C_{<i})$
+      because a vertex $v \in C$ adjacent to $W_\chi(C_{<i})$ must belong to $C_{<i}$,
+      and there are no edges between $W_\chi(C_i)$ and $W_\chi(C_{<i})$ as they form different components in $G\chi[\chi_V^{-1}(\cB)]$.
+      %
+      Hence, we have $\oct(G_\chi[D_i \cup W_\chi(C_i)]) = \oct(G_\chi[D_i \cup W_\chi(C_i)] - (W_\chi(C_{<i}))) = \oct(G_i) = |D_i|\leq |C_i|\leq z$.
+      %
+      The disjoint union of $G_i$ contains a $(\bigcup_i D_i= \chi_V^{-1}(\cC)$)-certificate of order $z$.
+  \end{claimproof}
+	
+This concludes the proof of \cref{lem:find-antler-colored}.
+\end{proof}
+
+\thmMain*
+
+\begin{proof}
+  Consider the following algorithm.
+
+  \begin{enumerate}
+    \item Use the algorithm from \Cref{lem:finding-occ} to either obtain a reducible \occ $(X_B,X_C,X_R)$ of width at most $k$
+    or determine if there is no single-component \occ of width at most $k$ with $|X_B| > g_r(2k)$
+    in $2^{\Oh(k^{16})}n^{\Oh(1)}$ time.
+    \label{alg:main-thm:1}
+
+    \item If we obtain a reducible \occ in Step \ref{alg:main-thm:1}, then apply reductions in $2^{\Oh(k)} n^{\Oh(1)}$ time
+    as described in \Cref{lem:covering:corollary}, and continue to Step \ref{alg:main-thm:1}.
+    \label{alg:main-thm:2}
+    
+    \item Let $G'$ be the reduced graph.
+    Create a $(|V(G')|+|E(G')|,g(k,z),3)$-universal function family $\mathcal{F}$ for $V(G') \cup E(G') \to \{\cB, \cC, \cR\}$
+    using \Cref{cor:universal-partition}, where we set $g(k,z) = 2kz^2 (g_r(2k))^2$.
+    Each function $\chi \in \mathcal{F}$ represents a coloring of the vertices and edges in $G'$.\looseness-1
+    %
+    % Then, enumerate all functions $F \in \mathcal{F}$ such that $F: [n+m] \to [3]$,
+    % with which we can construct a coloring $\chi\colon V(G) \cup E(G) \to \{\cB, \cC, \cR\}$
+    % since there is a bijection between $\mathcal{F}$ and the family of $\chi$.
+    \label{alg:main-thm:3}
+
+    \item Iterate over all colorings $\chi \in \mathcal{F}$.
+    For each $\chi$, call the algorithm from \Cref{lem:find-antler-colored} as a subroutine.
+    If it outputs a \zocc $(A_B, A_C, A_R)$ with $|A_C| \geq k$, then output $A_C$ as the final result.
+    \label{alg:main-thm:4}
+
+    \item If all colorings result in a \zocc $(A_B, A_C, A_R)$ such that $|A_C| < k$,
+    or all colorings are concluded as having no \zoccs, then report that $G$ does not contain a \zocc
+    of width $k$.
+    \label{alg:main-thm:5}
+  \end{enumerate}
+  %
+  
+%   \bmpr{This needs to be rephrased:
+%   [1] \cref{lem:finding-occ} does not always guarantee to output an \occ; it may also conclude that there no suitable single-component OCC.
+%   [2] Also: the algorithm has an iterative nature, which is not captured by this text. There should be something like a while statement: as long as \cref{lem:finding-occ} outputs a reducible OCC, we reduce it and run again; we proceed once \cref{lem:finding-occ} concludes that there is no suitable single-component OCC remaining in the graph.}
+  %
+%   Now, consider a coloring $\chi\colon V(G) \cup E(G) \to \{\cB, \cC, \cR\}$.
+%   Let $g(k,z) = 2kz^2 (g_r(2k))^2$.
+%   \bmp{[
+    % This text makes no sense to me and seems rather incomplete. The algorithms for iterating over the universal function family and for trying to find a \zocc based on a coloring should be part of the \emph{description} of this algorithm (since they affect what it does and which subroutines it calls!) but 
+    % currently they are only mentioned in the \emph{analysis}. 
+    % Another aspect that is overlooked is that the algorithm runs for a large number of colorings, but the text does not describe what happens with the output.
+    %  One way of handling the output is as follows: if the algorithm ever tries a coloring for which \cref{lem:find-antler-colored} outputs a \zocc with~$|A_C| \geq k$, then we output the set~$A_C$ as the final result of the algorithm. If all colorings result in a \zocc whose~$A_C$ is smaller than~$k$, or all colorings result in `this coloring does not properly color any $z$-tight OCC', then the algorithm should output that~$G$ does not contain a \zocc of width~$k$.]}
+
+  \subparagraph*{Running time.}
+  The reduction steps (Steps \ref{alg:main-thm:1}-\ref{alg:main-thm:2}) take $2^{\Oh(k^{16})} n^{\Oh(1)}$ time
+  because whenever we find a reducible \occ, the number of vertices in $G$ decreases, resulting in at most $n$ iterations.
+  %
+  For Step \ref{alg:main-thm:3}, from \Cref{cor:universal-partition} we can construct a family of colorings $\chi$
+  that cover all colorings when restricted to $g(k,z)$ elements.
+  Since the number of vertices never increases by the reduction steps, it holds that $|V(G')| \leq n$.
+  %
+  Steps \ref{alg:main-thm:4}-\ref{alg:main-thm:5} take $n^{\Oh(z)}$ time for each coloring,
+  and there are $2^{\Oh(g(k,z))} \log^2 n$ colorings.
+  The overall runtime is $2^{\Oh(g(k,z))} n^{\Oh(z)} = 2^{\Oh(k^{33} z^2)} n^{\Oh(z)}$.
+
+  \subparagraph*{Correctness.}
+  The algorithm first reduces all reducible \occs in Steps \ref{alg:main-thm:1}-\ref{alg:main-thm:2}.
+  Let $G'$ be the reduced graph when the algorithm enters Step \ref{alg:main-thm:3}.
+	
+	We start by arguing that the output of the algorithm is correct when it outputs the set~$A_C$ in Step~\ref{alg:main-thm:4} after having found a \zocc~$(A_B, A_C, A_R)$ in~$G'$. Observe that by definition of tight \occ, the set~$A_C$ is a subset of an optimal OCT $S$ for $G'$. Then, from the backward safety (\Cref{lem:backward:safety}) and its  transitivity, we have that 
+  $S \subseteq V(G) \cap V(G')$ and $S$ is an optimal OCT of $G$. So the final result $A_C$ in Step \ref{alg:main-thm:4} belongs to an optimal solution for \PrbOCTLong in $G$.
+	
+	Suppose now that~$G$ contains a \zocc of width~$k$; we argue that the algorithm will produce a suitable output in Step~\ref{alg:main-thm:4}. From this, it will follow that the algorithm is correct in reporting that~$G$ does not have a \zocc of width~$k$ if it terminates in Step~\ref{alg:main-thm:5}. By invoking forward safety (\Cref{lem:forward:safety}) and its transitivity,
+  we know that if there exists a \zocc $(A_B, A_C, A_R)$ of width $k$ in $G$, 
+  then there exists a \zocc $(A'_B, A'_C, A'_R)$ of width $k$ in $G'$. By applying \Cref{lem:num_components}, we may assume without loss of generality that 
+  $G'[A_B']$ has at most $z^2|A'_C|$ components.
+	
+	For each component $B'$ in $G'[A_B']$, the structure $(V(B'),A'_C,A'_R \cup (A'_B \setminus V(B')))$ is a single-component \occ in~$G'$ of width $k$. Since the reduction process stabilized with~$G'$, we have $|V(B')| \leq g_r(2k)$. Hence each of the at most~$z^2|A'_C|$ components of~$G'[A'_B]$ has at most~$g_r(2k)$ vertices, so that~$|A_B'| \leq k z^2 \cdot g_r(2k)$.
+
+  % In the remainder of the proof, we argue that the algorithm is also correct when it terminates in Step~\ref{alg:main-thm:5}. To do so, we argue that if~$G$ had a \zocc of width~$k$, then there is a suitable coloring that causes the algorithm to terminate in Step \ref{alg:main-thm:4}. From this, it follows that the algorithm is correct in reporting that~$G$ does not have a \zocc of width~$k$ if it terminates in Step~\ref{alg:main-thm:5}.
+	
+  %Now, suppose that the all colorings\bmpr{Typo?} such that $g(k,z)$ elements in
+  %$V(G') \cup E(G')$ are colored correctly in Step \ref{alg:main-thm:4},
+  %we can find a \zocc of width at least $k$ in $G'$
+  %or correctly conclude that $G'$ does not contain a \zocc of width $k$.
+  %In the latter case, from the forward safety we can conclude that $G$ does not contain a \zocc of width $k$, which should be reported in Step \ref{alg:main-thm:5}.
+  %Otherwise, the algorithm will output a \zocc $(A_B,A_C,A_R)$ with $|A_C| \geq k$ in $G'$.
+  %First, observe that by definition, $A_C$ is a subset of an optimal OCT $S$ for $G'$.
+  %Then, from the backward safety (\Cref{lem:backward:safety}), we have that 
+  %$S \subseteq V(G) \cap V(G')$ and $S$ is an optimal OCT of $G$.
+  %Hence, the final result $A_C$ in Step \ref{alg:main-thm:4} belongs to an optimal solution for \PrbOCTLong in $G$.
+
+  Next, we show that there is a coloring of~$V(G') \cup E(G')$ that properly colors~$(A'_B, A'_C, A'_R)$. To see this, consider an~$A'_C$-certificate~$D'$ of order~$z$ in~$G'[A'_C \cup A'_B]$, which exists by \cref{def:zocc}; hence~$D'$ is a subgraph of~$G'[A'_C \cup A'_B]$ for which~$A'_C$ is an optimal OCT, while each component of~$D'$ contains at most~$z$ vertices from~$A'_C$. Then any coloring~$\chi$ that assigns~$A'_C$ color~$\cC$, assigns~$A'_B$ color~$\cB$, assigns all edges that belong to~$D'$ color~$\cB$ and all remaining edges of~$G'[A'_B \cup A'_C]$ color~$\cR$, will $z$-properly color~$(A'_B, A'_C, A'_R)$. To obtain a $z$-proper coloring, it therefore suffices for the coloring to act as prescribed on the vertex set~$A'_B \cup A'_C$ and on the edges of the subgraph~$G'[A'_B \cup A'_C]$. 
+
+ 	%To ensure that the algorithm constructs a coloring~$\chi$ that $z$-properly colors~$(A'_B, A'_C, A'_R)$ in Step~\ref{alg:main-thm:3}, it therefore suffices to argue that whether or not a coloring is proper is determined only by the colors of $g(k,z)$ entities.
+  %
+  %For each component $B$ in $G'[A_B']$, $(B,A_C,A_R \cup A_B \setminus B)$ is a single-component \occ of width $k$.
+  %From the reduction steps, we have $|B| \leq g_r(2k)$ and consequently
+  %$|A_B'| \leq z^2|A_C|\cdot |B| \leq kz^2 g_r(2k)$.
+
+  %Now, consider a coloring of $(A_B', A_C, A_R \cup A_B \setminus A_B')$.
+  %We obtain a $z$-proper coloring of this \zocc whenever
+  %the set $A_B' \cup A_C \cup E(G[A_B' \cup A_C])$ is $z$-properly colored.
+  %
+  Notice that a bipartite graph of $n$ vertices may have at most $n^2/4$ edges.
+  Hence:
+	\begin{align*}
+	|E(G'[A'_B \cup A'_C])| &= |E(G'[A'_B])| + |E_{G'}(A'_B, A'_C)| + |E(G'[A'_C])| \\
+	  &\leq k z^2 (g_r(2k))^2/4 + k z^2 g_r(2k) \cdot k + \binom{k}{2} \\
+		& \leq kz^2 (g_r(2k))^2,
+	\end{align*}
+	where we use the fact that~$|A'_C| \leq k$ and use~$E_{G'}(A'_B, A'_C)$ to denote the edges of~$G'$ that have one endpoint in~$A'_B$ and the other in~$A'_C$.
+%
+  This allows us to bound the number of elements whose color determines whether or not a coloring is $z$-proper by:
+	\begin{align*}
+	|A'_B \cup A'_C \cup E(G'[A'_B \cup A'_C])| &\leq k z^2 \cdot g_r(2k) + k + kz^2 (g_r(2k))^2 \\ &\leq 2kz^2 (g_r(2k))^2 = g(k,z).
+	\end{align*}
+%	
+	Since the algorithm constructs a universal function family with parameters~$(|V(G')| + |E(G')|, g(k,z), 3)$, it follows that the algorithm encounters at least one $z$-proper coloring of~$(A'_B, A'_C, A'_R)$ if it exists. Hence the algorithm is correct if it concludes there is no \zocc in~$G$ of width~$k$.
+\end{proof}

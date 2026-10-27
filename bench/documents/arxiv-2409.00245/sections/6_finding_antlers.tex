@@ -1,0 +1,43 @@
+\section{Finding and Removing Tight OCCs} \label{sec:tight:occs}
+
+%-------------------------------------------------------------------------------
+%    Color coding
+%-------------------------------------------------------------------------------
+
+Now we find \octmane{s} by the same color coding technique used in previous work~\cite{DonkersJ24}.
+Consider a coloring 
+$\chi\colon V(G) \cup E(G) \to \{\cB, \cC, \cR\}$ of the vertices and edges of a graph~$G$.
+For every color $c \in \{\cB, \cC, \cR\}$, let $\chi_V^{-1}(c) = \chi^{-1}(c) \cap V(G)$.
+For any integer $z \geq 0$, a \zocc $(A_B,A_C,A_R)$ is \emph{$z$-properly colored} by
+a coloring $\chi$ if all the following hold:
+(i)~$A_C \subseteq \chi_V^{-1}(\cC)$, (ii)~$A_B \subseteq \chi_V^{-1}(\cB)$, and (iii)~for each component $H$ of $G'=G[A_B \cup A_C] - \chi^{-1}(\cR)$ we have $\oct(H)=|A_C \cap V(H)|$ and~$|A_C \cap V(H)| \leq z$.
+\bmpr{I switched the enumeration to inline, but it would be nice to turn it back into line-by-line for the final.}
+%
+%\begin{enumerate}[(i)]
+	%\item $A_C \subseteq \chi_V^{-1}(\cC)$,
+	%\item $A_B \subseteq \chi_V^{-1}(\cB)$, and
+	%\item for each component $H$ of $G'=G[A_B \cup A_C] - \chi^{-1}(\cR)$
+	%we have $\oct(H)=|A_C \cap V(H)|$ and~$|A_C \cap V(H)| \leq z$.
+%\end{enumerate}
+Note that $\chi^{-1}(\cR)$ may include both vertices and edges, so that the process of obtaining~$G'$ involves removing both the vertices and edges colored~$\cR$.
+%As we show in the proof of \cref{thm:main}, if $(A_B, A_C, A_R)$ is a \zoctmane, then there exists a coloring that $z$-properly colors it. 
+By a straight-forward adaptation of the color coding approach from previous work~\cite[Lemma 6.2]{DonkersJ24}, we can reconstruct a \tocc from a proper coloring.
+
+\begin{restatable}{lemma}{lemFindAntlerColored}[$(\bigstar)$]
+\label{lem:find-antler-colored}
+    There is an $n^{\Oh(z)}$ time algorithm taking as input an integer $z \geq 0$,
+    a graph $G$, and a coloring $\chi \colon V(G) \cup E(G) \to \{\cB, \cC, \cR\}$
+    that either determines that~$\chi$ does not $z$-properly color any $z$-tight OCC,
+    or outputs a $z$-tight \occ $(A_B,A_C,A_R)$ in $G$ such that
+    for each OCC $(\hat{A}_B, \hat{A}_C, \hat{A}_R)$ that is $z$-properly colored by~$\chi$,
+    we have $\hat{A}_B \subseteq A_B$ and $\hat{A}_C \subseteq A_C$.
+\end{restatable}
+
+%Using this algorithm combined with $(n,k)$-universal sets for generating colorings, we can extend \cite[Lemma 6.2]{DonkersJ24} as follows.
+
+Combining all ingredients in the previous sections leads to a proof of the main theorem.
+
+\thmMain*
+\begin{proof}[Proof sketch]
+Given an input graph~$G$, we repeatedly invoke \cref{lem:finding-occ} to find a reducible \occ and use \refreduction to shrink it. When we stabilize on a graph~$G'$, \cref{lem:forward:safety} guarantees that~$G'$ contains a \zocc of width~$|A'_C| = k$ if~$G$ had one. By \cref{lem:num_components}, there is such a \zocc~$(A'_B, A'_C, A'_R)$ in~$G'$ for which~$G'[A'_B]$ has at most~$z^2 k$ components. As each such component gives rise to a single-component \occ, none of them are large enough to be reducible. Hence~$|A'_C \cup A'_B| \in (zk)^{\Oh(1)}$. Hence we can deterministically construct a family of~$2^{(kz)^{\Oh(1)}} n^{\Oh(1)}$ colorings that includes one that properly colors~$(A'_B, A'_C, A'_R)$. Invoking \cref{lem:find-antler-colored} with such a coloring identifies a \zocc in~$G'$ whose head~$A^*_C$ contains~$A'_C$ and therefore has size at least~$k$. Then~$A^*_C$ is contained in an optimal OCT in~$G'$, so that \cref{lem:backward:safety} ensures~$A^*_C$ belongs to an optimal OCT in~$G$. We output~$A^*_C$.
+\end{proof}

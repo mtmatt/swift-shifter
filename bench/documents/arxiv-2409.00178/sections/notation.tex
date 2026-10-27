@@ -1,0 +1,70 @@
+\section{Bi-form calculus}
+\label{sec:biforms}
+
+In this section we review the bi-form calculus of \cite{Medeiros2003ExoticDuality} that will be useful in what follows and establish our notation. 
+A $[p,q]$ bi-form is a tensor which is an element of $\Omega^p \otimes \Omega^q$, where $\Omega^p$ is the space of $p$-forms on a $d$-dimensional manifold $\M$. We also refer to such objects as $[p,q]$-tensors. A $[p,q]$ bi-form has index symmetries
+\begin{equation}
+    A_{\mu_1\dots\mu_p|\nu_1\dots\nu_q} = A_{[\mu_1\dots\mu_p]|\nu_1\dots\nu_q} = A_{\mu_1\dots\mu_p|[\nu_1\dots\nu_q]}
+\end{equation}
+Those bi-forms with $p>q$ which further satisfy
+\begin{equation}
+    A_{[\mu_1\dots\mu_p|\nu_1]\nu_2\dots\nu_q} = 0
+\end{equation}
+are irreducible under $GL(d,\mathbb{R})$. They transform in the $GL(d,\mathbb{R})$ representation labelled by a Young tableau with two columns of lengths $p$ and $q$.
+For $p=q$, the extra  condition
+\begin{equation}
+   A_{\mu_1\dots\mu_p|\nu_1\dots\nu_q}= A_{\nu_1\dots\nu_q|\mu_1\dots\mu_p}
+\end{equation}is needed.
+Gauge fields in general $GL(d,\mathbb{R})$ representations  were introduced by Curtright \cite{Curtright:1980yk} and have
+been studied in e.g.\ \cite{Medeiros2003ExoticDuality, Bekaert2004, Dubois-Violette:1999iqe,Dubois-Violette:2000fok, Dubois-Violette:2001wjr,Howe2018SCKYT,  deMedeiros:2003osq, Hull2001DualityFields, Henneaux:2004jw, Hinterbichler2023GravitySymmetries, Hinterbichler:2024cxn} and references therein. We will discuss only bi-form gauge fields here.
+
+We will now briefly review some of the operations on bi-forms
+introduced in \cite{Medeiros2003ExoticDuality}. There are left and right exterior derivatives\footnote{These were referred to as $\dd$ and $\tilde{\dd}$ in \cite{Medeiros2003ExoticDuality}.}
+\begin{align}
+\begin{split}
+    \dd_L : \Omega^p \otimes \Omega^q &\to \Omega^{p+1} \otimes \Omega^q \\
+    \dd_R : \Omega^p \otimes \Omega^q &\to \Omega^p \otimes \Omega^{q+1}
+\end{split}
+\end{align}
+defined by
+\begin{equation}
+\begin{split}
+    (\dd_L A)_{\mu_1\dots\mu_{p+1}|\nu_1\dots\nu_q} &= \partial_{[\mu_1} A_{\mu_2\dots\mu_{p+1}]|\nu_1\dots\nu_q} \\
+    (\dd_R A)_{\mu_1\dots\mu_p|\nu_1\dots\nu_{q+1}} &= A_{\mu_2\dots\mu_{p+1}|[\nu_1\dots\nu_q,\nu_{q+1}]}
+\end{split}
+\end{equation}
+where a comma denotes partial derivative.
+These satisfy $\dd_L^2 = \dd_R^2 = 0$ and commute, $[\dd_L,\dd_R]=0$, so $(\dd_L+\dd_R)^3=0$.
+We note that $\dd_R$ does not map irreducible $[p,q]$ bi-forms to irreducible $[p,q+1]$ bi-forms. However, $\dd_L$ does map irreducible $[p,q]$ bi-forms to irreducible $[p+1,q]$ bi-forms.
+
+Given a bi-form in a reducible representation, its projection onto the irreducible $[p,q]$ representation can be achieved via the use of a Young projector $\mathcal{Y}_{[p,q]}$. For example, for an $n$-form $\phi$ (i.e. an $[n,0]$ bi-form), the component of $\dd_R\phi$ in the irreducible $[n,1]$ representation is given by
+\begin{equation}
+    \left(\mathcal{Y}_{[n,1]} (\dd_R \phi)\right)_{\mu_1\dots\mu_n|\nu} = \partial_\nu \phi_{\mu_1\dots\mu_n} - \partial_{[\nu} \phi_{\mu_1\dots\mu_n]}
+\end{equation}
+
+We also introduce left and right duality operators $\star_L$ and $\star_R$ by
+\begin{align}
+    (\star_L A)_{\mu_1\dots\mu_{d-p}|\nu_1\dots\nu_q} &= \frac{1}{p!} \epsilon_{\mu_1\dots\mu_{d-p}\alpha_1\dots\alpha_p} A\indices{^{\alpha_1\dots\alpha_p}_{|\nu_1\dots\nu_q}} \\
+    (\star_R A)_{\mu_1\dots\mu_p|\nu_1\dots\nu_{d-q}} &= \frac{1}{q!} \epsilon_{\nu_1\dots\nu_{d-q}\alpha_1\dots\alpha_q} A\indices{_{\mu_1\dots\mu_p|}^{\alpha_1\dots\alpha_q}}
+\end{align}
+where indices are raised with the Minkowski metric $\eta_{\mu\nu} = \diag(-1,1,\dots,1)$. These satisfy
+\begin{equation}
+    \star_L^2 = (-1)^{p(d-p)+1} \qc \star_R^2 = (-1)^{q(d-q)+1} 
+\end{equation}
+when acting on a $[p,q]$ form.
+We further define  derivatives $\dd_L^\dag$ and $\dd_R^\dag$ which act as
+\begin{align}
+    (\dd_L^\dag A)_{\mu_2\dots\mu_p|\nu_1\dots\nu_q} &= \partial^{\mu_1} A_{\mu_1\dots\mu_p|\nu_1\dots\nu_q} \\
+    (\dd_R^\dag A)_{\mu_1\dots\mu_p|\nu_2\dots\nu_q} &= \partial^{\nu_1} A_{\mu_1\dots\mu_p|\nu_1\dots\nu_q}
+\end{align}
+These have the usual structure $\dd^\dag_L \propto \star_L \dd_L \star_L$ and similarly for $\dd^\dag_R$, which implies that $(\dd^\dag_L)^2=0$ and $(\dd^\dag_R)^2=0$.
+We will sometimes refer to tensors satisfying $\dd_L^\dag A=0$ as being left-conserved, and those satisfying $\dd_R^\dag A=0$ as being right-conserved.
+Finally, we introduce an operation 
+\begin{equation}
+    \wedgedot: (\Omega^{p_1} \otimes \Omega^q )\times (\Omega^{p_2} \otimes\Omega^q ) \to \Omega^{p_1+p_2}
+\end{equation}
+defined by
+\begin{equation}\label{eq:wedgedot}
+    (A \,\wedgedot\, B)_{\mu_1\dots\mu_p} = A\indices{_{[\mu_1\dots\mu_{p_1}|}^{\nu_1\dots\nu_q}} B_{\mu_{p_1+1} \dots \mu_p]|\nu_1\dots\nu_q}
+\end{equation}
+where $A$ and $B$ are bi-forms of degrees $[p_1,q]$ and $[p_2,q]$ respectively, and $p = p_1+p_2$. In other words, $\wedgedot$ acts as the wedge product on the first set of indices of the tensors, and as an inner product on the second set. 

@@ -1,0 +1,128 @@
+
+\documentclass[a4paper,USenglish,cleveref, autoref, thm-restate]{lipics-v2021}
+%This is a template for producing LIPIcs articles. 
+%See lipics-v2021-authors-guidelines.pdf for further information.
+%for A4 paper format use option "a4paper", for US-letter use option "letterpaper"
+%for british hyphenation rules use option "UKenglish", for american hyphenation rules use option "USenglish"
+%for section-numbered lemmas etc., use "numberwithinsect"
+%for enabling cleveref support, use "cleveref"
+%for enabling autoref support, use "autoref"
+%for anonymousing the authors (e.g. for double-blind review), add "anonymous"
+%for enabling thm-restate support, use "thm-restate"
+%for enabling a two-column layout for the author/affilation part (only applicable for > 6 authors), use "authorcolumns"
+%for producing a PDF according the PDF/A standard, add "pdfa"
+
+%\pdfoutput=1 %uncomment to ensure pdflatex processing (mandatatory e.g. to submit to arXiv)
+\hideLIPIcs  %uncomment to remove references to LIPIcs series (logo, DOI, ...), e.g. when preparing a pre-final version to be uploaded to arXiv or another public repository
+
+%\graphicspath{{./graphics/}}%helpful if your graphic files are in another directory
+
+\bibliographystyle{plainurl}% the mandatory bibstyle
+
+\title{Preprocessing to Reduce the Search Space for Odd Cycle Transversal}
+
+%\titlerunning{Dummy short title} %TODO optional, please use if title is longer than one line
+\newcommand{\universityOfUtah}{School of Computing, University of Utah, USA}
+\newcommand{\eindhoven}{Eindhoven University of Technology, The Netherlands}
+
+\author{Bart M. P. Jansen}{\eindhoven}{b.m.p.jansen@tue.nl}{https://orcid.org/0000-0001-8204-1268}{}
+\author{Yosuke Mizutani}{\universityOfUtah}{yos@cs.utah.edu}{https://orcid.org/0000-0002-9847-4890}{}
+\author{Blair D. Sullivan}{\universityOfUtah}{sullivan@cs.utah.edu}{https://orcid.org/0000-0001-7720-6208}{Gordon \& Betty Moore Foundation under grant GBMF4560.}
+\author{Ruben F. A. Verhaegh}{\eindhoven}{r.f.a.verhaegh@tue.nl}{https://orcid.org/0009-0008-8568-104X}{}
+
+\authorrunning{B. M. P. Jansen, Y. Mizutani, B. D. Sullivan, and R. F. A. Verhaegh} %TODO mandatory. First: Use abbreviated first/middle names. Second (only in severe cases): Use first author plus 'et al.'
+
+\Copyright{Bart M. P. Jansen, Yosuke Mizutani, Blair D. Sullivan, and Ruben F. A. Verhaegh} %TODO mandatory, please use full first names. LIPIcs license is "CC-BY";  http://creativecommons.org/licenses/by/3.0/
+
+% \ccsdesc[100]{\textcolor{red}{Replace ccsdesc macro with valid one}} %TODO mandatory: Please choose ACM 2012 classifications from https://dl.acm.org/ccs/ccs_flat.cfm 
+\ccsdesc[500]{Theory of computation~Graph algorithms analysis}
+\ccsdesc[500]{Theory of computation~Fixed parameter tractability}
+
+\keywords{odd cycle transversal, parameterized complexity, graph decomposition, search-space reduction, witness of optimality} %TODO mandatory; please add comma-separated list of keywords
+
+\category{} %optional, e.g. invited paper
+
+\relatedversion{} %optional, e.g. full version hosted on arXiv, HAL, or other respository/website
+%\relatedversiondetails[linktext={opt. text shown instead of the URL}, cite=DBLP:books/mk/GrayR93]{Classification (e.g. Full Version, Extended Version, Previous Version}{URL to related version} %linktext and cite are optional
+
+%\supplement{}%optional, e.g. related research data, source code, ... hosted on a repository like zenodo, figshare, GitHub, ...
+%\supplementdetails[linktext={opt. text shown instead of the URL}, cite=DBLP:books/mk/GrayR93, subcategory={Description, Subcategory}, swhid={Software Heritage Identifier}]{General Classification (e.g. Software, Dataset, Model, ...)}{URL to related version} %linktext, cite, and subcategory are optional
+
+%\funding{(Optional) general funding statement \dots}%optional, to capture a funding statement, which applies to all authors. Please enter author specific funding statements as fifth argument of the \author macro.
+
+% \acknowledgements{I want to thank \dots}%optional
+
+\nolinenumbers %uncomment to disable line numbering
+
+
+
+%Editor-only macros:: begin (do not touch as author)%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+\EventEditors{John Q. Open and Joan R. Access}
+\EventNoEds{2}
+\EventLongTitle{42nd Conference on Very Important Topics (CVIT 2016)}
+\EventShortTitle{CVIT 2016}
+\EventAcronym{CVIT}
+\EventYear{2016}
+\EventDate{December 24--27, 2016}
+\EventLocation{Little Whinging, United Kingdom}
+\EventLogo{}
+\SeriesVolume{42}
+\ArticleNo{23}
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+\input{styles/include.sty}
+\input{styles/problems.sty}
+\input{styles/variables.sty}
+\input{styles/utilities.sty}
+
+% Hack to temporarily hide all proofs. Comment out to show them again.
+  %\usepackage{environ}
+  %\NewEnviron{hide}{}
+  %\let\proof\hide
+  %\let\endproof\endhide
+  %\let\claimproof\hide
+  %\let\endclaimproof\endhide
+%
+
+\begin{document}
+
+\maketitle
+
+%TODO mandatory: add short abstract of the document
+\input{sections/0_abstract.tex}
+
+% {\huge{Paper submission deadline: 22 April, 23:59 AoE}}
+
+\newpage
+
+\input{sections/1_introduction.tex}
+\input{sections/2_preliminaries.tex}
+\input{sections/3_octcuts.tex}
+\input{sections/4_finding.tex}
+\input{sections/5_reducing_oct_cuts.tex}
+\input{sections/6_finding_antlers.tex}
+
+\input{sections/a_additional_preliminaries.tex}
+\input{sections/a_3_proofs_octcuts.tex}
+\input{sections/a_4_proofs_finding.tex}
+\input{sections/a_5a_marking_step.tex}
+\input{sections/a_5b_reduction_basics.tex}
+\input{sections/a_5c_safety.tex}
+\input{sections/a_6_finding_antlers.tex}
+\input{sections/a_hardness.tex}
+
+\input{sections/7_conclusion.tex}
+
+%%
+%% Bibliography
+%%
+
+%% Please use bibtex, 
+\newpage
+\bibliography{main}
+
+% \newpage
+% \appendix
+% \input{sections/a_appendix.tex}
+
+\end{document}

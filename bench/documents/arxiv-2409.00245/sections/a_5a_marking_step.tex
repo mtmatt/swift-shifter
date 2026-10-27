@@ -1,0 +1,212 @@
+\section{Proofs regarding guarantees of \refmark}
+In this section, we cover the various guarantees that were promised for \refmark. A visual example of the graph reduction that is part of it may be found in \cref{fig:find-central}.
+
+\input{figures/find_central.tex}
+
+First, we briefly argue the following basic guarantees of \refmark.
+
+\begin{lemma} \label{lem:mark:running:time}
+	Let $G$ be a graph and let $(X_B, X_C, X_R)$ be an OCC in it. Then \refmark can be executed with these input parameters in $2^{\Oh(|X_C|)} n^{\Oh(1)}$ time and outputs a set~$B^\ast$ of size $|X_C|^{\Oh(1)}$.
+\end{lemma}
+\begin{proof}
+	First we note that indeed $|B^\ast| = |X_C|^{\Oh(1)}$, since $B^\ast$ is constructed as a set of at most $c \cdot (2|X_C|)^8$ vertices. Next, it is clear to see that steps 1 and 2 can be done in polynomial time, and step 3 takes
+	$2^{\Oh(|T|)} n^{\Oh(1)} = 2^{\Oh(|X_C|)} n^{\Oh(1)}$ time.
+\end{proof}
+
+Next, we formalize the main property we wished to hold for \refmark and proof that it is indeed satisfied.
+
+\begin{lemma}
+	\label{lem:marked:separators:for:all:ARN}
+	Let $G$ be a graph, let $(X_B, X_C, X_R)$ be an OCC in it and let $B^\ast \subseteq X_B$ be the result of executing \refmark with these input parameters. Let $f_X : X_B \rightarrow \{0, 1\}$ be the proper $2$-coloring of $G[X_B]$ computed in the first step of \refmark. Let $C_1, C_2 \subseteq X_C$ be two arbitrary disjoint subsets of $X_C$ and let $f_C: C_1 \rightarrow \{0, 1\}$ be a (not necessarily proper) $2$-coloring of~$C_1$. If the~$\{A,R,N\}$-separation problem imposed onto~$G[X_B]$ by $(C_1, C_2, f_C, f_X)$ has a solution of size at most~$|X_C|$, then the set~$B^\ast$ contains an optimal solution to this separation problem.
+\end{lemma}
+\begin{proof}
+	Recall that the auxiliary graph $G'$ consists of a copy of $G[X_B]$ and terminals
+	$T = \{v^{(i)} \mid v \in X_C, i=0,1\}$.
+	Given $C_1$, $C_2$ and $f_C$, consider the following generalized $3$-partition $\mathcal{T}$ of $T$
+	into $(\emptyset, A',R',N',T_X)$, where $T_X$ represents deleted vertices.
+	%
+	\begin{itemize}
+		\item If $v \in C_1$ and $f_C(v)=0$, then let $v^{(0)} \in A'$ and $v^{(1)} \in R'$.
+		\item If $v \in C_1$ and $f_C(v)=1$, then let $v^{(0)} \in R'$ and $v^{(1)} \in A'$.
+		\item If $v \in C_2$, then let $v^{(0)},v^{(1)} \in N'$.
+		\item If $v \in X_C \setminus (C_1 \cup C_2)$, then let $v^{(0)},v^{(1)} \in T_X$.
+	\end{itemize}
+	%
+	\Cref{fig:find-central} illustrates this construction.
+	%
+	Note that for $v \in C_1$ we have $v^{(i)} \in A'$ ($v^{(i)} \in R'$, resp.)
+	if and only if $f_C(v)=i$ ($f_C(v)=1-i$).
+	%
+	We shall show the equivalence between restricted 3-way cuts for $\{A',R',N'\}$ in $G'-T_X$
+	and $\{A,R,N\}$-separators in $G[X_B]$.
+	
+	First, let $S'$ be a restricted 3-way cut for $\{A',R',N'\}$ in $G'-T_X$, and
+	assume that there is a path $sPt$ in $G[X_B]-S'$ where $s$ and $t$ belong to different sets in $\{A,R,N\}$.
+	% \bmpr{This argument will have to be refined somewhat, since the statement of the used corollary was too strong. We do not keep \emph{all} separators with undeletable terminals; we can only keep them up to a certain size, such as~$|X_C|$.}
+	%
+	\begin{enumerate}[(1)]
+		\item If $s \in A$ and $t \in R$,
+		then there exist vertices $v_s \in N_G(s) \cap C_1$ and $v_t \in N_G(t) \cap C_1$
+		such that $f_C(v_s)=f_X(s)$ and $f_C(v_t)\neq f_X(t)$.
+		This implies $v_s^{(f_X(s))}s, v_t^{(f_X(t))}t \in E(G')$.
+		%
+		By construction, $v_s^{(f_X(s))}=v_s^{(f_C(v_s))} \in A'$ and $v_t^{(f_X(t))}=v_t^{(1-f_C(v_t))} \in R'$,
+		and these vertices are present in $G'-T_X$.
+		%
+		Hence, $v_s^{(f_X(s))} s P t v_t^{(f_X(t))}$ is a path between $A'$ and $R'$ in $G'-T_X-S'$, a contradiction.
+		
+		\item If $s \in A$ and $t \in N$, then
+		there exist vertices $v_s \in N_G(s) \cap C_1$ and $v_t \in N_G(t) \cap C_2$
+		such that $f_C(v_s)=f_X(s)$.
+		This implies $v_s^{(f_X(s))}s, v_t^{(f_X(t))}t \in E(G')$.
+		%
+		By construction, $v_s^{(f_X(s))}=v_s^{(f_C(v_s))} \in A'$ and $v_t^{(f_X(t))} \in N'$.
+		Hence, $v_s^{(f_X(s))} s P t v_t^{(f_X(t))}$ is a path between $A'$ and $N'$ in $G'-T_X-S'$, again a contradiction.
+		%
+	\end{enumerate}
+	Other cases are proven symmetrically.
+	
+	Conversely, let $S$ be an $\{A,R,N\}$-separator in $G[X_B]$, and
+	assume that $S$ is not a restricted $3$-way cut for $\{A',R',N'\}$ in $G' - T_X$.
+	Then, since terminals in $G'$ are independent,
+	there is a path $s^{(i)} P t^{(j)}$ in $G'-T_X-S$ such that
+	$s^{(i)}$ and $t^{(j)}$ belong to different sets in $\{A',R',N'\}$ and $P$ is a non-empty path in $G'[X_B]$.
+	Let $s'$ and $t'$ be the first and the last vertices in $P$ respectively ($s'$ and $t'$ can be the same vertex).
+	%
+	% Note that $s',t' \in X_B$.
+	We will show that $s'$ and $t'$ belong to different sets in $\{A,R,N\}$ in $G[X_B]$,
+	which leads to a contradiction.
+	% \bmp{I think there is a slight hole in this argument that needs patching. It may be that~$P$ contains vertices that do \emph{not} belong to~$G[X_B]$. In this case, having vertices~$s', t'$ belonging to different sets of~$G[X_B]$ does not lead to a contradiction because there is no corresponding path between those vertices in~$G[X_B] - S$ if~$P$ goes outside of~$X_B$. The latter happens when~$P$ contains \emph{more than two} terminals, which is possible in principle. But we can argue as follows: whenever you have a path in~$G'$ connecting two terminals belonging to different sets in the partition, either that path itself or some subpath of it connects two terminals belonging to different sets in the partition, while not containing any terminals in its interior. For paths with the latter property, you can indeed write them as~$sPt$ with~$P$ a path in~$G[X_B]$, for which the rest of the argument applies.}
+	\begin{enumerate}[(1)]
+		\item If $s^{(i)} \in A'$ and $t^{(j)} \in R'$, then $s, t \in C_1$
+		and $f_C(s)=i$, $f_C(t)=1-j$.
+		%
+		Also, knowing that $f_X(s')=i$, $f_X(t')=j$,
+		we have $s' \in A$ and $t' \in R$ in $G[X_B]$.
+		\item If $s^{(i)} \in A'$ and $t^{(j)} \in N'$, then $s \in C_1$,
+		$t \in C_2$, and $f_C(s)=i$.
+		%
+		Since $f_X(s')=i$, we have $s' \in A$.
+		From $t't^{(j)} \in E(G')$, we have $t' \in N$.
+	\end{enumerate}
+	Other cases are symmetrical to these.
+	
+	Now, suppose there exists a smallest $\{A,R,N\}$-separator of size at most $|X_C|$ in $G[X_B]$.
+	Then, there exists a restricted $3$-way cut of size at most $|X_C|$ for $\{A',R',N'\}$ in $G'-T_X$.
+	From \Cref{lem:covering:corollary},
+	we know that $B^\ast$ contains a minimum restricted $3$-way cut $Z$ of size at most $|X_C| \leq |T|$ for $\{A',R',N'\}$ in $G'-T_X$.
+	Finally, $Z$ is indeed an optimal solution to the $\{A,R,N\}$-separation problem.
+\end{proof}
+%
+Using this statement, we can prove \cref{lem:marked:tight:occ}.
+%
+\lemMarkedTightOcc*
+\begin{proof}
+	Suppose there exists a $z$-tight OCC $(A_B, A_C, A_R)$ in $G$. Let $f_X \colon X_B \rightarrow \{0,1\}$ and $f_A \colon A_B \rightarrow \{0,1\}$ be proper $2$-colorings of $G[X_B]$ and $G[A_B]$ respectively. To define $(A_B^\ast, A_C^\ast, A_R^\ast)$, we consider the separation problem imposed onto $G[X_B]$ by $(X_C \cap A_B, X_C \cap A_R, f_A, f_X)$ and let $A$, $R$ and $N$ be the three sets to be separated in this problem. 
+	
+	By \cref{lem:tight:occ:cut:optimal:ARN:separator}, $A_C \cap X_B$ is an $\{A, R, N\}$-separator in $G[X_B]$ and by \cref{lem:small:occ:intersection}, this intersection is at most as large as $X_C$. This satisfies the preconditions to \cref{lem:marked:separators:for:all:ARN}, from which we derive that $B^\ast$ contains some minimum-size $\{A, R, N\}$-separator $S$ in $G[X_B]$. We use this set $S$ to define $(A_B^\ast, A_C^\ast, A_R^\ast)$.
+	
+	First, let $A_C^\ast := (A_C \setminus X_B) \cup S$. To define $A_B^\ast$, let $U$ be the set of vertices from $X_B \setminus S$ that are not reachable from $N$ in $G[X_B - S]$. Now, we define $A_B^\ast := (A_B \setminus X_B) \cup U$. Finally, $A_R^\ast$ is simply defined as $V(G) \setminus (A_B^\ast \cup A_C^\ast)$. The remainder of the proof is used to show that the following five properties hold:
+	%
+	\begin{enumerate}[(i)]
+		\item \label{itm:marked:occ:1} $G[A_B^\ast]$ is bipartite.
+		\item \label{itm:marked:occ:2} There are no edges between $A_B^\ast$ and $A_R^\ast$.
+		\item \label{itm:marked:occ:3} $|A_C^\ast| = |A_C|$.
+		\item \label{itm:marked:occ:4} $(A_B^\ast, A_C^\ast, A_R^\ast)$ has a certificate of order $z$.
+		\item \label{itm:marked:occ:5} $A_C^\ast \cap X_B \subseteq B^\ast$.
+	\end{enumerate}
+	%
+	\bmpr{Clear proof setup, nice! I would personally do the simplest one (currently V) first, but that's a matter of taste.}The first two properties show that $(A_B^\ast, A_C^\ast, A_R^\ast)$ is an OCC. Together with properties \textbf{(\ref{itm:marked:occ:3})} and \textbf{(\ref{itm:marked:occ:4})}, they show that this decomposition is even a tight OCC whose order and width are equal to those of $(A_B, A_C, A_R)$. Finally, the lemma explicitly requires that $A_C^\ast \cap X_B \subseteq B^\ast$, which corresponds to property \textbf{(\ref{itm:marked:occ:5})}.
+	%
+	%
+	%
+	\proofsubparagraph{(\ref{itm:marked:occ:1}) To prove: $G[A_B^\ast]$ is bipartite.} Since $A_B^\ast$ is a subset of $A_B \cup (X_B \setminus S)$, by showing that $G[A_B \cup (X_B \setminus S)]$ is bipartite, we show that $G[A_B^\ast]$ is bipartite.
+	\begin{claim} \label{clm:ab:xb:bipartite}
+		$G[A_B \cup (X_B \setminus S)]$ is bipartite.
+	\end{claim}
+	\begin{claimproof}
+		Because $S$ is a $\{A, R, N\}$-separator in $G[X_B]$, it is in particular an $\{A, R\}$-separator in $G[X_B]$. Consider now the graph $G[(X_B \setminus S) \cup (X_C \cap A_B)]$, let $W_0 := f_A^{-1}(0)$ and $W_1 := f_A^{-1}(1)$ and let $c = f_X$. Then, it follows from \cref{lem:AR-separation} that $G[(X_B \setminus S) \cup (X_C \cap A_B)]$ admits a proper $2$-coloring $f_X^\ast \colon (X_B \setminus S) \cup (X_C \cap A_B) \rightarrow \{0,1\}$ with $f_X^\ast(v) = f_A(v)$ for every $v \in (X_C \cap A_B)$.
+		
+		As such, the graphs induced by $A_B \setminus X_B$ and and $(X_B \setminus S) \cup (X_C \cap A_B)$ are both bipartite as they admit proper $2$-colorings $f_A$ and $f_X^\ast$ respectively. These vertex sets intersect precisely in $X_C \cap A_B$, on which the two colorings agree and which separates the remaining vertices from the two sets. Hence, by \cref{lem:separated:colorings:make:bipartite}, the graph induced by the union of these sets, $G[A_B \cup (X_B \setminus S)]$, is bipartite.
+	\end{claimproof}
+	%
+	%
+	%
+	\proofsubparagraph{(\ref{itm:marked:occ:2}) To prove: there are no edges between $A_B^\ast$ and $A_R^\ast$.} We take an arbitrary vertex $v \in A_B^\ast$ and show that it has no neighbors in $A_R^\ast$. I.e.: all its neighbors live in $A_B^\ast \cup A_C^\ast$. To this end, we distinguish three cases.
+	\begin{itemize}
+		\item \textbf{Case 1:} Suppose $v \in A_B \cap X_R$. Because $A_C$ separates $A_B$ from $A_R$, vertex $v$ has no neighbors in $A_R$. Likewise, because $X_C$ separates $X_B$ from $X_R$, vertex $v$ has no neighbors in $X_B$. The neighborhood of $v$ is therefore contained in $V(G) \setminus (A_R \cup X_B)$. By construction, all these vertices are in $A_B^\ast \cup A_C^\ast$.
+		
+		\item \textbf{Case 2:} Suppose $v \in A_B \cap X_C$. Let $u$ be a neighbor of $v$. Since $A_C$ separates $A_B$ from $A_R$, vertex $u$ must be in $A_B \cup A_C$. We distinguish two subcases.
+		\begin{itemize}
+			\item \emph{Case 2a:} Suppose $u \in (A_B \cup A_C) \setminus X_B$. Then $v$ is in $A_B^\ast \cup A_C^\ast$ by construction.
+			\item \emph{Case 2b:} Suppose $u \in (A_B \cup A_C) \cap X_B$. Recall that $A$ and $R$ are defined in such a way that all neighbors of $A_B \cap X_C$ in $X_B$ end up in $A \cup R$. In particular, this means that $u \in A \cup R$. If $u \notin S$, then $u$ is not reachable from $N$ in $G[X_B] - S$, because $S$ is an $\{A \cup R, N\}$-separator in $G[X_B]$. In that case, $u$ is in $A_B^\ast$. Otherwise, if $u \in S$, then $u$ is in $A_C^\ast$.
+		\end{itemize}
+		
+		\item \textbf{Case 3:} Suppose $v \in X_B$. Let $u$ be a neighbor of $v$. Since $X_C$ separates $X_B$ from $X_R$, $u$ must be in $X_B \cup X_C$. We distinguish four subcases.
+		\begin{itemize}
+			\item \emph{Case 3a:} Suppose $u \in X_C \cap A_R$. Then, because $u$ and $v$ are neighbors, we find that $v \in N$ by definition of $N$. This contradicts the fact that $u \in A_B^\ast$, since $A_B^\ast \cap X_B$ only contains vertices that are not reachable from $N$ in $G[X_B] - S$. Hence, this case does not occur.
+			\item \emph{Case 3b:} Suppose $u \in X_C \setminus A_R$. Then by construction $u \in A_B^\ast \cup A_C^\ast$.
+			\item \emph{Case 3c:} Suppose $u \in S$. Then by construction $u \in A_C^\ast$.
+			\item \emph{Case 3d:} Suppose $u \in X_B \setminus S$. Then because $v$ is not reachable from $N$ in $G[X_B] - S$, neither are its neighbors that also live in $X_B \setminus S$. In particular, this means that $u$ is not reachable from $N$ in $G[X_B] - S$, so $u \in A_B^\ast$.
+		\end{itemize}
+	\end{itemize}
+	To see that the three cases above are exhaustive, recall that $A_B^\ast$ was defined as the union of $A_B \setminus X_B$ and $U$. The former is covered by $A_B \cap X_R$ and $A_B \cap X_C$ since ($A_B, A_C, A_R)$ is a partition of $V(G)$. The latter is defined as a subset of $X_B$.
+	%
+	%
+	%
+	\proofsubparagraph{(\ref{itm:marked:occ:3}) To prove: $|A_C^\ast| = |A_C|$.} We start by observing that $|S| = |A_C \cap X_B|$, since $S$ and $A_C \cap X_B$ are both minimum-size $\{A, R, N\}$-separators in $G[X_B]$ (respectively by assumption and by \cref{lem:tight:occ:cut:optimal:ARN:separator}). Since $A_C^\ast = (A_C \setminus X_B) \cup S$, it follows that $|A_C^\ast| = |A_C|$.
+	%
+	%
+	%    
+	\proofsubparagraph{(\ref{itm:marked:occ:4}) To prove: $(A_B^\ast, A_C^\ast, A_R^\ast)$ has a certificate of order $z$.} By definition, $(A_B, A_C, A_R)$ has a certificate of order $z$. Let $D$ be such a certificate and recall that $D$ is then a subgraph of $G[A_B \cup A_C]$ with components $D_1, \ldots, D_q$ that each have a minimum size OCT of size at most~$z$.
+	
+	We prove property \textbf{(\ref{itm:marked:occ:4})} to hold by showing that $D$ is also an order-$z$ certificate for $(A_B^\ast, A_C^\ast, A_R^\ast)$. For this, we need to show that: 
+	\begin{itemize}
+		\item $D$ is a subgraph of $G[A_B^\ast \cup A_C^\ast]$,
+		\item $A_C^\ast$ is a smallest OCT of $D$, and
+		\item for every $i \in [q]$, $D_i$ has an OCT of size at most $z$.
+	\end{itemize}
+	%
+	We continue by proving each of these properties separately.
+	\begin{claim}
+		$D$ is a subgraph of $G[A_B^\ast \cup A_C^\ast$].
+	\end{claim}
+	\begin{claimproof}
+		It suffices to show that $V(D) \subseteq A_B^\ast \cup A_C^\ast$, which we do by proving that $(A_B \cup A_C) \subseteq (A_B^\ast \cup A_C^\ast)$. For contradiction, suppose that there is some vertex $v \in A_B \cup A_C$ that is not in $A_B^\ast \cup A_C^\ast$. 
+		
+		Since $(A_B \cup A_C) \setminus X_B \subseteq (A_B^\ast \cup A_C^\ast)$ by construction, it follows that $v \in X_B$. Moreover, because $S \subseteq A_C^\ast$, we find that $v \in X_B \setminus S$. By construction of $A_B^\ast$, vertices in $X_B \setminus S$ are in $A_B^\ast$ if and only if they are not reachable from $N$ in $G[X_B] - S$. Since $v \notin A_B^\ast$ by assumption, there must be a path $P_v$ from $N$ to $v$ in $G[X_B] - S$.
+		
+		The remainder of the proof of this claim is used to show that the existence of $P_v$ implies the existence of a path from $N$ to $A \cup R$ in $G[X_B] - S$. This would contradict the fact that $S$ is an $\{A, R, N\}$-separator in $G[X_B]$. To this end, first note that $N$, which only contains neighbors of vertices in $A_R$, is a subset of $A_R \cup A_C$. As $P_v$ is a path from $N$ to $v \in A_B \cup A_C$, it contains at least one vertex from $A_C$: if none of its endpoints are in $A_C$ themselves, they lie in the sets $A_R$ and $A_B$ respectively, which are separated by $A_C$.
+		
+		Let $a$ be the first vertex from $A_C$ encountered when traversing $P$ from its endpoint in $N$ to $v$. Now, because $P_v$, which lives in $G[X_B] - S$, already contains a path from $N$ to $a$ as a subpath, it suffices to show that that there exists a path from $a$ to $A \cup R$ in $G[X_B] - S$.
+		
+		\bmpr{I commented out Menger's theorem and moved the sourcecode for it here since it was used only once in the paper, the entire research community knows it, and this proof will end up in the appendix anyway. We could resurrect the statement for the journal version, but the inline citation that I put in the text may suffice even in the journal.}
+		% 	
+		%\begin{theorem}[{\cite[Theorem 9.1]{Schrijver03}}] \label{thm:menger}
+		%Let $G$ be an undirected graph and let $S, T \subseteq V(G)$. The maximum number of vertex-disjoint $(S, T)$-paths is equal to the minimum size of an $\{S, T\}$-separator.
+		%\end{theorem}
+		
+		Recall that $A_C \cap X_B$ is a minimum-size $\{A, R\}$-separator in $G[X_B]$ by \cref{lem:tight:occ:cut:optimal:ARN:separator}. By Menger's theorem~\cite[Theorem 9.1]{Schrijver03}, the minimum size of an~$\{A,R\}$-separator in~$G[X_B]$ equals the maximum cardinality of a packing of pairwise vertex-disjoint~$\{A,R\}$ paths in~$G[X_B]$.  Therefore, there is a collection $\mathcal{P}$ of $|A_C \cap X_B|$ pairwise disjoint $(A, R)$-paths in $G[X_B]$. As such, every $\{A, R\}$-separator in $G[X_B]$ of minimum size consists of exactly one vertex from each path in $\mathcal{P}$. From this, it follows that every vertex in such a separator lies on a unique path in $\mathcal{P}$. Recall that the vertex $a$ lives in the minimum-size $\{A, R\}$-separator $A_C \cap X_B$, so let $P_a$ be the unique path from $\mathcal{P}$ that it lies on.
+		
+		Next, we recall that $|S| = |A_C \cap X_B|$, as observed while proving property \textbf{(\ref{itm:marked:occ:3})}. Because $S$ is an $\{A, R, N\}$-separator in $G[X_B]$, it is in particular an $\{A, R\}$-separator in $G[X_B]$. And because its size is equal to $A_C \cap X_B$, which is a minimum-size $\{A, R\}$-separator by \cref{clm:tight:occ:cut:optimal:AR:separtor}, we find that $S$ is a minimum-size $\{A, R\}$-separator as well. Therefore, it contains exactly one vertex from every path in $\mathcal{P}$ and in particular from $P_a$.
+		
+		However, we find that $a \notin S$ because $a$ was chosen as a vertex on the path $P_v$, which lives in $G[X_B] - S$. As $P_a$ is an $(A, R)$-path in $G[X_B]$ and $S$ contains only one vertex from it (which is not $a$) it follows that $P_a - S$ contains either an $(a, A)$-path or an $(a, R)$-path as subpath.
+		
+		By concatenating the $(N, a)$-subpath of $P_v$ with an $(a,A)$-subpath or $(a,R)$-subpath of $P_a - S$, we obtain an $(N, A \cup R)$-path in $G[X_B] - S$. This contradicts the fact that $S$ is an $\{A, R, N\}$-separator and concludes the proof.
+	\end{claimproof}
+	%
+	Next, we show that $A_C^\ast$ is a smallest OCT of the certificate $D$.
+	\begin{claim}
+		$A_C^\ast$ is a smallest OCT of $D$.
+	\end{claim}
+	\begin{claimproof}
+		Clearly, $A_C^\ast$ is an OCT of $D$: because $D - A_C^\ast$ is a subgraph of $A_B^\ast$, which is bipartite by property \textbf{(\ref{itm:marked:occ:1})}. Furthermore, we know that $A_C^\ast$ and $A_C$ are equally large by property \textbf{(\ref{itm:marked:occ:3})}. Because $A_C$ is a smallest OCT of $D$ by definition of $D$, we find that $A_C^\ast$ is also a smallest OCT of $D$.
+	\end{claimproof}
+	%
+	Finally, for every $i \in [q]$, we know that $D_i$ has an OCT of size at most $z$, by definition of $D$ being an order-$z$ certificate of $(A_B, A_C, A_R)$. 
+	As this was the third and final property required to show that $D$ is an order-$z$ certificate of $(A_B^\ast, A_C^\ast, A_R^\ast)$, this concludes the proof of property \textbf{(\ref{itm:marked:occ:4})}.
+	%
+	%
+	%
+	\proofsubparagraph{(\ref{itm:marked:occ:5}) To prove: $A_C^\ast \cap X_B \subseteq B^\ast$.} We know that $A_C^\ast \cap X_B = S$ by construction of $A_C^\ast$ and we  have $S \subseteq B^\ast$ by definition of $S$.
+\end{proof}

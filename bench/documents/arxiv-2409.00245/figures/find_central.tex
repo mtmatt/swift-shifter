@@ -1,0 +1,218 @@
+\begin{figure*}[t]
+  \centering
+    % taken from: https://tex.stackexchange.com/questions/100724/tikz-node-with-multiple-lines-around
+    \tikzset{
+        old inner xsep/.estore in=\oldinnerxsep,
+        old inner ysep/.estore in=\oldinnerysep,
+        double circle/.style 2 args={
+            circle,
+            old inner xsep=\pgfkeysvalueof{/pgf/inner xsep},
+            old inner ysep=\pgfkeysvalueof{/pgf/inner ysep},
+            /pgf/inner xsep=\oldinnerxsep+#1,
+            /pgf/inner ysep=\oldinnerysep+#1,
+            alias=sourcenode,
+            append after command={
+            let     \p1 = (sourcenode.center),
+                    \p2 = (sourcenode.east),
+                    \n1 = {\x2-\x1-#1-0.5*\pgflinewidth}
+            in
+                node [inner sep=0pt, draw, circle, minimum width=2*\n1,at=(\p1),#2] {}
+            }
+        },
+        double circle/.default={-3pt}{black}
+    }
+  \tikzstyle{large} = [circle, fill=white, text=black, draw, thick, scale=1, minimum size=0.8cm, inner sep=1.5pt]
+  \tikzstyle{plain} = [circle, fill=white, text=black, draw, thick, scale=1, minimum size=0.5cm, inner sep=1.5pt]
+  \tikzstyle{small} = [circle, fill=white, text=black, draw, thick, scale=1, minimum size=0.2cm, inner sep=1.5pt]
+  \tikzmath{\xunit = 1.3; \yunit = 0.8;}
+
+  \begin{minipage}[m]{.50\textwidth}
+      \vspace{0pt}
+      \centering
+      \begin{tikzpicture}
+          % vertices
+          \node[small] (r5) at (0.2 * \xunit, 2.8 * \yunit) {};
+          \node[small] (r6) at (0.2 * \xunit, 3.6 * \yunit) {};
+
+          \node[small] (v1) at (1 * \xunit, 1 * \yunit) {};
+          \node[small] (v2) at (1 * \xunit, 2 * \yunit) {};
+          \node[small] (v3) at (1 * \xunit, 3.25 * \yunit) {};
+          \node[small] (v4) at (1 * \xunit, 4.4 * \yunit) {};
+          \node[small] (v5) at (1 * \xunit, 5.2 * \yunit) {};
+          \node[small] (v6) at (1 * \xunit, 6 * \yunit) {};
+
+          \node[small] (b11) at (2 * \xunit, 1 * \yunit) {};
+          \node[small] (b12) at (2 * \xunit, 2 * \yunit) {\footnotesize $N$};
+          % \node[small] (b13) at (2 * \xunit, 3 * \yunit) {};
+          \node[large,double circle] (b14) at (2 * \xunit, 3.25 * \yunit) {\scriptsize $ARN$};
+          \node[small] (b15) at (2 * \xunit, 4.4 * \yunit) {\footnotesize $A$};
+          \node[small] (b16) at (2 * \xunit, 6 * \yunit) {\footnotesize $R$};
+          % \node[small] (b21) at (3 * \xunit, 1 * \yunit) {};
+          \node[small] (b22) at (3 * \xunit, 2 * \yunit) {\footnotesize $N$};
+          % \node[small] (b23) at (3 * \xunit, 3 * \yunit) {};
+          \node[small,double circle] (b24) at (3 * \xunit, 3.25 * \yunit) {};
+          \node[small] (b25) at (3 * \xunit, 4.4 * \yunit) {\footnotesize $R$};
+          \node[small] (b26) at (3 * \xunit, 6 * \yunit) {\footnotesize $A$};
+
+          % edges
+          \draw (r5)--(r6);
+          \draw (r5)--(v3);
+          \draw (r6)--(v3);
+
+          \draw (v1)--(v2);
+          \draw (v2)--(v3);
+          \draw (v3)--(v4);
+          \draw (v5)--(v6);
+          % \draw (v4)--(v6);
+
+          \draw (v6)--(b15);
+          \draw (v6)--(b14);
+          \draw (v6)--(b25);
+          \draw (v4)--(b16);
+          \draw (v4)--(b26);
+
+          \draw (v5)--(b14);
+
+          \draw (v3)--(b14);
+          \draw (v3)--(b15);
+          \draw (v3)--(b12);
+          \draw (v2)--(b12);
+          \draw (v2)--(b14);
+          \draw (v1)--(b12);
+          \draw (v1)--(b22);
+
+          \draw (b16)--(b25);
+          \draw (b15)--(b26);
+          \draw (b15)--(b24);
+          \draw (b14)--(b25);
+
+          \draw (b16)--(b24);
+          \draw (b12)--(b24);
+          \draw (b14)--(b22);
+          \draw (b11)--(b22);
+          \draw (b11)--(b24);
+
+          % borders
+          \draw[dotted] (-0.2 * \xunit, 0.5 * \yunit) -- (3.5 * \xunit, 0.5 * \yunit);
+          % \draw[dotted] (-0.2 * \xunit, 2.5 * \yunit) -- (3.5 * \xunit, 2.5 * \yunit);
+          % \draw[dotted] (-0.2 * \xunit, 4.0 * \yunit) -- (3.5 * \xunit, 4.0 * \yunit);
+          % \draw[dotted] (-0.2 * \xunit, 5.5 * \yunit) -- (3.5 * \xunit, 5.5 * \yunit);
+          \draw[dotted] (-0.2 * \xunit, 6.5 * \yunit) -- (3.5 * \xunit, 6.5 * \yunit);
+          \draw[dotted] (-0.2 * \xunit, 0.5 * \yunit) -- (-0.2 * \xunit, 6.5 * \yunit);
+          \draw[dotted] (0.5 * \xunit, 0.5 * \yunit) -- (0.5 * \xunit, 6.5 * \yunit);
+          \draw[dotted] (1.5 * \xunit, 0.5 * \yunit) -- (1.5 * \xunit, 6.5 * \yunit);
+          \draw[dotted] (2.5 * \xunit, 0.5 * \yunit) -- (2.5 * \xunit, 6.5 * \yunit);
+          \draw[dotted] (3.5 * \xunit, 0.5 * \yunit) -- (3.5 * \xunit, 6.5 * \yunit);
+
+          \draw[darkgray, rounded corners] (0.6 * \xunit, 0.7 * \yunit) rectangle (1.4 * \xunit, 2.3 * \yunit) {};
+          \draw[darkgray, rounded corners] (0.6 * \xunit, 5.7 * \yunit) rectangle (1.4 * \xunit, 6.3 * \yunit) {};
+          \draw[darkgray, rounded corners] (0.6 * \xunit, 4.1 * \yunit) rectangle (1.4 * \xunit, 5.5 * \yunit) {};
+
+          % annotation
+          \node[] at (0.3 * \xunit, 1.5 * \yunit) {$C_2$};
+          \node[] at (0.1 * \xunit, 4.9 * \yunit) {\footnotesize$f_C^{-1}(1)$};
+          \node[] at (0.1 * \xunit, 6 * \yunit) {\footnotesize$f_C^{-1}(0)$};
+
+          \draw [decorate,decoration={brace,amplitude=5pt}]
+          (-0.3 * \xunit, 4.0 * \yunit) -- (-0.3 * \xunit, 6.5 * \yunit) node[midway,xshift=-14pt]{$C_1$};
+
+          \node[] at (0.2, 7 * \yunit) {$X_R$};
+          \node[] at (1 * \xunit, 7 * \yunit) {$X_C$};
+          \node[] at (2 * \xunit, 7 * \yunit) {\footnotesize$f_B^{-1}(0)$};
+          \node[] at (3 * \xunit, 7 * \yunit) {\footnotesize$f_B^{-1}(1)$};
+
+          \draw [decorate,decoration={brace,amplitude=5pt}]
+          (1.5 * \xunit, 7.2 * \yunit) -- (3.5* \xunit, 7.2 * \yunit) node[midway,yshift=12pt]{$X_B$};
+          \node[] at (-0.5 * \xunit, 7.8 * \yunit) {$G$};
+      \end{tikzpicture}
+  \end{minipage}
+  \hfill
+%
+  \begin{minipage}[m]{.44\textwidth}
+    \vspace{0pt}
+    \centering
+    \begin{tikzpicture}
+          % vertices
+          \node[small] (v1) at (1 * \xunit, 1 * \yunit) {\footnotesize $N'$};
+          \node[small] (v2) at (1 * \xunit, 2 * \yunit) {\footnotesize $N'$};
+          \node[small,dashed] (v3) at (1 * \xunit, 3.25 * \yunit) {\footnotesize $T_X$};
+          \node[small] (v4) at (1 * \xunit, 4.2 * \yunit) {\footnotesize $R'$};
+          \node[small] (v5) at (1 * \xunit, 5.1 * \yunit) {\footnotesize $R'$};
+          \node[small] (v6) at (1 * \xunit, 6 * \yunit) {\footnotesize $A'$};
+
+          \node[small] (w1) at (4 * \xunit, 1 * \yunit) {\footnotesize $N'$};
+          \node[small] (w2) at (4 * \xunit, 2 * \yunit) {\footnotesize $N'$};
+          \node[small,dashed] (w3) at (4 * \xunit, 3.25 * \yunit) {\footnotesize $T_X$};
+          \node[small] (w4) at (4 * \xunit, 4.2 * \yunit) {\footnotesize $A'$};
+          \node[small] (w5) at (4 * \xunit, 5.1 * \yunit) {\footnotesize $A'$};
+          \node[small] (w6) at (4 * \xunit, 6 * \yunit) {\footnotesize $R'$};
+
+          \node[small] (b11) at (2 * \xunit, 1 * \yunit) {};
+          \node[small] (b12) at (2 * \xunit, 2 * \yunit) {};
+          % \node[small] (b13) at (2 * \xunit, 3 * \yunit) {};
+          \node[small,double circle] (b14) at (2 * \xunit, 3.25 * \yunit) {};
+          \node[small] (b15) at (2 * \xunit, 4.4 * \yunit) {};
+          \node[small] (b16) at (2 * \xunit, 6 * \yunit) {};
+          % \node[small] (b21) at (3 * \xunit, 1 * \yunit) {};
+          \node[small] (b22) at (3 * \xunit, 2 * \yunit) {};
+          % \node[small] (b23) at (3 * \xunit, 3 * \yunit) {};
+          \node[small,double circle] (b24) at (3 * \xunit, 3.25 * \yunit) {};
+          \node[small] (b25) at (3 * \xunit, 4.4 * \yunit) {};
+          \node[small] (b26) at (3 * \xunit, 6 * \yunit) {};
+
+          % edges
+          \draw (v6)--(b15);
+          \draw (v6)--(b14);
+          \draw (w6)--(b25);
+          \draw (v4)--(b16);
+          \draw (w4)--(b26);
+
+          \draw (v5)--(b14);
+
+          \draw[dashed] (v3)--(b14);
+          \draw[dashed] (v3)--(b12);
+          \draw[dashed] (v3)--(b15);
+          \draw (v2)--(b12);
+          \draw (v2)--(b14);
+          \draw (v1)--(b12);
+          \draw (w1)--(b22);
+
+          \draw (b16)--(b25);
+          \draw (b15)--(b26);
+          \draw (b15)--(b24);
+          \draw (b14)--(b25);
+
+          \draw (b16)--(b24);
+          \draw (b12)--(b24);
+          \draw (b14)--(b22);
+          \draw (b11)--(b22);
+          \draw (b11)--(b24);
+
+          \node[] at (1 * \xunit, 7 * \yunit) {$\{v^{(0)}\}$};
+          \node[] at (2 * \xunit, 7 * \yunit) {\footnotesize$f_B^{-1}(0)$};
+          \node[] at (3 * \xunit, 7 * \yunit) {\footnotesize$f_B^{-1}(1)$};
+          \node[] at (4 * \xunit, 7 * \yunit) {$\{v^{(1)}\}$};
+          \draw [decorate,decoration={brace,amplitude=5pt}]
+          (1.5 * \xunit, 7.2 * \yunit) -- (3.5* \xunit, 7.2 * \yunit) node[midway,yshift=12pt]{$X_B$};
+
+          \node[] at (0.7 * \xunit, 7.8 * \yunit) {$G'$};
+      \end{tikzpicture}
+  \end{minipage}%
+  \caption{%
+  An illustration of the auxiliary graph used in the proof of \Cref{lem:marked:separators:for:all:ARN}.
+  The left figure shows an example graph $G$ with the given
+  \occ $(X_B,X_C,X_R)$, disjoint sets $C_1, C_2 \subseteq X_C$, a proper $2$-coloring
+  $f_B:X_B \to \{0,1\}$, and another (not necessarily proper) $2$-coloring $f_C:C_1 \to \{0,1\}$.
+  %
+  Possibly overlapping terminals $A,R,N$ are determined as described in the proof.
+  %
+  The right shows the auxiliary graph $G'$ for $G$,
+  constructed from a copy of $G[X_B]$ with additional $2|X_C|$ vertices.
+  %
+  Terminals are partitioned into $(A',R',N',T_X)$, where
+  $T_X$ is deleted when we examine restricted $3$-way cuts.
+  %
+  For both figures, the minimum $3$-way separators (in $G[X_B]$ and $G'-T_X$ (restricted), resp.) are shaped in double circles.
+  }
+  \label{fig:find-central}
+\end{figure*}

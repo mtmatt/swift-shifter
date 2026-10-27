@@ -1,0 +1,122 @@
+\section{Reducing Odd Cycle Cuts} \label{sec:reduce:occ}
+
+Given an OCC $(X_B, X_C, X_R)$ of $G$ with $|X_B| > g_r(|X_C|)$,
+the next step is to ``shrink'' $X_B$ in a way that preserves some of the structure of the input graph. In this section, we give a reduction to do this and prove that it preserves the general structure of minimum-size OCTs and of tight OCCs in the graph. The reduction starts with a marking scheme that is discussed separately in \cref{ssec:shrinking:step:1}. We give the full reduction, which includes this marking scheme as a subroutine, in \cref{ssec:shrinking:step:2}. The reduction will only affect $G[X_B]$ and the edge set between $X_B$ and $X_C$, which already ensures that an important part of the input graph is maintained.
+
+
+\subsection{A marking scheme for the reduction} \label{ssec:shrinking:step:1}
+The goal of the marking scheme is to mark a set $B^\ast \subseteq X_B$ of size $|X_C|^{\Oh(1)}$ as ``interesting'' vertices that the reduction should not remove or modify. Intuitively, we want this set to contain vertices which we expect might be part of the cut part of a tight OCC in $G$. More precisely, we guarantee that for every tight OCC in $G$ there is a (possibly different) tight OCC $(A_B, A_C, A_R)$ such that $A_C \cap X_B$ is contained in the marked set $B^\ast$.
+
+As seen in \cref{lem:tight:occ:cut:optimal:ARN:separator}, for every tight OCC $(A_B, A_C, A_R)$ in the graph, the intersection $A_C \cap X_B$ forms an optimal solution to a specific imposed separation problem (\cref{def:imposed:separation:problem}). As such, it suffices if $B^\ast$ is a \emph{cut covering set} for these imposed separation problems.
+
+Indeed, the key ingredient of the algorithm presented below is the computation of such a cut covering set. Preceding this computation is a graph reduction ensuring that the computed set covers precisely the imposed separation problems. In \cref{lem:covering:corollary}, we will show that a cut covering set can be computed in deterministic FPT time parameterized by the size of the terminal set, which leads to a total running time of $2^{\Oh(|X_C|)} n^{\Oh(1)}$ time for the marking step. % \refmark. 
+
+\begin{marking} \label{algo:mark:B:star} 
+	Consider the following algorithm.
+
+	Input: A graph $G$ and an OCC $(X_B, X_C, X_R)$ of $G$. 
+	%\rfar{Does the algorithm also work when the input OCC is not required to have $|X_B| > g_r(|X_C|)$? If yes: we could consider dropping this requirement from the input (in which case, let me know so I can update this accordingly through the remainder of \cref{sec:reduce:occ}). If no: would it be simpler to call the input OCC 'reducible' as opposed to repeating the constraint $|X_B| > g_r(|X_C|)$?}
+
+	Output: Marked vertices $B^\ast \subseteq X_B$.
+%
+	\begin{enumerate}
+		\item \label{itm:mark:coloring} Find a proper 2-coloring $f_X \colon X_B \to \{0,1\}$ of $G[X_B]$.
+		\item \label{itm:mark:auxiliary} Construct an auxiliary (undirected) graph $G'$, initialized to a copy of $G[X_B]$. For each $v \in X_C$, do the following:
+		\begin{itemize}
+				\item Add vertices $v^{(0)}$ and $v^{(1)}$ to $G'$.
+				\item For each neighbor $u \in N_G(v) \cap X_B$, add an edge $v^{(f_X(u))}u$.
+		\end{itemize}
+		Let $T$ be the set $\{v^{(i)} \mid v \in X_C, i \in \{0,1\}\}$.
+		Note that $|T|=2|X_C|$.
+		%\item Using \Cref{lem:covering:corollary},
+		%find a set $B^\ast \subseteq X_B$ of size at most $c \cdot |T|^8 = c \cdot (2|X_C|)^8$
+		%such that for every generalized 3-partition $\mathcal{T}^*$ of $T$,\bmp{[We currently do not have the terminology of 'generalized 3-partition' in scope, nor the constants~$c$. To handle the latter, I suggest simply omitting the size bound from this statement (its analysis can come later). We should address the former, probably by giving an in-line definition of what it means to be a restricted multiway cut for a generalized partition (to be later expanded by the full system of definitions in the later sections).]}
+		%if there is a restricted multiway cut for $\mathcal{T}$ of size at most $|T|$ in $G'$,
+		%then the set $B^\ast$ contains a minimum restricted multiway cut of $\mathcal{T}$.
+		\item \label{itm:mark:cut:covering} Compute a cut covering set~$B^\ast \subseteq V(G')$ via \Cref{lem:covering:corollary} such that for every partition~$\mathcal{T}^* = (T_0, T_1, T_2, T_3, T_X)$ of~$T$, the set~$B^*$ contains a minimum-size solution to the following problem: 
+		\begin{itemize}
+			\item find a vertex set~$S \subseteq V(G') \setminus (T_1 \cup T_2 \cup T_3)$ such that~$S$ separates~$T_i$ and~$T_j$ in the graph~$G' - T_X$ for all~$1 \leq i < j \leq 3$, 
+		\end{itemize}
+		as long as this problem has a solution of size at most~$|T|$.
+	\end{enumerate}
+\end{marking}
+%
+%The lemma below formalizes the intuitive goal that we set out for $B^\ast$ to encompass.
+%
+\begin{restatable}{lemma}{lemMarkedTightOcc}[$(\bigstar)$] \label{lem:marked:tight:occ}
+	Let $B^\ast$ be constructed as in \refmark when given the graph $G$ and an OCC $(X_B, X_C, X_R)$ of $G$ as input. If there exists a $z$-tight OCC $(A_B, A_C, A_R)$ in $G$, then there exists a $z$-tight OCC $(A_B^\ast, A_C^\ast, A_R^\ast)$ in $G$ with $|A_C^\ast| = |A_C|$ and with $A_C^\ast \cap X_B \subseteq B^\ast$.
+\end{restatable}
+\begin{proof}[Proof sketch]
+	Let $f_X \colon X_B \rightarrow \{0,1\}$ be the $2$-coloring obtained in step~\ref{itm:mark:coloring} of \refmark, let $f_A \colon A_B \rightarrow \{0,1\}$ be a proper $2$-coloring of $G[A_B]$ and consider the separation problem imposed onto $G[X_B]$ by ${(X_C \cap A_B, X_C \cap A_R, f_A, f_B)}$. Let $A$, $R$ and $N$ be the three sets to be separated in this problem with their names corresponding to their roles as in \cref{def:imposed:separation:problem}.
+	
+	\rfar{This paragraph represents my most compact attempt at capturing the correspondence between separation problems in the original and reduced graph.}By putting the correct copy of each vertex from $A_B \cap X_C$ into $T_1$ and $T_2$ respectively, putting both copies of vertices from $A_R \cap X_C$ into $T_3$ and putting both copies of vertices from $A_C \cap X_C$ into $T_X$, we obtain a partition $(\emptyset, T_1, T_2, T_3, T_X)$ of the set $T$ defined in step~\ref{itm:mark:auxiliary}, such that the corresponding separation problem has the same solution space as the $\{A, R, N\}$-separation problem imposed onto $G[X_B]$. By construction of $B^\ast$ in step~\ref{itm:mark:cut:covering}, there is a set $S \subseteq B^\ast$ (possibly different from $A_C \cap X_B$) that is an optimal $\{A, R, N\}$-separator in $G[X_B]$. To construct the tight OCC $(A_B^\ast, A_C^\ast, A_R^\ast)$, we use this set $S$ as replacement for $A_C \cap X_B$, which is also a minimum-size $\{A, R, N\}$-separator in $G[X_B]$ by \cref{lem:tight:occ:cut:optimal:ARN:separator}.
+
+	As such, we define $A_C^\ast := (A_C \setminus X_B) \cup S$. To define $A_B^\ast$, let $U$ be the set of vertices from $X_B \setminus S$ that are not reachable from $N$ in $G[X_B] - S$. Now, we define $A_B^\ast := (A_B \setminus X_B) \cup U$. Finally, we define $A_R^\ast := V(G) \setminus (A_B^\ast \cup A_C^\ast)$. Clearly, this $3$-partition of $V(G)$ satisfies the constraints $|A_C^\ast| = |A_C|$ and $A_C^\ast \cap X_B \subseteq B^\ast$. We proceed by showing that it satisfies the three additional properties required to be a $z$-tight OCC.
+	
+	First, to see that $G[A_B^\ast]$ is bipartite, we note that $A_B^\ast$ only contains vertices from $A_B$ and $X_B \setminus S$. Both are vertex sets that induce a bipartite subgraph. Then, noting the correspondence between the sets $A$ and $R$ obtained from the separation problem and the sets $A$ and $R$ as in \cref{lem:AR-separation}, we invoke this lemma on $G[(X_C \cap A_B) \cup X_B]$ with $c = f_A$ and with $W_0$ and $W_1$ being the two color classes of this coloring restricted to $X_C \cap A_B$. It follows that the vertices from $A_B^\ast$ in $X_B \setminus S$ can be properly $2$-colored by a coloring $f$ that agrees with $f_A$ on the vertex set $X_C \cap A_B$ that separates $A_B^\ast \cap X_R$ and $A_B^\ast \cap X_B$. As these two vertex sets are properly colored by $f_A$ and $f$ respectively, these colorings combine to a proper $2$-coloring of the entire graph $G[A_B^\ast]$ (see \cref{lem:separated:colorings:make:bipartite}).
+	
+	Secondly, a case distinction shows that there are no edges between $A_B^\ast$ and $A_R^\ast$. It combines the fact that $A_C \cap X_B$ is an $\{A, R, N\}$-separator in $G[X_B]$ --- thereby in particular separating $A_B \cap X_B$ from $N$ in $G[X_B]$ --- and the fact that $A_B^\ast$ only contains vertices that already belonged to $A_B$ and vertices from $X_B$ that are not reachable from $N$ in $G[X_B] - A_C^\ast$.
+	
+	Finally, it remains to show that $(A_B^\ast, A_C^\ast, A_R^\ast)$ has an  $A_C^\ast$-certificate of order $z$. To prove this, we show that the order-$z$ certificate $D$ of the original OCC $(A_B, A_C, A_R)$ is also an order-$z$ certificate in $(A_B^\ast, A_C^\ast, A_R^\ast)$. The main effort here is to prove that $D$ even lives in $A_B^\ast \cup A_C^\ast$, after which it is easy to see that it is also an order-$z$ certificate for our new OCC.
+	
+ 	As \cref{lem:tight:occ:cut:optimal:ARN:separator} guarantees that $A_C \cap X_B$ is not only an optimal $\{A, R, N\}$-separator in $G[X_B]$ but even an optimal $\{A, R\}$-separator in this graph, it contains exactly one vertex from every path of a maximum packing $\mathcal{P}$ of pairwise vertex-disjoint $(A, R)$-paths in $G[X_B]$, due to Menger's theorem~\cite[Theorem~9.1]{Schrijver03}. Likewise, $A_C^\ast \cap X_B = S$ is also an optimal $\{A, R\}$-separator in $G[X_B]$ and hence also contains exactly one vertex from every path of $\mathcal{P}$.
+ 	
+ 	Intuitively, for any path $P \in \mathcal{P}$, a vertex on this path that stops being reachable from one endpoint of $P$ when sliding the picked vertex along the path, starts becoming reachable from the other endpoint of $P$. As both endpoints of $P$ belong to $A \cup R$ and $S$ only differs from $A_C \cap X_B$ by which vertex is picked from each path in $\mathcal{P}$, it cannot drastically alter which vertices are reachable from $A \cup R$, which in turn are all vertices that end up in $A_B^\ast$.
+ 	
+ 	Using the observation that~$A_B$ and~$A_B^\ast$ are separated from~$N$ by~$A_C$ and~$A_C^\ast$ respectively, we see that all vertices that \emph{are} disconnected from $A \cup R$ by substituting $A_C \cap X_B$ for $S$ are in particular also disconnected from $N$. Thereby, these vertices end up in $A_B^\ast$. This shows that $(A_B \cup A_C) \subseteq (A_B^\ast \cup A_C^\ast)$, which implies that the certificate $D$ also lives in the latter. 
+\end{proof}
+
+\subsection{Simplifying the graph} \label{ssec:shrinking:step:2}
+Our eventual reduction starts with the Marking step from the previous section, after which the graph is modified in a way that leaves marked vertices untouched. We want the reduction to preserve the general structure of optimal OCTs and tight OCCs in the input graph. As this is governed by the locations and interactions of odd cycles in the graph, we encode this information in a more space-efficient manner using the following reduction.
+
+\begin{reduction} \label{algo:shrink}
+	Given a graph $G$ and an OCC $(X_B, X_C, X_R)$ of it, we construct a graph $G'$ as follows.
+	\begin{enumerate}
+		\item \label{itm:shrink:mark:b:star} Use \refmark with input $G$ and $(X_B, X_C, X_R)$ to obtain the set $B^\ast \subseteq X_B$.
+		\item Initialize $G'$ as a copy of $G - (X_B \setminus B^\ast)$.
+		\item \label{itm:shrink:loop} For every $u, v \in X_C \cup B^\ast$ and for every parity $p \in \{\text{even}, \text{odd}\}$, check if the subgraph $G[X_B \setminus B^\ast]$ contains the internal vertex of a $(u,v)$-path with parity $p$. If so, then:
+		\begin{itemize}
+			\item if $p = \text{even}$, add two new vertices $x$ and $x'$ to $G$ and connect both of them to $u$ and $v$.
+			\item if $p = \text{odd}$, add four new vertices $x$, $y$, $x'$ and $y'$ to $G$ and add the edges $\{u, x\}$, $\{x, y\}$, $\{y, v\}$, $\{u, x'\}$, $\{x', y'\}$ and $\{y', v\}$.
+		\end{itemize}
+		Note that we explicitly allow $u = v$ in this step. 
+	\end{enumerate}
+\end{reduction}
+%
+Effectively, this reduction deletes the vertices~$X_B \setminus B^\ast$ from the graph. For each pair of neighbors~$u,v$ from that set, if the deleted vertices provided an odd (resp.~even) path between them, then we insert two vertex-disjoint odd (resp.~even) paths between~$u$ and~$v$. Hence we shrink the graph while preserving the parity of paths provided by the removed vertices.
+
+As we will prove in \cref{lem:shrink:running:time} and \cref{lem:shrink:size} respectively, the reduction can be performed in $2^{\Oh(|X_C|)} \cdot n^{\Oh(1)}$ time and it is guaranteed to output a strictly smaller graph than its input graph whenever it receives an OCC that is reducible with respect to the function $g_r$ as in \cref{sec:find:occs}. To show that the reduction also preserves OCT and OCC structures, we prove that it satisfies two safety properties formalized below in \cref{lem:forward:safety,lem:backward:safety}.
+
+\begin{restatable}{lemma}{lemForwardSafety}[$(\bigstar)$] \label{lem:forward:safety}
+	Let $G$ be a graph, let $(X_B, X_C, X_R)$ be an OCC in $G$ and let $G'$ be the graph obtained by running \refreduction with these input parameters. For all $z \geq 0$, if there exists a $z$-tight OCC $(A_B, A_C, A_R)$ in $G$, then there exists a $z$-tight OCC $(A_B', A_C', A_R')$ in $G'$ with $|A_C'| = |A_C|$.
+\end{restatable}
+
+The proof of the lemma above uses \cref{lem:marked:tight:occ} to infer that, for any $z$-tight OCC $(A_B, A_C, A_R)$ of $G$, the graph~$G$ also contains a $z$-tight OCC $(A_B^\ast, A_C^\ast, A_R^\ast)$ of the same width such that $A_C^\ast \subseteq V(G) \cap V(G')$. This allows for the construction of an OCC $(A_B', A_C', A_R')$ in $G'$ with $A_C' = A_C^\ast$. Then, $A_B'$ can be defined as the union of $A_B^\ast \cap V(G) \cap V(G')$ and the set of vertices that were added during the reduction to provide a replacement connection between any two vertices from $A_C^\ast \cup (A_B^\ast \cap V(G) \cap V(G'))$. Finally, $A_R' := V(G') \setminus (A_B' \cup A_C')$.
+
+The proof proceeds to show that the resulting partition $(A_B', A_C', A_R')$ is a $z$-tight OCC of $G'$. The two main insights used to prove this are the facts that: 
+\begin{itemize}
+	\item optimal OCTs of $G'$ are disjoint from the set of newly added vertices $V(G') \setminus V(G)$, and
+	\item odd cycles in $G$ can be translated to very similar odd cycles in $G'$ and vice versa.
+\end{itemize}
+These insights are also covered in the proof sketch of the second safety property below.
+
+\begin{restatable}{lemma}{lemBackwardSafety}[$(\bigstar)$]
+\label{lem:backward:safety}
+	Let $G$ be a graph, let $(X_B, X_C, X_R)$ be an OCC in $G$ and let $G'$ be the graph obtained by running \refreduction with these input parameters. If $S'$ is a minimum-size OCT of $G'$, then $S' \subseteq V(G) \cap V(G')$ and $S'$ is a minimum-size OCT of $G$.
+\end{restatable}
+\begin{proof}[Proof sketch]
+	To see that $S' \subseteq V(G) \cap V(G')$, we show that $S'$ contains none of the newly added vertices in $V(G') \setminus V(G)$. These newly added vertices come in pairs that form degree-$2$ paths connecting the same endpoints. Consider two such paths and let $u$ and $v$ be the endpoints of both of them. Suppose for contradiction that $S'$ uses an internal vertex $p_1$ from one path to break an odd cycle $F$. Then it must also contain an internal vertex $p_2$ from the other path to break the odd cycle obtained by swapping one path for the other in $F$. As both these cycles also pass through $u$ and $v$ by construction, substituting $p_1$ and $p_2$ for one of $u$ and $v$ in $S'$ yields a strictly smaller solution. This contradicts the optimality of $S'$.
+	
+	To see that $S'$ is an OCT of $G$, suppose for contradiction that $G - S'$ contains an odd cycle $F$. Every subpath of $F$ that connects two vertices from $V(G) \cap V(G')$ via a path whose internal vertices lie in $G - V(G')$ can be replaced by one of the paths inserted during the construction of~$G'$, with the same endpoints and parity. Substituting every subpath of $F$ that is absent in $G'$ for such a replacement path yields a closed odd walk in $G' - S'$; but this contradicts the fact that $S'$ is an OCT of~$G'$. Hence~$S' \subseteq V(G) \cap V(G')$ is an OCT in~$G$.
+	
+	It remains to show that $S'$ is an OCT of minimum size. Suppose for contradiction that $T$ is a strictly smaller OCT of $G$. We start by showing how to modify $T$ into an OCT $S$ of $G$ that is at most as large and lives in $V(G) \cap V(G')$. 
+%	
+	To this end, let $f \colon V(G) \setminus T \rightarrow \{0,1\}$ and $f_X \colon X_B \rightarrow \{0,1\}$ be proper $2$-colorings of $G - T$ and $G[X_B]$ respectively and consider the separation problem imposed onto $G[X_B]$ by $(X_C \setminus T, \emptyset, f, f_B)$. Let $A$, $R$, $N$ be the three sets to be separated in this problem with their names corresponding to their roles as in \cref{def:imposed:separation:problem}. Since the second argument~$C_2$ in the 4-tuple is~$\emptyset$, we obtain~$N = \emptyset$.
+	
+	The fact that~$N = \emptyset$ ensures that the separation problem above is merely a $2$-way separation problem between the sets $A$ and $R$ in~$G[X_B]$. These sets are defined in such a way that, for a suitable choice of input parameters to \cref{lem:AR-separation}, they coincide with the sets $A$ and $R$ in this lemma. Applying the lemma in one direction to $G[(X_C \setminus T) \cup X_B]$ with $c = f$ and with $W_0$ and $W_1$ being the two color classes of this coloring restricted to $X_C \setminus T$, yields that $T \cap X_B$ is an $\{A, R\}$-separator in $G[X_B]$. 
+	%
+	Applying it in the other direction yields that the removal of \emph{any} $\{A, R\}$-separator $T'$ from $G$ allows for a proper $2$-coloring $f'$ of $G[(X_C \setminus T) \cup (X_B \setminus T')]$ that agrees with the coloring $f$ on the vertex set $X_C \setminus T$. As this set separates the subgraphs $G[X_R \setminus T]$ and $G[X_B \setminus T']$ in $G - ((T \setminus X_B) \cup T')$ and these subgraphs are properly $2$-colored by $f$ and $f'$ respectively, those two colorings combine to properly $2$-color $G - ((T \setminus X_B) \cup T')$ (see \cref{lem:separated:colorings:make:bipartite}). By construction of $B^\ast$, there is a minimum-size $\{A, R\}$-separator $T^\ast$ in $G[X_B]$ with~$T^\ast \subseteq B^\ast$. Hence, $S := (T \setminus X_B) \cup T^\ast$ is an OCT of $G$ that lives in $V(G) \cap V(G')$. Furthermore, since $T^\ast$ is a minimum-size $\{A, R\}$-separator in $G[X_B]$ and it replaces $T \cap X_B$, which is also an $\{A, R\}$-separator, we find that $|S| \leq |T| < |S'|$.
+	
+	Since $S'$ was assumed to be a minimum-size OCT of $G'$, the smaller set $S$ is not an OCT of $G'$. Therefore, $G' - S$ contains an odd cycle $F'$. The argument used before to convert an odd cycle in $G$ to one in $G'$ can also be used in the reverse direction to construct an odd cycle $F$ in $G - S$ from $F'$. The existence of this cycle contradicts the assumption that $S$ is an OCT of $G$, which concludes the proof by showing that $S'$ is a minimum-size OCT of $G$.
+\end{proof}
+

@@ -1,0 +1,183 @@
+\section{Symmetries of the graviton theory}
+\label{sec:graviton_symmetries}
+
+\subsection{Linearised gravity}
+
+We study the graviton theory on Minkowski space $\mathcal{M} = \mathbb{R}^{1,d-1}$ (possibly with some points/ regions removed) and assume fall-off conditions sufficient for total derivative terms to be ignored. The Fierz-Pauli action can be written\footnote{The original Fierz-Pauli theory \cite{Fierz:1939ix} also contained a mass term for $h$ which we are setting to zero here.}
+\begin{equation}\label{eq:S_FP}
+    S_{\text{FP}} = \frac{1}{2} \int_{\mathcal{M}} \dd[d]{x} h_{\mu\nu} G(h)^{\mu\nu} 
+\end{equation}
+where
+\begin{equation}\label{eq:G(h)}
+    G(h)\indices{^\mu_\nu} = -3 \delta^{\mu\rho\alpha}_{\nu\sigma\beta} \partial_\rho \partial^\sigma h\indices{_\alpha^\beta} 
+\end{equation}
+is the linearised Einstein tensor, with $\delta^{\mu\rho\alpha}_{\nu\sigma\beta} = \delta^{[\mu}_{\nu} \delta^\rho_\sigma \delta^{\alpha]}_\beta$. 
+The gauge symmetries of the graviton are linearised diffeomorphisms, acting as
+\begin{equation}\label{eq:linear_diffeo}
+    h_{\mu\nu} \to h_{\mu\nu} + 2\partial_{(\mu} \xi_{\nu)}
+\end{equation}
+under which \eqref{eq:S_FP} is invariant. The invariant curvature is the (linearised) Riemann tensor
+\begin{equation}\label{eq:riemann}
+    R(h)_{\mu\nu\rho\sigma} = \partial_\rho \Gamma(h)_{\mu\nu|\sigma} - \partial_\sigma \Gamma(h)_{\mu\nu|\rho}
+\end{equation}
+where   $\Gamma(h)$ is given by
+\begin{equation}\label{eq:Gamma}
+    \Gamma(h)_{\mu\nu|\rho} = \partial_{[\mu} h_{\nu]\rho}
+\end{equation}
+Alternatively, we can view $h$ as an irreducible $[1,1]$ bi-form and the above relations can be written as $\Gamma(h) = \dd_L h$ and $R(h) = -2\dd_L \dd_R h$.\footnote{Note that $R(h)$ is irreducible, i.e. $R(h)_{[\mu\nu\rho]\sigma}=0$, without the use of a Young projector.}
+Varying the graviton in the   action leads to the equation of motion
+\begin{equation}
+    G(h)_{\mu\nu} = 0
+\end{equation}
+
+\subsection{Shift symmetries of the graviton}
+\label{sec:graviton_shifts}
+
+We now consider a shift of the graviton
+\begin{equation}\label{eq:graviton_shift}
+    \delta h_{\mu\nu} = \alpha_{\mu\nu}
+\end{equation}
+where $\alpha$ is a symmetric rank-2 tensor (equivalently, a [1,1] bi-form). Such transformations were considered in \cite{Hinterbichler2023GravitySymmetries}, where they were referred to as [1,1] bi-form symmetries. 
+The resulting variation of the action can be written as
+\begin{equation}\label{eq:FP_variation}
+    \delta S_{\text{FP}} = \int_{\mathcal{M}} \dd[d]{x} h_{\mu\nu} G(\alpha)^{\mu\nu}
+\end{equation}
+which vanishes provided that $\alpha$ satisfies 
+\begin{equation}\label{eq:G(alpha)=0}
+    G(\alpha)_{\mu\nu} = 0
+\end{equation}
+For such restricted parameters $\alpha$ the transformation \eqref{eq:graviton_shift} can then be regarded as  a global symmetry of the theory. This is analogous to the constraint that $\dd\lambda=0$ in order for $A\to A+\lambda$ to be a global symmetry of Maxwell theory. 
+Note that this condition is weaker than the condition for the curvature to be invariant $R(\alpha) =  0$ where
+$R(\alpha) = -2 \dd_L \dd_R \alpha $.\footnote{If the  graviton theory arises as an effective theory, we should allow also for higher-derivative terms which are constructed from the curvature $R(h)$. In such cases, the shift symmetry  persists provided that $\alpha$ satisfies the stronger constraint $R(\alpha)  = 0$ \cite{Hinterbichler2023GravitySymmetries}.}
+
+For an unconstrained parameter $\alpha$, the variation of the action \eqref{eq:FP_variation} can be written
+\begin{equation}\label{eq:dS_FP}
+    \delta S_{\text{FP}} = \int_{\mathcal{M}} \dd[d]{x} \partial_\mu \partial_\nu \alpha_{\alpha\beta} K(h)^{\nu\beta|\mu\alpha}
+\end{equation}
+where $K(h)$ is an irreducible $[2,2]$ bi-form defined by
+\begin{equation}
+    K(h)\indices{_{\mu\nu|}^{\rho\sigma}} = -3 \delta_{\mu\nu\alpha}^{\rho\sigma\beta} h\indices{^\alpha_\beta}
+\end{equation}
+It follows from \eqref{eq:dS_FP} 
+that $\dd_L^\dag \dd_R^\dag K(h)=0$ on-shell. Indeed, we find
+\begin{equation}\label{eq:dLdRK=0}
+    \dd_L^\dag \dd_R^\dag K(h) = G(h) \doteq 0
+\end{equation}
+where $\doteq$ is an on-shell equality. This can be viewed as a 2-derivative extension of the standard Noether arguments.
+
+From $K$ we can construct a conserved [2,1] bi-form current $J(h)_{\mu\nu|\rho}$ given by\footnote{There is a similar conserved current defined  by $\dd_L^\dag K(h)$. Since $K$ is irreducible, this is equal to $\dd_R^\dag K$ with the two antisymmetric sets of  indices interchanged.}
+\begin{equation}\label{eq:J}
+    J(h) = \dd_R^\dag K(h)
+\end{equation}
+whose components are given by
+\begin{equation}\label{JGam}
+    J(h)\indices{_{\mu\nu|}^\rho} = 3 \delta_{\mu\nu\alpha}^{\rho\sigma\beta} \Gamma(h)\indices{_{\sigma\beta|}^\alpha}
+\end{equation}
+It  follows from \eqref{eq:dLdRK=0} and \eqref{eq:J} that $J(h)$ is left-conserved (i.e. conserved on the first set of indices) on-shell,
+\begin{equation}\label{eq:J(h)_conservations}
+    \dd_L^\dag J(h) \doteq 0
+\end{equation}
+and right-conserved off-shell,
+\begin{equation}\label{eq:J_right_conserved}
+    \dd_R^\dag J(h) = 0
+\end{equation}
+This conserved current can be viewed as a Noether-like current
+associated with the continuous global symmetry \eqref{eq:graviton_shift}.\footnote{The conservation of $J(h)$ is preserved by the addition of a term of the form $\dd^\dag_L \dd^\dag_R H$, where $H$ is an arbitrary [3,2] bi-form.
+In \cite{Hull:2024xgo, Hull:2024mfb}, the freedom to add a co-exact piece was used to relate certain non-gauge-invariant 2-form currents to gauge-invariant ones.
+For the current $J(h)\indices{_{\mu\nu|}^\rho}$, there is no choice of $H$ which will make the current gauge-invariant, so we set $H=0$.} 
+This current is not gauge-invariant and transforms by
+\begin{equation}
+    \delta J(h)\indices{_{\mu\nu|}^\rho} = 3 \delta_{\mu\nu\alpha}^{\rho\beta\gamma} \partial^\alpha \partial_\beta \xi_\gamma
+\end{equation}
+under a linearised diffeomorphism \eqref{eq:linear_diffeo}.
+
+The shift symmetry \eqref{eq:graviton_shift} is the gravitational analogue of the electric 1-form symmetry in Maxwell theory which shifts the photon. We will see in section~\ref{sec:dual_symmetries} that there is a dual symmetry which can be related to a shift of the dual graviton, analogous to the magnetic $(d-3)$-form symmetry of Maxwell theory.
+
+Shifts for which $\alpha_{\mu\nu} = 2 \partial_{(\mu}\xi_{\nu)}$ are gauge transformations \eqref{eq:linear_diffeo}, so the non-trivial transformations are given by equivalence classes of $\alpha$ satisfying $G(\alpha)=0$ modulo those  of the form $\alpha_{\mu\nu} = 2 \partial_{(\mu}\xi_{\nu)}$ for some $\xi_\nu$.
+
+In \cite{Hinterbichler2023GravitySymmetries}, the particular shift 
+\begin{equation}\label{eq:alpha=divLambda}
+    \alpha_{\mu\nu} = \partial^\rho \Lambda_{\rho\mu|\nu}
+\end{equation}
+was considered.
+This has the property that, when $\Lambda$ is viewed as the transformation parameter, the associated $[2,2]$ Noether current can be taken as the linearised Riemann tensor.
+While this has the benefit of producing a gauge-invariant Noether current, it is not the most general shift symmetry of the graviton. Namely, an $\alpha$ of the form \eqref{eq:alpha=divLambda} necessarily satisfies $\partial^\mu \alpha_{\mu\nu}=0$, whereas the most general global shift symmetry of the graviton theory is one where $\alpha$ only satisfies the weaker constraint $G(\alpha)_{\mu\nu}=0$.
+
+Since this particular shift with parameter of the form \eqref{eq:alpha=divLambda} is a special case of the more general one \eqref{eq:graviton_shift} that we consider here, the on-shell conservation of the $[2,2]$ Noether current $R$ should follow from that of $J(h)$. 
+Indeed, we note that the connection $\Gamma$ can be written in terms of $J$ as
+\begin{equation}
+    \Gamma(h)\indices{_{\mu\nu|}^\rho} = J(h)\indices{_{\mu\nu|}^\rho} - \frac{2}{d-2} \delta^{\rho}_{[\mu} J(h)\indices{_{\nu]\alpha|}^\alpha}
+\end{equation}
+and acting on this equation with $\dd_R$ gives
+\begin{equation}\label{eq:X_def}
+    \frac{1}{2} R(h)\indices{_{\mu\nu}^{\rho\sigma}} = \partial^{[\rho} J(h)\indices{_{\mu\nu|}^{\sigma]}} - \frac{2}{d-2} \partial^{[\rho}\delta^{\sigma]}_{[\mu} J(h)\indices{_{\nu]\alpha|}^\alpha}
+\end{equation}
+The on-shell left-conservation of $R$ then follows from that of $J$.
+
+A conserved $p$-form current can be integrated over a p-cycle to give a topological operator, but a conserved bi-form current cannot be directly integrated. However, a bi-form current can be contracted with a suitable tensor to give a conserved $p$-form current which can then be integrated to give a topological operator. We now give examples of such topological operators generating 0-form and 1-form symmetries for linearised gravity and will discuss further examples in a forthcoming work.
+
+Note that while $J(h)$ is not gauge-invariant -- and so is not a well-defined local operator in the gauge theory -- the topological operators which can be constructed in this way can be gauge-invariant and well-defined.
+
+For a given $\alpha$, there is a codimension-1 topological operator which generates the 0-form symmetry under which the graviton field transforms as \eqref{eq:graviton_shift}.
+This can be constructed in the same way as the charge generating the photon shift \cite{Hullprep}.
+Let us choose a particular $\alpha$ satisfying \eqref{eq:G(alpha)=0} and consider the shift
+\begin{equation}\label{eq:0-form-shift}
+    h_{\mu\nu} \to h_{\mu\nu} + \epsilon \alpha_{\mu\nu}
+\end{equation}
+where $\epsilon$ is a constant 0-form parameter. 
+Using standard arguments, we find the Noether current by considering a transformation with non-constant parameter $\epsilon$, under which the variation of the action is
+\begin{equation}
+    \delta S_{\text{FP}} = \int_{\mathcal{M}} \dd[d]{x} \epsilon \partial_\mu j(\alpha)^\mu
+\end{equation}
+where
+\begin{equation}\label{eq:j(alpha)}
+    j(\alpha)_\alpha = -3 \delta^{\nu\gamma\delta}_{\mu\alpha\beta} \left( \alpha\indices{^\mu_\nu} \partial_\gamma h\indices{^\beta_\delta} - \partial_\gamma \alpha\indices{^\mu_\nu} h\indices{^\beta_\delta} \right)
+\end{equation}
+Then $j(\alpha)$ is the 1-form Noether current associated with the shift by this particular $\alpha$. In the simpler case when $\alpha$ satisfies the stronger constraint $\dd_L\alpha=0$ (which implies that $G(\alpha)=0$), this reduces to $j(\alpha)_\mu = J_{\mu\nu|\rho} \alpha^{\nu\rho}$. Indeed, it is straightforward to verify that $\partial^\mu j(\alpha)_\mu \doteq 0$ on-shell.
+
+The codimension-1 topological operator which generates this shift is then
+\begin{equation}\label{eq:Q(alpha)}
+    Q(\alpha) = \int_{\Sigma_{d-1}} \star j(\alpha)
+\end{equation}
+for some codimension-1 surface $\Sigma_{d-1}$ which we either take to be closed, or assume that the fields satisfy suitable boundary conditions so that we can neglect surface terms.
+If $\alpha$ is taken to be of the form 
+\begin{equation}\label{eq:alpha=dxi}
+    \alpha_{\mu\nu} = 2\partial_{(\mu} \xi_{\nu)}
+\end{equation}
+then the current can be written
+\begin{equation}
+    j(\alpha)_\alpha = 3\partial^\mu \left( \delta_{\mu\alpha\beta}^{\nu\gamma\delta} (-2 \xi_\nu \partial_\gamma h\indices{^\beta_\delta} + \partial_\gamma \xi_\nu h\indices{^\beta_\delta}) \right) + 2 G(h)_{\alpha\beta} \xi^\beta
+\end{equation}
+which is co-exact on-shell. Therefore, the charges $Q(\alpha)$ associated with such $\alpha$ vanish on-shell. The distinct charges are labelled by tensors $\alpha$ satisfying \eqref{eq:G(alpha)=0} modulo those of the form \eqref{eq:alpha=dxi}.
+
+We demonstrate in Appendix~\ref{app:quantisation} in a canonical quantisation framework that the operator $Q(\alpha)$ satisfies
+\begin{equation}
+    \comm{h_{ij}(\vec{x})}{Q(\alpha)} = i\alpha_{ij}(\vec{x})
+\end{equation}
+where $i,j$ denote spatial components and we introduced the equal time commutator.\footnote{In the quantum theory, $h_{00}$ and $h_{0i}$ enter only as Lagrange multipliers and so are not physical fields (see Appendix~\ref{app:quantisation}).}
+Here $\Sigma_{d-1}$ is chosen as a region within a constant time hypersurface and we assume that $\vec{x} \equiv (x^1,\dots,x^{d-1}) \in \Sigma_{d-1}$, otherwise the commutator vanishes. Then the finite transformation \eqref{eq:0-form-shift} is given by the action of $e^{i\epsilon Q(\alpha)}$. For constant $\alpha$, the charge can be written in terms of a symmetric tensor charge $Z^{\mu\nu}$ with $Q(\alpha)=\frac{1}{2} \alpha_{\mu\nu}Z^{\mu\nu}$.
+
+Under a linearised diffeomorphism \eqref{eq:linear_diffeo}, $j(\alpha)$ transforms by a total derivative
+\begin{equation}
+    j(\alpha)_\alpha \to j(\alpha)_\alpha + \partial^\beta \left( 3 \delta^{\nu\gamma\delta}_{\mu\alpha\beta} ( -\alpha\indices{^\mu_\nu} \partial_\gamma \xi_\delta + 2 \partial_\gamma \alpha\indices{^\mu_\nu} \xi_\delta) \right)
+\end{equation}
+where we have used \eqref{eq:G(alpha)=0}.
+This guarantees that the integrated operator \eqref{eq:Q(alpha)} is a well-defined operator in the quantum theory.
+
+While higher-form symmetries are necessarily abelian \cite{Gaiotto2015GeneralizedSymmetries}, the introduction of the 2-tensor $\alpha$ in the construction implies that $Q(\alpha)$ generates a 0-form symmetry. Therefore, its charge algebra can in principle encode a richer structure. This has been seen for $p$-form gauge fields in \cite{Hofman:2018lfz}, where the analogous 0-form symmetry charges obey a centrally-extended algebra reminiscent of Kac-Moody algebras familiar in two dimensions. The representation theory of these algebras was studied recently in \cite{Hofman:2024oze} in the construction of the Hilbert space of four-dimensional Maxwell theory on an arbitrary spatial topology. 
+This structure is also present for the charges $Q(\alpha)$ which, as shown in Appendix~\ref{app:quantisation}, satisfy a centrally-extended algebra
+\begin{equation}\label{eq:central_ext}
+    \comm{Q(\alpha)}{Q(\alpha')} = i\int_\Sigma \star \chi(\alpha,\alpha')
+\end{equation}
+where $\chi(\alpha,\alpha')$ is a 1-form with components
+\begin{equation}\label{eq:zeta_def}
+    \chi(\alpha,\alpha')_\mu = 3\alpha\indices{_{[\mu}^\rho} (\dd_L\alpha')\indices{_{\rho\sigma]|}^\sigma} - (\alpha\leftrightarrow\alpha')
+\end{equation}
+In the simpler case where $\dd_L \alpha = \dd_L \alpha' =0$, the central extension vanishes and the $Q(\alpha)$ are abelian.
+
+
+We can also define codimension-2 topological operators by contracting $J(h)$ with a constant vector $N^\mu$, to give a conserved 2-form current $j(N)_{\mu\nu} = J_{\mu\nu|\rho}N^\rho$. The associated charge
+\begin{equation}\label{eq:Q(N)}
+    Q(N) = \int_{\Sigma_{d-2}} \star j(N)
+\end{equation}
+with $\Sigma_{d-2}$ a $(d-2)$-cycle gives a topological operator generating a 1-form symmetry, which is necessarily abelian. Again, $j(N)$ shifts by a co-exact quantity under linearised diffeomorphisms and so the charge $Q(N)$ is gauge-invariant.

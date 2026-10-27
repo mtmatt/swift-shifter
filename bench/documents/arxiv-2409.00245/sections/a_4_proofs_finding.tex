@@ -1,0 +1,51 @@
+\section{Finding an \occ given a coloring}
+\label{sec:proofs:oct:finding}
+
+In this section, we prove \Cref{lem:finding-occ-colored} using 
+bipartite separations, as introduced by Jansen et al.~\cite{JansenKW22}. 
+
+Specifically, define a \emph{$(\mathcal{H},k)$-separation} to be 
+a pair $(C,S)$ of disjoint vertex sets for a graph class $\mathcal{H}$ and
+an integer $k$ such that $G[C] \in \mathcal{H}$, $|S| \leq k$ and $N_G(C) \subseteq S$.
+%
+For $\mathcal{H}=\bip$, where $\bip$ denotes the class of bipartite graphs,
+Jansen et al.~\cite{JansenKW22} gave a $2$-approximation for the problem of computing a $(\bip, k)$-separation covering a given connected vertex set~$Z$.
+
+\begin{corollary}[{{\cite[Lemma 4.24]{JansenKW22}} (rephrased)}] \label{cor:bipartite-separation}
+  There is a polynomial-time algorithm that, given a graph~$G$, an integer~$k$, and a non-empty vertex set~$Z$ such that~$G[Z]$ is connected, either:
+	\begin{itemize}
+		\item returns a~$(\bip, 2k)$-separation~$(C,S)$ with~$Z \subseteq C$, or
+		\item concludes that~$G$ does not have a~$(\bip, k)$-separation~$(C',S')$ with~$Z \subseteq C'$.
+	\end{itemize}
+\end{corollary}
+
+The original formulation of the corresponding result is in terms of a problem called \textsc{$(\mathcal{H}, k)$-Separation Finding}. In the definition of this problem, the input graph is required to have a bound on its $\mathcal{H}$-treewidth and the output separation is only guaranteed to \emph{weakly} cover~$Z$, meaning that~$Z \subseteq C \cup S$ rather than~$Z \subseteq C$. Jansen et al.~\cite{JansenKW22} used this formalism to treat a variety of different graph classes~$\mathcal{H}$. For the particular case of bipartite graphs that is of interest here, the assumption on the $\mathcal{H}$-treewidth of the input graph is never used (as is acknowledged in their paper), and from the specification of the algorithm it can be seen that~$Z \cap S$ is empty: the set~$S$ is constructed as a separator in an auxiliary graph, separating two copies of~$Z$ without intersecting these sets. Hence our formulation follows directly from their results.
+
+\lemFindColoredOCC*
+\begin{proof}
+    Consider the following algorithm.
+    %
+    Let $Z$ be the vertices in a connected component of $G[\chi^{-1}(\cB)]$.
+    We iterate over all components.
+    %
+    If $|Z|<\ell$ or $G[Z]$ is not bipartite, continue to the next component.
+    Otherwise, we invoke \Cref{cor:bipartite-separation} to find a $(\bip, 2k)$-separation $(B,S)$ such that $Z \subseteq B$.
+    If such a separation exists, output $(B, S, V(G) \setminus (B \cup S))$.
+    Otherwise, continue to the next component.
+  
+  \subparagraph*{Correctness.}
+  Let $G' = G[\chi^{-1}(\cB)]$.
+  By assumption, the single-component \occ $(X_B, X_C, X_R)$ is $\ell$-properly colored by $\chi$. Hence $V(G') \cap X_C = \emptyset$ and $G'$ contains a connected component
+  $G[Z]$ such that $Z \subseteq X_B$ and $|Z| \geq \ell$.
+  %
+  Also, because $(X_B, X_C)$ is a $(\bip, |X_C|)$-separation in $G$ such that $Z \subseteq X_B$,
+  the algorithm must output some solution $(B,S,V(G)\setminus (B \cup S))$ such that $Z \subseteq B$,
+  which is by definition an \occ,
+  and we know $|B| \geq |Z| \geq \ell$ and $|S| \leq 2|X_C| \leq 2k$.
+  
+  \subparagraph*{Running time.}
+  From \Cref{cor:bipartite-separation}, we can,
+  given a component $Z$, find a $(\bip,2k)$-separation $(B,S)$
+  such that $Z \subseteq B$ in polynomial time.
+  There are $\Oh(n)$ components in $G'$, so the overall runtime is also polynomial.
+  \end{proof}

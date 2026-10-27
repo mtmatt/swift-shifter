@@ -1,0 +1,307 @@
+\section{Preliminaries}\label{sec:preliminaries}
+\subsection{Newton Polytope Theory}\label{ssec:prelim_newton}
+Here we do some groundwork that is necessary whenever we study complete intersections in the torus in terms of their monomials.
+Let us note that the lattice of monomials can be defined in a coordinate-free manner: $M \defeq \Hom(T^n, T^1) \simeq \Z^n$ --- it is a canonical unordered basis in $\Gamma(T^n, \mathcal O_{T^n})$, so for $f \in \Gamma(T^n, \O_{T^n})$ we define $\Supp f \subset M$ as the set of characters such that the coordinates of $f$ with respect to these characters are non-zero. Until the end of this section we fix non-empty finite subsets $A_1, \dots, A_m \subset M$. Then we have the spaces $k^{A_1}, \dots, k^{A_m}$, where $k^{A_i} \defeq \{f \in \Gamma(T^n, \mathcal O_{T^n})\ |\ \Supp f \subset A_i \}$. We denote by $k^{A_\bullet} \defeq k^{A_1} \times \dots \times k^{A_m}$ the space of all systems. The specific class of systems we are interested in should be denoted by $\P \subset k^{A_\bullet}$ --- it must be a vector subspace\footnote{i.e. this class must be defined by linear relations on coefficients of the polynomials}.
+\subsubsection{Notation}
+
+\begin{definition}\label{def:evaluation}
+    Consider the evaluation morphism $k^{A_i} \times T^n \to \A^1_k \times T^n$, $(f, p) \mapsto~(f(p), p)$ --- it is a morphism of vector bundles\footnote{i.e. it is fiberwise linear}. Then we have the morphism of vector bundles $\E: k^{A_\bullet} \times T^n \to \A_k^m \times T^n$. We will denote by $X$ the kernel of $\E$, i.e.
+    \[
+    X \defeq \Ker \mathcal E =  \left\{ (\mathbf f, p) \in k^{A_\bullet} \times T^n : \mathbf f(p) = 0 \right\}.
+    \]
+    By $X_\P$ we denote the base change of $X \to k^{A_\bullet}$ with respect to $\P \to k^{A_\bullet}$, in other words:
+    \[
+    X_\P = \{ (\mathbf f, p) \in \P \times T^n\ |\ \mathbf f(p) = 0 \}
+    \]
+\end{definition}
+
+\begin{notation}
+    Consider the embedding $\iota : \P \to k^{A_\bullet}$. Then $\E|_\P \defeq \E \circ (\iota, \id_{T^n})$ is a vector bundle morphism $\P \times T^n \to \A^m_k \times T^n$ and clearly $X_\P = \Ker \E|_\P$. Note that if $\rk \E|_\P$ is constant on $T^n$, then $X_\P$ is a vector bundle over $T^n$ of rank $\dim \P - \rk \E|_\P$.
+\end{notation}
+
+\begin{remark}
+    The space $k^{A_\bullet}$ comes with almost canonical\footnote{'almost' means that the set of coordinate functions is canonical but we have to choose an order} coordinates --- the coefficients of the polynomials. Assume that $A_i = \{ \chi^i_1, \dots, \chi^i_{r_i} \},\ 1 \le i \le m$. Then the matrix of the linear map $\mathcal E(p), p \in T^n$ with respect to the those coordinates is:
+    \[
+    \begin{pmatrix}
+        \chi_1^1(p) & \cdots & \chi_{r_1}^1(p) & 0 & \cdots & 0 & \cdots & 0 & \cdots & 0 \\
+        0 & \cdots & 0 & \chi^2_1(p) & \cdots & \chi^2_{r_2}(p) & \cdots & 0 & \cdots & 0 \\
+        \vdots & \ddots & \vdots & \vdots & \ddots & \vdots & \ddots & \vdots & \ddots & \vdots \\
+        0 & \cdots & 0 & 0 & \cdots & 0 & \cdots & \chi^m_1(p) & \cdots & \chi^m_{r_m}(p)
+    \end{pmatrix}
+    \]
+\end{remark}
+
+\begin{claim}
+    $\rk \E \equiv m$ on $T^n$. 
+\end{claim}
+\begin{proof}
+    For all $i, j$ we have $\chi_j^i (p) \ne 0$ on $T^n$, so the rank is always equal to $m$.
+\end{proof}
+
+\begin{corollary}
+    $X$ is a vector bundle of rank $n - m$ over $T^n$. In particular, $X$ is irreducible and $\dim X = \dim k^{A_\bullet} + n - m$.
+\end{corollary}
+
+\subsubsection{Engineered Complete Intersections}\label{sssec:prelim_engineered}
+Engineered Complete Intersections (ECI) is a non-classical setting for Newton Polytope Theory proposed by Alexander Esterov in \cite{Esterov2024}. Here we give all the necessary definitions to work with ECI. For a complete account of the notion see the original preprint \cite{Esterov2024}.
+\begin{definition}
+    We define the inner product $\ast : \Gamma(T^n, \mathcal O) \times \Gamma(T^n, \mathcal O) \to \Gamma(T^n, \mathcal O)$ as follows. For $\chi, \mu \in M$:
+    \[
+    \chi * \mu = 
+    \begin{cases}
+        \chi, \text{ if } \chi = \mu \\
+        0, \text{ otherwise}
+    \end{cases}
+    \]
+    Then we extend $*$ from $M \times M$ to $\Gamma(T^n, \mathcal O) \times \Gamma(T^n, \mathcal O)$ by $k$-bilinearity.
+\end{definition}
+\begin{remark}
+    For any two $f, g \in k^A$ we have $f * g \in k^A$.
+\end{remark}
+\begin{definition}
+    Let $A \subset M$ be a finite subset and $c_1, \dots, c_d \in k^A$ be linearly independent polynomials. Then we have the linear map $k^A \to (k^A)^d, f \mapsto (c_1 * f, \dots, c_d * f)$. The variety defined by $c_1 * f = \dots = c_d * f = 0$ for $f \in k^A$ s.t. $\Supp f = A$ is called an \textbf{\textit{engineered complete intersection}}.
+    
+    Let $S_1, \dots, S_m$ be engineered complete intersections. Then $\bigcap g_i S_i$ for general $g_i \in ~T^n(k)$, $T^n(k) \simeq ~(k^\times)^n$ is called an \textit{\textbf{$m$-engineered complete intersection}}.
+\end{definition}
+
+\begin{remark}
+    In this paper we will study general ECI, i.e. systems $c_1 * f = \dots = c_d * f = 0$ for general $f \in k^A$.
+\end{remark}
+
+
+\begin{remark}\label{rem:prelim_engin_m_ECI_is_ECI}
+    \textbf{Every $m$-ECI is a $1$-ECI}: fix $m$ ECI $S_1, \dots, S_m$ such that $S_i$ are defined by $c^i_1 * f_i = \cdots = c^i_{d_i} * f_i = 0$ for $c^i_j, f_i \in k^{A_i}$, where $A_i = \Supp f_i$. Let $\chi_1, \dots, \chi_m \in M$ be such that $(\chi_i \cdot A_i) \cap (\chi_j \cdot A_j) = \varnothing$ for $i \ne j$. Note that the equations $(\chi \cdot c^i_j) * (\chi \cdot f_i) = 0$ and $c^i_j * f = 0$ are equivalent $\forall \chi \in M$, so without loss of generality we could assume that $A_i \cap A_j = \varnothing$ for all $i \ne j$.
+    
+    Now, define $A \defeq A_1 \sqcup \cdots \sqcup A_m$. Naturally, $k^{A_i} \subset k^A$, so $c^i_j \in k^A$. Put $f = ~f_1 + ~\cdots + ~f_m$. Consider the 1-ECI 
+    \[
+    S \defeq \{ p \in T^n\ |\ c^i_j * f = 0 \text{ for all } 1 \le i \le m,\ 1 \le j \le d_i \}.
+    \]
+    Then $S$ coincides with the $m$-ECI $S_1 \cap \cdots \cap S_m$.
+\end{remark}
+
+\begin{notation}
+    Fix finite sets $A_1, \dots, A_m \subset M$ and $c^i_1, \dots, c^i_{d_i} \in A_i$ that are linearly independent for all fixed $i$. That gives us linear morphisms
+    \begin{gather*}
+        \mathbf c^i : k^{A_i} \to \left( k^{A_i} \right)^{d_i}, f \mapsto (c^i_1 * f, \dots, c^i_{d_i} * f) \\
+        \mathbf c = \oplus_{i = 1}^l \mathbf c^i: k^{A_\bullet} \to \bigoplus_{i = 1}^m (k^{A_i})^{d_i}    
+    \end{gather*}
+    We denote the image of $\mathbf c$ by $\P = \P(\mathbf c)$. 
+\end{notation}
+
+\begin{remark}
+    Consider the case $m = 1$, i.e. just the engineered complete intersection $c_1 * f = \dots = c_d * f = 0$ for the general $f \in k^A$ and fixed $c_i \in A = \{ \chi_1, \dots, \chi_r \}$. Then $\mathcal E|_\P$ is the vector bundle morphism 
+    \[
+    k^A \times T^n \to \A^d \times T^n, (f, p) \mapsto ((c_1 * f)(p), \dots, (c_d * f)(p), p).
+    \]
+    In particular, the matrix of $\mathcal E|_\P$ over $p \in T^n$ is:
+    \[
+    \begin{pmatrix}
+        (c_1 * \chi_1) (p) & (c_1 * \chi_2) (p) & \cdots & (c_1 * \chi_r) (p) \\
+        (c_2 * \chi_1) (p) & (c_2 * \chi_2) (p) & \cdots & (c_2 * \chi_r) (p) \\
+        \vdots & \vdots & \ddots & \vdots \\
+        (c_d * \chi_1) (p) & (c_d * \chi_2) (p) & \cdots & (c_d * \chi_r) (p)
+    \end{pmatrix}
+    \]
+\end{remark}
+
+\begin{claim}\label{claim:prelim_engin}
+    Consider the evaluation morphism $\E : \bigoplus_{i = 1}^l (k^{A_i})^{d_i} \to \A^{d_1 + \hdots + d_m}$ as in the previous subsection. Then $\rk \E|_\P \equiv d_1 + \dots + d_m$ on $T^n$.
+\end{claim}
+\begin{proof}
+Put $\P_i \defeq \mathbf c^i (k^{A_i})$. Then $\P = \P_1 \oplus \cdots \oplus \P_m$. Clearly $\E|_\P = \E|_{\P_1} \oplus \cdots \oplus \E|_{\P_m}$, so without loss of generality we assume $m = 1$ and $\P = \P_1$. Denote by $C$ the matrix of $\mathbf c$: it has $d = d_1$ rows and its columns are indexed by $\chi \in A = A_1 = \{ \chi_1, \dots, \chi_r \}$. Then over $p \in T^n$ we have that $\E|_\P = C \cdot \operatorname{diag}(\chi_1(p), \dots, \chi_r(p)).$ Since all $c_j$ are linearly independent, we know that the rows of $C$ are linearly independent, i.e. $\rk C = d$. So, $\rk \E|_\P = \rk C = d$ as multiplying by an invertible matrix does not affect the rank.
+\end{proof}
+\begin{corollary}
+    Put $X_\P \defeq \Ker \E|_\P$. Then $X_\P$ is a vector bundle over $T^n$. In particular, $X_\P$ is irreducible and $\dim X_\P = n + \sum_i (|A_i| - d_i)$.
+\end{corollary}
+
+\begin{remark}
+    Every $m$-engineered complete intersection is a fibre of the projection $X_\P \to \P \cong k^{A_\bullet}$ and for the general $\mathbf f \in k^{A_\bullet}$ the fibre $(X_\P)_{\mathbf f}$ is an $m$-engineered complete intersection.
+\end{remark}
+
+\subsubsection{Kouchnirenko-Bernstein Formula}
+Here we recall a classical result that laid the foundations of Newton Polytope theory.
+\begin{definition}
+    For two subsets $A, B \subset \R^n$ we define $A + B \defeq \{ a + b\ |\ a \in A, b \in B\}$ --- \textbf{the Minkowski sum}.
+\end{definition}
+
+\begin{definition}
+    Let $L$ be a lattice, i.e. $L \simeq \Z^n$. We define the \textbf{lattice volume} with respect to $L$ as the unique Euclidean volume form $\Vol_L$ on $L_\R$ such that $\Vol_L (\Delta) = 1$, where\footnote{by $\Conv$ we denote the convex hull} $\Delta = \Conv \{ 0, e_1, \dots, e_n \}$ and $e_1, \dots, e_n$ is a basis of $L$.
+\end{definition}
+
+\begin{remark}
+    For any finite subset $S \subset L$ we have that $\Vol_L(\Conv S)$ is an integer because $\Conv S$ admits a triangulation by simplicies with vertices in $L$.
+\end{remark}
+
+\begin{remark}
+    Recall that a polytope is the convex hull of finitely many points. One can easily see that $\Conv (A + B) = \Conv A + \Conv B$, so the sum of any two polytopes is a polytope. It means that given a real space $V$ the set of all polytopes $\operatorname{Pol}(V)$ from $V$ is naturally a monoid with the operation of Minkowski sum and $\{ 0 \}$ as the neutral element.
+\end{remark}
+
+\begin{definition}
+    Let $L$ be a lattice of rank $n$. The \textbf{lattice mixed volume} with respect to $L$ is the unique function $\MVol_L: \operatorname{Pol}(L_\R)^n \to \R_+$ that satisfies:
+    \begin{itemize}
+        \item \textit{Linearity:} $\MVol_L(P_1 + P', P_2, \dots P_n) = \MVol_L (P_1, P_2, \dots, P_n) + \MVol_L(P', \dots, P_n)$ for all $P', P_i \in \operatorname{Pol}(L_\R)$;
+        
+        \item \textit{Symmetricity:} $\MVol_L(P_1, \dots, P_n) = \MVol_L(P_{\sigma(1)}, \dots, P_{\sigma(n)})$ for all $\sigma \in S_n$ and $P_i \in\operatorname{Pol}(L_\R)$;
+
+        \item \textit{Diagonal volume:} $\MVol_L(P, \dots, P) = \Vol_L (P) \quad \forall P \in \operatorname{Pol}(V)$.
+    \end{itemize}
+    In other word, $\MVol_L$ is the polarization of $\Vol_L: \operatorname{Pol}(L_\R) \to \R_+$.
+\end{definition}
+
+\begin{claim}
+    $\MVol_L(P_1, \dots, P_n) = \frac{1}{n!} \sum_{l = 1}^n (-1)^{n - l} \sum_{1 \le i_1 \le \dots \le i_l \le n} \Vol_L (P_{i_1} + \dots + P_{i_l})$.
+\end{claim}
+\begin{proof}
+    Cf. \cite[Thm 3.7, p.118]{Ewald1996}.
+\end{proof}
+
+\begin{remark}
+    For any subsets $S_1, \dots, S_n \subset L$ we have that $\MVol(\Conv S_1, \dots, \Conv S_n)$ is an integer.
+\end{remark}
+
+\begin{theorem}[Kouchnirenko-Bernstein]
+    Let $A_1, \dots, A_n \subset M$ be finite subsets of the character lattice and $\Delta_i \defeq \Conv_{M_\R} A_i$ be the corresponding Newton Polytopes. Let $k = \bar k$. Then for the general $\mathbf f \in k^{A_\bullet}$ the system $f_1 = \dots = f_n = 0$ has $\MVol_M(\Delta_1, \dots, \Delta_n)$ solutions in $T^n$.
+\end{theorem}
+\begin{proof}
+    See \cite{bernstein} for the case $k = \C$ and for the arbitrary field see \cite{Kushnirenko1977} --- the author wrote the proof only for $k = \C$ but since it is purely algebraic the proof is valid over arbitrary algebraically closed field. In fact the proof in \cite{bernstein} also does not rely on any techinques that work exclusively in zero characteristic so it may be adapted to work in a purely algebraic setting as well.
+\end{proof}
+
+\subsection{Technical Toolkit}\label{ssec:prelim_technical}
+\subsubsection{(Geometric) Irreducibility}
+Studying the Newton Polytopes theory over the fields that are not algebraically closed could seem odd. For example, we could take $A = \{1 , x, x^2\}$ and it is well-known
+%to most high school students 
+that the subspace of polynomials of $\R^A$ that have the same number of roots is bounded by a paraboloid, in particular, it is neither open nor closed in the Zariski topology. The same sort of thing happens with the irreducibility. However, the following more stable notion comes in useful:
+
+\begin{definition}
+    The $k$-scheme $W$ is called \textbf{geometrically irreducible} if for any field extension $L/k$ the base change $L$-scheme $W_L = W \times_k L$ is irreducible.
+\end{definition}
+
+\begin{remark}
+    A $k$-scheme of finite type is geometrically irreducible if and only if its base change with respect to $\bar k$ (algebraic closure) is irreducible.
+\end{remark}
+
+\begin{remark}
+    We are interested in the irreducibility of the general fibre of the projection $X_\P \to \P$. We could also study the irreducibility of the generic fibre, i.e. the fibre of the generic point of the scheme $\P$. Generally speaking, the irreducibility of the generic fibre must not imply the irreducibility of the general fibre. However, it is the case if we work with the geometric irreducibility (and some mild assumptions on the morphism) as follows from \cite[IV.3, 9.7.8]{EGA}. 
+\end{remark}
+
+The following theorem gives a usable form to the above speculation.
+
+\begin{theorem}\label{thm:fibre_condition}
+    Let $W \to Y$ be a dominant finite type mophism of noetherian schemes such that $Y$ is irreducible and the fibred square $W \times_Y W$ is irreducible. Then the general fibre of $W \to Y$ is geometrically irreducible, i.e. there is a non-empty open subset $U \subset Y$ such that for any $y \in U$ the fibre $W_y$ is geometrically irreducible.
+\end{theorem}
+\begin{proof}
+We will assume without loss of generality that $Y$ is affine. Let $\eta \in Y$ be the generic point of $Y$. By \cite[IV.3, 9.7.8]{EGA}, we only need to show that the generic fibre $W_\eta$ is geometrically irreducible.
+
+If $W$ is not irreducible, then let $W = W_1 \cup \dots \cup W_r$ be its decomposition into irreducible components. Then we have the decomposition into distinct closed subsets: $W \times_Y W = \bigcup_{1 \le i, j \le r} W_i \times_Y W_j$, so $W \times_Y W$ is not irreducible and the statement of the theorem is trivially satisfied. From now on we assume that $W$ is irreducible.
+
+In fact, we could also assume that $W$ is affine. Indeed, let $W = U_1 \cup \dots \cup U_n$ be an open covering such that $U_i$ are affine and non-empty. Since the generic point of $W$ lies in each $U_i$, we get that the fibres $U_{i\eta}$ give an affine open covering of $W_\eta$ such that for all indicies $i, j$ the intersection $U_{i\eta} \cap U_{j\eta}$ is non-empty. Then if we prove that all $U_{i\eta}$ are geometrically irreducible, we will also get that $W_\eta$ is geometrically irreducible. So, we assume without loss of generality that $W$ is affine.
+
+Since $W \times_Y W$ is irreducible, we get that $(W \times_Y W)_\eta = W_\eta \times_\eta W_\eta$ is also irreducible. Now we are left with an algebraic statement to prove: if $A$ is a $K$-algebra ($K \defeq k(\eta)$) with no zero divisors and $A \otimes_K A$ has no zero divisors except nilpotents, then $\Spec A$ is geometrically irreducible. First, note that we can replace $A$ with $A_{red}$, so without loss of generality $A$ is integral. Now, consider $Q$ --- the fraction field of $A$. By \citestacks{037N} we can just show that $Q$ is geometrically irreducible over $K$. By \citestacks{0G33} it is sufficient to prove that $K$ is separably closed in $Q$. Assume the contrary: there is $\alpha \in Q$ that is separably algebraic over $K$ and $\alpha \not \in K$. Then $K(\alpha) \otimes_K K(\alpha)$ contains non-nilpotent (because $\alpha$ is separable) zero divisors. Localization cannot add non-nilpotent zero divisors if there were none, so $Q \otimes_K Q$ must have no non-nilpotent zero divisors. Since $K(\alpha) \otimes_K K(\alpha)$ is a subalgebra of $Q \otimes_K Q$, we get that $Q \otimes_K Q$ also has non-nilpotent zero divisors, which is a contradiction. Hence, $K$ is separably closed in $Q$ and $\Spec A$ is geometrically irreducible over $K$.
+\end{proof}
+
+\begin{corollary}\label{cor:fibre_criterion}
+    Let $W \to Y$ be a flat dominant finite type mophism of noetherian schemes and $Y$ be irreducible. Then $W \times_Y W$ is irreducible if and only if the general fibre of $W \to Y$ is geometrically irreducible.
+\end{corollary}
+\begin{proof}
+    In one direction we are done by the above theorem. So, assume that $W \times_Y W$ is not irreducible. Again, by \cite[IV.3, 9.7.8]{EGA} we need to show the the generic fibre $W_\eta$ is not geometrically irreducible with $\eta$ being the generic point of $Y$. Assume the contrary: $W \times_Y W$ is not irreducible and $W_\eta$ is geometrically irreducible. Since $W \to Y$ is flat, so is the fibred square $W \times_Y W \to W$. The morphism $\eta \to Y$ is dominant, so $W_\eta \times_\eta W_\eta \to W \times_Y W$ being a flat base change of a dominant morphism also must be dominant. Therefore, $W_\eta \times_\eta W_\eta$ cannot be irreducible. Now, let $\xi \in W_\eta$ be the generic point. $\xi \to W_\eta$ is dominant, so $W_\eta \times_\eta k(\xi) \to W_\eta \times_\eta W_\eta$ is dominant, hence $W_\eta \times_\eta k(\xi)$ is not irreducible and $W_\eta$ is not geometrically irreducible --- contradiction.
+\end{proof}
+
+When using the above theorem the following lemmas comes in useful:
+\begin{lemma}
+    Let $W$ be a Jacobson scheme, $Z \subset X$ be a subset with the induced subspace topology. Assume that for any point $p \in Z$ that is closed in $W$ we have $\dim_p Z < \dim_p W$. Then $W \backslash Z$ is dense in $W$.
+\end{lemma}
+\begin{proof}
+    Assume the contrary: there is an open subset $U \subset X$ such that $U \cap (W \backslash Z) = ~\varnothing$, i.e. $U \subset Z$. Since $W$ is Jacobson, there is a point $p \in U$ that is closed in $W$. We have $\dim_p W = \dim_p U = \dim_p Z$, which is a contradiction.
+\end{proof}
+
+\begin{corollary}[Irrelevant fibres]\label{cor:irrelevant_fibres}
+    Let  $W \to Y$ be a morphism of $k$-schemes locally of finite type. Let $Z \subset Y$ be a locally closed subscheme such that for all closed $p \in Z$ and all closed $x \in W_p$ we have
+    \[
+    \dim_x W_p < \dim_x W - \dim_p Z 
+    \]
+    Then\footnote{by $W_Z$ we denote the pre-image of $Z$ under the morphism $W\to Y$} $W \backslash W_Z$ is dense in $W$. 
+\end{corollary}
+\begin{proof}
+    The question is local on $Y$, so we may assume that $Z$ is closed in $Y$. Now, $W_Z$ is a closed subscheme of $W$, hence the points of $W_Z$ that are closed in $W$ are just the closed points of $W_Z$. Now, we have:
+    \[
+    \dim_x W_p = \dim_x (W_Z)_p \ge \dim_x W_Z - \dim_p Z.
+    \]
+     Regrouping the terms and applying the inequality from the assumption we get
+    \[
+    \dim_x W_Z \le \dim_x W_p + \dim_p Z < \dim_x W.
+    \]
+    As schemes locally of finite type over a field are Jacobson, we are done.
+\end{proof}
+\begin{notation}
+    For the purposes of this paper we assume that $\dim \varnothing = -\infty$.
+\end{notation}
+\begin{corollary}[Irreducibility Criterion]\label{cor:irreducibility_criterion}
+    Let $W \to Y$ be a dominant morphism of $k$-schemes locally of finite type with equidimensional fibres\footnote{i.e. for any fibre all irreducible components have the same dimension}. Let $Y$ be irreducible with the generic point $\eta$. Assume that the following subsets are locally closed:
+    \[
+    Y_r \defeq \{ p \in Y\ |\ \dim W_p = \dim W_\eta + r \}
+    \]
+    Then $W$ is irreducible if and only if all of the following conditions are satisfied:
+    \begin{enumerate}
+        \item For all closed $p \in W$ we have $\dim_p W \ge \dim W_\eta + \dim Y$;
+        \item $W_{Y_0}$ is irreducible;
+        \item For all $r > 0$ we have $\dim Y > \dim Y_r + r$.
+    \end{enumerate}
+\end{corollary}
+\begin{proof}
+    Assume that $W$ is irreducible. Then since $W \to Y$ is dominant, we have that $\dim W_\eta = \dim W - \dim Y$, which gives us condition 1, because irreducible schemes are equidimensional. By the Chevalley upper semi-continuity theorem $W_{Y_0}$ is an open subset of $W$, hence $W_{Y_0}$ is irreducible. Finally, if there is $r > 0$ such that $\dim Y \le \dim Y_r + r$, then we have 
+    \[
+    \dim W_{Y_r} = \dim Y_r + \dim W_\eta + r \ge \dim W.
+    \]
+    By the same Chevalley theorem $W_{Y_r}$ is a locally closed subset of $W$. Since $W_{Y_r}$ is of dimension at least $\dim W$ and $W$ is irreducible, we have that $W_{Y_r}$ is dense in $W$. However, $W_{Y_0}$ is a non-empty open subset of $W$ that does not intersect $W_{Y_r}$, which gives us a contradiction.
+
+    Now, assume all the conditions are satisfied. Take any closed $y \in Y_r$ and any closed $p \in W_y$. We have that
+    \[
+    \dim_p W \ge \dim W_\eta + \dim Y > \dim W_\eta + r + \dim Y_r = \dim W_y + \dim Y_r,
+    \]
+    so by Irrelevant Fibres \autoref{cor:irrelevant_fibres} $W\backslash W_Z = W_{Y_0}$ is dense in $W$. Since $W_{Y_0}$ is irreducible, so is $W$.
+\end{proof}
+
+\subsubsection{Codimension of quasi-subtori}\label{sssec:techincal_codim}
+This subsubsection is purely technical: we just prove the claim \ref{claim:prelim_quasisubtori}. The reader may skip this subsubsection until they come across a reference to the said claim in one of the proofs.
+
+\begin{definition}
+    Let $L$ be a lattice and $B \subset L$ be a subset. Then by $\dim B$ we denote the rank of the minimal lattice that contains the set $B - B \defeq \{ b - b'\ |\ b, b' \in B \}$.
+\end{definition}
+
+\begin{remark}
+    $\dim B = \dim \Conv_{L_\R} B$ for any finite $B \subset L$.
+\end{remark}
+
+\begin{remark}
+     $\sum (B_i - B_i) = \sum B_i - \sum B_i$ for any collection of subsets $B_1, \dots, B_r \subset ~L$.
+\end{remark}
+
+\begin{remark}
+    Bellow we will be working with the character lattice $M$. The multiplicative notation is more common for characters, so when we write $B - B$ for $B \subset M$ we mean the set $\{ \chi_1 \cdot \chi_2^{-1}\ |\ \chi_1, \chi_2  \in B \}$.
+\end{remark}
+
+\begin{lemma}
+    Let $B \subset M$ be a subset such that $1 \in B$. Then the subvariety 
+    \[
+    V \defeq \{ p \in T^n\ | \chi(p) = 1 \ \forall \chi \in B \}
+    \]
+    is a quasi-torus of codimension $\dim B$ in $T^n$.
+\end{lemma}
+\begin{proof}
+    Let $H$ be a the sublattice\footnote{$H$ is also the minimal sublattice containing $B - B$ because $1 \in B$. } of $M$ generated by $B$. Clearly $\forall p \in V, \chi \in H$ we have that $\chi(p) = 1$, so we can replace $B$ with $H$. By the Smith Normal Form theorem there is a change of coordinates such that in terms of the new coordinates $x_1, \dots, x_n$ on $T^n$ the lattice $H$ is generated by $x_1^{s_1}, \dots, x_r^{s_r}$, $r = \rk H$, $s_i > 0$. So, $V$ is defined by equations $x_1^{s_1} = \dots = x_r^{s_r} = 1$ --- clearly it is a quasi-torus of codimension $r$.
+\end{proof}
+
+\begin{claim}\label{claim:prelim_quasisubtori}
+    Let $B_1, \dots, B_r \subset M$ be non-empty subsets. Then the subvariety 
+    \[
+    V \defeq \{ (p, q) \in T^n \times T^n\ |\ (\chi_2 \cdot \chi_1^{-1}) (p) = (\chi_2 \cdot \chi_1^{-1})(q)\  \forall \chi_1, \chi_2 \in B_i\ \forall i\} 
+    \]
+    is a quasitorus in $T^n \times T^n$ of codimension $\dim \sum B_i$.
+\end{claim}
+\begin{proof}
+    Consider the antidiagonal embedding $\alpha: M \to M^2, \chi \mapsto (\chi, \chi^{-1})$. Then $V$ is defined by equations $\alpha(\chi)(p, q) = 1 \ \forall \chi \in B_i - B_i\ \forall i$. Clearly $1 \in B_i - B_i$, so $V$ is defined by the equations $\alpha(\chi)(p, q) = 1\ \forall \chi \in \sum (B_i - B_i)$. By the above lemma $V$ is a quasi-torus of codimension $\dim \alpha\left(\sum (B_i - B_i) \right)$. Since $\alpha$ is an embedding, it preserves the dimensions, so
+    \[
+    \codim V = \dim \sum (B_i - B_i) = \dim \sum B_i.
+    \]
+\end{proof}
+

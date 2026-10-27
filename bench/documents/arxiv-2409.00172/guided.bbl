@@ -1,0 +1,379 @@
+%merlin.mbs apsrev4-1.bst 2010-07-25 4.21a (PWD, AO, DPC) hacked
+%Control: key (0)
+%Control: author (8) initials jnrlst
+%Control: editor formatted (1) identically to author
+%Control: production of article title (-1) disabled
+%Control: page (0) single
+%Control: year (1) truncated
+%Control: production of eprint (0) enabled
+\begin{thebibliography}{35}%
+\makeatletter
+\providecommand \@ifxundefined [1]{%
+ \@ifx{#1\undefined}
+}%
+\providecommand \@ifnum [1]{%
+ \ifnum #1\expandafter \@firstoftwo
+ \else \expandafter \@secondoftwo
+ \fi
+}%
+\providecommand \@ifx [1]{%
+ \ifx #1\expandafter \@firstoftwo
+ \else \expandafter \@secondoftwo
+ \fi
+}%
+\providecommand \natexlab [1]{#1}%
+\providecommand \enquote  [1]{``#1''}%
+\providecommand \bibnamefont  [1]{#1}%
+\providecommand \bibfnamefont [1]{#1}%
+\providecommand \citenamefont [1]{#1}%
+\providecommand \href@noop [0]{\@secondoftwo}%
+\providecommand \href [0]{\begingroup \@sanitize@url \@href}%
+\providecommand \@href[1]{\@@startlink{#1}\@@href}%
+\providecommand \@@href[1]{\endgroup#1\@@endlink}%
+\providecommand \@sanitize@url [0]{\catcode `\\12\catcode `\$12\catcode
+  `\&12\catcode `\#12\catcode `\^12\catcode `\_12\catcode `\%12\relax}%
+\providecommand \@@startlink[1]{}%
+\providecommand \@@endlink[0]{}%
+\providecommand \url  [0]{\begingroup\@sanitize@url \@url }%
+\providecommand \@url [1]{\endgroup\@href {#1}{\urlprefix }}%
+\providecommand \urlprefix  [0]{URL }%
+\providecommand \Eprint [0]{\href }%
+\providecommand \doibase [0]{http://dx.doi.org/}%
+\providecommand \selectlanguage [0]{\@gobble}%
+\providecommand \bibinfo  [0]{\@secondoftwo}%
+\providecommand \bibfield  [0]{\@secondoftwo}%
+\providecommand \translation [1]{[#1]}%
+\providecommand \BibitemOpen [0]{}%
+\providecommand \bibitemStop [0]{}%
+\providecommand \bibitemNoStop [0]{.\EOS\space}%
+\providecommand \EOS [0]{\spacefactor3000\relax}%
+\providecommand \BibitemShut  [1]{\csname bibitem#1\endcsname}%
+\let\auto@bib@innerbib\@empty
+%</preamble>
+\bibitem [{\citenamefont {Hallgren}\ \emph {et~al.}(2003)\citenamefont
+  {Hallgren}, \citenamefont {Russell},\ and\ \citenamefont
+  {Ta-Shma}}]{Hallgren2003}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {S.}~\bibnamefont
+  {Hallgren}}, \bibinfo {author} {\bibfnamefont {A.}~\bibnamefont {Russell}}, \
+  and\ \bibinfo {author} {\bibfnamefont {A.}~\bibnamefont {Ta-Shma}},\
+  }\href@noop {} {\bibfield  {journal} {\bibinfo  {journal} {SIAM Journal on
+  Computing}\ }\textbf {\bibinfo {volume} {32}},\ \bibinfo {pages} {916}
+  (\bibinfo {year} {2003})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Ettinger}\ \emph {et~al.}(2004)\citenamefont
+  {Ettinger}, \citenamefont {H{\o}yer},\ and\ \citenamefont
+  {Knill}}]{Ettinger_2004}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {M.}~\bibnamefont
+  {Ettinger}}, \bibinfo {author} {\bibfnamefont {P.}~\bibnamefont {H{\o}yer}},
+  \ and\ \bibinfo {author} {\bibfnamefont {E.}~\bibnamefont {Knill}},\ }\href
+  {\doibase 10.1016/j.ipl.2004.01.024} {\bibfield  {journal} {\bibinfo
+  {journal} {Information Processing Letters}\ }\textbf {\bibinfo {volume}
+  {91}},\ \bibinfo {pages} {43} (\bibinfo {year} {2004})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Deutsch}\ and\ \citenamefont {Jozsa}(1992)}]{DJ}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {D.}~\bibnamefont
+  {Deutsch}}\ and\ \bibinfo {author} {\bibfnamefont {R.}~\bibnamefont
+  {Jozsa}},\ }\href {\doibase 10.1098/rspa.1992.0167} {\bibfield  {journal}
+  {\bibinfo  {journal} {Proceedings of the Royal Society of London. Series A:
+  Mathematical and Physical Sciences}\ }\textbf {\bibinfo {volume} {439}},\
+  \bibinfo {pages} {553} (\bibinfo {year} {1992})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Simon}(1994)}]{Simon}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {D.}~\bibnamefont
+  {Simon}},\ }in\ \href@noop {} {\emph {\bibinfo {booktitle} {Proceedings 35th
+  Annual Symposium on Foundations of Computer Science}}}\ (\bibinfo {year}
+  {1994})\ pp.\ \bibinfo {pages} {116--123}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Shor}(1994)}]{shor}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {P.}~\bibnamefont
+  {Shor}},\ }in\ \href {\doibase 10.1109/SFCS.1994.365700} {\emph {\bibinfo
+  {booktitle} {Proceedings 35th Annual Symposium on Foundations of Computer
+  Science}}}\ (\bibinfo {year} {1994})\ pp.\ \bibinfo {pages}
+  {124--134}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Childs}\ and\ \citenamefont {van
+  Dam}(2010)}]{Childs_2010}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {A.~M.}\ \bibnamefont
+  {Childs}}\ and\ \bibinfo {author} {\bibfnamefont {W.}~\bibnamefont {van
+  Dam}},\ }\href {\doibase 10.1103/revmodphys.82.1} {\bibfield  {journal}
+  {\bibinfo  {journal} {Reviews of Modern Physics}\ }\textbf {\bibinfo {volume}
+  {82}},\ \bibinfo {pages} {1} (\bibinfo {year} {2010})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Meyer}\ \emph {et~al.}(2023)\citenamefont {Meyer},
+  \citenamefont {Mularski}, \citenamefont {Gil-Fuster}, \citenamefont {Mele},
+  \citenamefont {Arzani}, \citenamefont {Wilms},\ and\ \citenamefont
+  {Eisert}}]{Meyer_2023}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {J.~J.}\ \bibnamefont
+  {Meyer}}, \bibinfo {author} {\bibfnamefont {M.}~\bibnamefont {Mularski}},
+  \bibinfo {author} {\bibfnamefont {E.}~\bibnamefont {Gil-Fuster}}, \bibinfo
+  {author} {\bibfnamefont {A.~A.}\ \bibnamefont {Mele}}, \bibinfo {author}
+  {\bibfnamefont {F.}~\bibnamefont {Arzani}}, \bibinfo {author} {\bibfnamefont
+  {A.}~\bibnamefont {Wilms}}, \ and\ \bibinfo {author} {\bibfnamefont
+  {J.}~\bibnamefont {Eisert}},\ }\href {\doibase 10.1103/prxquantum.4.010328}
+  {\bibfield  {journal} {\bibinfo  {journal} {PRX Quantum}\ }\textbf {\bibinfo
+  {volume} {4}} (\bibinfo {year} {2023}),\
+  10.1103/prxquantum.4.010328}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Larocca}\ \emph
+  {et~al.}(2022{\natexlab{a}})\citenamefont {Larocca}, \citenamefont {Sauvage},
+  \citenamefont {Sbahi}, \citenamefont {Verdon}, \citenamefont {Coles},\ and\
+  \citenamefont {Cerezo}}]{GIQML}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {M.}~\bibnamefont
+  {Larocca}}, \bibinfo {author} {\bibfnamefont {F.}~\bibnamefont {Sauvage}},
+  \bibinfo {author} {\bibfnamefont {F.~M.}\ \bibnamefont {Sbahi}}, \bibinfo
+  {author} {\bibfnamefont {G.}~\bibnamefont {Verdon}}, \bibinfo {author}
+  {\bibfnamefont {P.~J.}\ \bibnamefont {Coles}}, \ and\ \bibinfo {author}
+  {\bibfnamefont {M.}~\bibnamefont {Cerezo}},\ }\href {\doibase
+  10.1103/PRXQuantum.3.030341} {\bibfield  {journal} {\bibinfo  {journal} {PRX
+  Quantum}\ }\textbf {\bibinfo {volume} {3}},\ \bibinfo {pages} {030341}
+  (\bibinfo {year} {2022}{\natexlab{a}})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Bronstein}\ \emph {et~al.}(2021)\citenamefont
+  {Bronstein}, \citenamefont {Bruna}, \citenamefont {Cohen},\ and\
+  \citenamefont {Veličković}}]{bronstein2021geometric}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {M.~M.}\ \bibnamefont
+  {Bronstein}}, \bibinfo {author} {\bibfnamefont {J.}~\bibnamefont {Bruna}},
+  \bibinfo {author} {\bibfnamefont {T.}~\bibnamefont {Cohen}}, \ and\ \bibinfo
+  {author} {\bibfnamefont {P.}~\bibnamefont {Veličković}},\ }\href@noop {}
+  {\enquote {\bibinfo {title} {Geometric deep learning: Grids, groups, graphs,
+  geodesics, and gauges},}\ } (\bibinfo {year} {2021}),\ \Eprint
+  {http://arxiv.org/abs/2104.13478} {arXiv:2104.13478} \BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Arunachalam}\ and\ \citenamefont
+  {de~Wolf}(2017{\natexlab{a}})}]{arunachalam2017survey}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {S.}~\bibnamefont
+  {Arunachalam}}\ and\ \bibinfo {author} {\bibfnamefont {R.}~\bibnamefont
+  {de~Wolf}},\ }\href@noop {} {\enquote {\bibinfo {title} {A survey of quantum
+  learning theory},}\ } (\bibinfo {year} {2017}{\natexlab{a}}),\ \Eprint
+  {http://arxiv.org/abs/1701.06806} {arXiv:1701.06806 [quant-ph]} \BibitemShut
+  {NoStop}%
+\bibitem [{\citenamefont {Caro}\ \emph {et~al.}(2023)\citenamefont {Caro},
+  \citenamefont {Hinsche}, \citenamefont {Ioannou}, \citenamefont {Nietner},\
+  and\ \citenamefont {Sweke}}]{caro2023classical}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {M.~C.}\ \bibnamefont
+  {Caro}}, \bibinfo {author} {\bibfnamefont {M.}~\bibnamefont {Hinsche}},
+  \bibinfo {author} {\bibfnamefont {M.}~\bibnamefont {Ioannou}}, \bibinfo
+  {author} {\bibfnamefont {A.}~\bibnamefont {Nietner}}, \ and\ \bibinfo
+  {author} {\bibfnamefont {R.}~\bibnamefont {Sweke}},\ }\href@noop {}
+  {\bibfield  {journal} {\bibinfo  {journal} {arXiv preprint arXiv:2306.04843}\
+  } (\bibinfo {year} {2023})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Dunjko}\ \emph {et~al.}(2017)\citenamefont {Dunjko},
+  \citenamefont {Liu}, \citenamefont {Wu},\ and\ \citenamefont
+  {Taylor}}]{dunjko2017exponential}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {V.}~\bibnamefont
+  {Dunjko}}, \bibinfo {author} {\bibfnamefont {Y.-K.}\ \bibnamefont {Liu}},
+  \bibinfo {author} {\bibfnamefont {X.}~\bibnamefont {Wu}}, \ and\ \bibinfo
+  {author} {\bibfnamefont {J.~M.}\ \bibnamefont {Taylor}},\ }\href@noop {}
+  {\bibfield  {journal} {\bibinfo  {journal} {arXiv preprint arXiv:1710.11160}\
+  } (\bibinfo {year} {2017})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Aaronson}(2009)}]{aaronson2009bqp}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {S.}~\bibnamefont
+  {Aaronson}},\ }\href@noop {} {\enquote {\bibinfo {title} {Bqp and the
+  polynomial hierarchy},}\ } (\bibinfo {year} {2009}),\ \Eprint
+  {http://arxiv.org/abs/0910.4698} {arXiv:0910.4698} \BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Aaronson}\ and\ \citenamefont
+  {Ambainis}(2014)}]{aaronson2014forrelation}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {S.}~\bibnamefont
+  {Aaronson}}\ and\ \bibinfo {author} {\bibfnamefont {A.}~\bibnamefont
+  {Ambainis}},\ }\href@noop {} {\enquote {\bibinfo {title} {Forrelation: A
+  problem that optimally separates quantum from classical computing},}\ }
+  (\bibinfo {year} {2014}),\ \Eprint {http://arxiv.org/abs/1411.5729}
+  {arXiv:1411.5729 [quant-ph]} \BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Liu}\ \emph {et~al.}(2021)\citenamefont {Liu},
+  \citenamefont {Arunachalam},\ and\ \citenamefont {Temme}}]{Liu_2021}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {Y.}~\bibnamefont
+  {Liu}}, \bibinfo {author} {\bibfnamefont {S.}~\bibnamefont {Arunachalam}}, \
+  and\ \bibinfo {author} {\bibfnamefont {K.}~\bibnamefont {Temme}},\ }\href
+  {\doibase 10.1038/s41567-021-01287-z} {\bibfield  {journal} {\bibinfo
+  {journal} {Nature Physics}\ }\textbf {\bibinfo {volume} {17}},\ \bibinfo
+  {pages} {1013–1017} (\bibinfo {year} {2021})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Dummit}(1999)}]{Dummit1999AbstractA}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {D.~S.}\ \bibnamefont
+  {Dummit}}\ }(\bibinfo {year} {1999})\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Lang}(2002)}]{lang02}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {S.}~\bibnamefont
+  {Lang}},\ }\href@noop {} {\emph {\bibinfo {title} {Algebra}}}\ (\bibinfo
+  {publisher} {Springer},\ \bibinfo {address} {New York, NY},\ \bibinfo {year}
+  {2002})\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Artin}(2011)}]{algebra}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {M.}~\bibnamefont
+  {Artin}},\ }\href {https://books.google.ca/books?id=QsOfPwAACAAJ} {\emph
+  {\bibinfo {title} {Algebra}}}\ (\bibinfo  {publisher} {Pearson Education},\
+  \bibinfo {year} {2011})\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Valiant}(1984)}]{PAC}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {L.~G.}\ \bibnamefont
+  {Valiant}},\ }\href {\doibase 10.1145/1968.1972} {\bibfield  {journal}
+  {\bibinfo  {journal} {Commun. ACM}\ }\textbf {\bibinfo {volume} {27}},\
+  \bibinfo {pages} {1134–1142} (\bibinfo {year} {1984})}\BibitemShut
+  {NoStop}%
+\bibitem [{\citenamefont {Bshouty}\ and\ \citenamefont {Jackson}(1999)}]{qPAC}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {N.~H.}\ \bibnamefont
+  {Bshouty}}\ and\ \bibinfo {author} {\bibfnamefont {J.~C.}\ \bibnamefont
+  {Jackson}},\ }\href {\doibase 10.1137/S0097539795293123} {\bibfield
+  {journal} {\bibinfo  {journal} {SIAM J. Comput.}\ }\textbf {\bibinfo {volume}
+  {28}},\ \bibinfo {pages} {1136–1153} (\bibinfo {year} {1999})}\BibitemShut
+  {NoStop}%
+\bibitem [{\citenamefont {Vapnik}\ and\ \citenamefont
+  {Chervonenkis}(2015)}]{Vapnik2015}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {V.~N.}\ \bibnamefont
+  {Vapnik}}\ and\ \bibinfo {author} {\bibfnamefont {A.~Y.}\ \bibnamefont
+  {Chervonenkis}},\ }\enquote {\bibinfo {title} {On the uniform convergence of
+  relative frequencies of events to their probabilities},}\ in\ \href {\doibase
+  10.1007/978-3-319-21852-6_3} {\emph {\bibinfo {booktitle} {Measures of
+  Complexity: Festschrift for Alexey Chervonenkis}}},\ \bibinfo {editor}
+  {edited by\ \bibinfo {editor} {\bibfnamefont {V.}~\bibnamefont {Vovk}},
+  \bibinfo {editor} {\bibfnamefont {H.}~\bibnamefont {Papadopoulos}}, \ and\
+  \bibinfo {editor} {\bibfnamefont {A.}~\bibnamefont {Gammerman}}}\ (\bibinfo
+  {publisher} {Springer International Publishing},\ \bibinfo {address} {Cham},\
+  \bibinfo {year} {2015})\ pp.\ \bibinfo {pages} {11--30}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Blumer}\ \emph {et~al.}(1989)\citenamefont {Blumer},
+  \citenamefont {Ehrenfeucht}, \citenamefont {Haussler},\ and\ \citenamefont
+  {Warmuth}}]{Blumer}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {A.}~\bibnamefont
+  {Blumer}}, \bibinfo {author} {\bibfnamefont {A.}~\bibnamefont {Ehrenfeucht}},
+  \bibinfo {author} {\bibfnamefont {D.}~\bibnamefont {Haussler}}, \ and\
+  \bibinfo {author} {\bibfnamefont {M.~K.}\ \bibnamefont {Warmuth}},\ }\href
+  {\doibase 10.1145/76359.76371} {\bibfield  {journal} {\bibinfo  {journal} {J.
+  ACM}\ }\textbf {\bibinfo {volume} {36}},\ \bibinfo {pages} {929–965}
+  (\bibinfo {year} {1989})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Hanneke}(2016)}]{hanneke2016optimal}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {S.}~\bibnamefont
+  {Hanneke}},\ }\href@noop {} {\enquote {\bibinfo {title} {The optimal sample
+  complexity of {PAC} learning},}\ } (\bibinfo {year} {2016}),\ \Eprint
+  {http://arxiv.org/abs/1507.00473} {arXiv:1507.00473 [cs.LG]} \BibitemShut
+  {NoStop}%
+\bibitem [{\citenamefont {Atici}\ and\ \citenamefont
+  {Servedio}(2005)}]{Atici_2005}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {A.}~\bibnamefont
+  {Atici}}\ and\ \bibinfo {author} {\bibfnamefont {R.~A.}\ \bibnamefont
+  {Servedio}},\ }\href {\doibase 10.1007/s11128-005-0001-2} {\bibfield
+  {journal} {\bibinfo  {journal} {Quantum Information Processing}\ }\textbf
+  {\bibinfo {volume} {4}},\ \bibinfo {pages} {355–386} (\bibinfo {year}
+  {2005})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Zhang}(2010)}]{ZHANG201040}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {C.}~\bibnamefont
+  {Zhang}},\ }\href {\doibase https://doi.org/10.1016/j.ipl.2010.10.007}
+  {\bibfield  {journal} {\bibinfo  {journal} {Information Processing Letters}\
+  }\textbf {\bibinfo {volume} {111}},\ \bibinfo {pages} {40} (\bibinfo {year}
+  {2010})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Arunachalam}\ and\ \citenamefont
+  {de~Wolf}(2017{\natexlab{b}})}]{arunachalam2017optimal}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {S.}~\bibnamefont
+  {Arunachalam}}\ and\ \bibinfo {author} {\bibfnamefont {R.}~\bibnamefont
+  {de~Wolf}},\ }\href@noop {} {\enquote {\bibinfo {title} {Optimal quantum
+  sample complexity of learning algorithms},}\ } (\bibinfo {year}
+  {2017}{\natexlab{b}}),\ \Eprint {http://arxiv.org/abs/1607.00932}
+  {arXiv:1607.00932 [quant-ph]} \BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Ye}\ and\ \citenamefont {Lim}(2016)}]{ye2016}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {K.}~\bibnamefont
+  {Ye}}\ and\ \bibinfo {author} {\bibfnamefont {L.-H.}\ \bibnamefont {Lim}},\
+  }\href {https://arxiv.org/abs/1407.0900} {\enquote {\bibinfo {title}
+  {Schubert varieties and distances between subspaces of different
+  dimensions},}\ } (\bibinfo {year} {2016}),\ \Eprint
+  {http://arxiv.org/abs/1407.0900} {arXiv:1407.0900 [math.NA]} \BibitemShut
+  {NoStop}%
+\bibitem [{\citenamefont {Buhrman}\ \emph {et~al.}(2001)\citenamefont
+  {Buhrman}, \citenamefont {Cleve}, \citenamefont {Watrous},\ and\
+  \citenamefont {de~Wolf}}]{Buhrman_2001}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {H.}~\bibnamefont
+  {Buhrman}}, \bibinfo {author} {\bibfnamefont {R.}~\bibnamefont {Cleve}},
+  \bibinfo {author} {\bibfnamefont {J.}~\bibnamefont {Watrous}}, \ and\
+  \bibinfo {author} {\bibfnamefont {R.}~\bibnamefont {de~Wolf}},\ }\href
+  {\doibase 10.1103/physrevlett.87.167902} {\bibfield  {journal} {\bibinfo
+  {journal} {Physical Review Letters}\ }\textbf {\bibinfo {volume} {87}}
+  (\bibinfo {year} {2001}),\ 10.1103/physrevlett.87.167902}\BibitemShut
+  {NoStop}%
+\bibitem [{\citenamefont {Bengio}\ \emph {et~al.}(2014)\citenamefont {Bengio},
+  \citenamefont {Courville},\ and\ \citenamefont
+  {Vincent}}]{bengio2014representation}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {Y.}~\bibnamefont
+  {Bengio}}, \bibinfo {author} {\bibfnamefont {A.}~\bibnamefont {Courville}}, \
+  and\ \bibinfo {author} {\bibfnamefont {P.}~\bibnamefont {Vincent}},\
+  }\href@noop {} {\enquote {\bibinfo {title} {Representation learning: A review
+  and new perspectives},}\ } (\bibinfo {year} {2014}),\ \Eprint
+  {http://arxiv.org/abs/1206.5538} {arXiv:1206.5538} \BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Higgins}\ \emph {et~al.}(2018)\citenamefont
+  {Higgins}, \citenamefont {Amos}, \citenamefont {Pfau}, \citenamefont
+  {Racaniere}, \citenamefont {Matthey}, \citenamefont {Rezende},\ and\
+  \citenamefont {Lerchner}}]{higgins2018definition}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {I.}~\bibnamefont
+  {Higgins}}, \bibinfo {author} {\bibfnamefont {D.}~\bibnamefont {Amos}},
+  \bibinfo {author} {\bibfnamefont {D.}~\bibnamefont {Pfau}}, \bibinfo {author}
+  {\bibfnamefont {S.}~\bibnamefont {Racaniere}}, \bibinfo {author}
+  {\bibfnamefont {L.}~\bibnamefont {Matthey}}, \bibinfo {author} {\bibfnamefont
+  {D.}~\bibnamefont {Rezende}}, \ and\ \bibinfo {author} {\bibfnamefont
+  {A.}~\bibnamefont {Lerchner}},\ }\href@noop {} {\enquote {\bibinfo {title}
+  {Towards a definition of disentangled representations},}\ } (\bibinfo {year}
+  {2018}),\ \Eprint {http://arxiv.org/abs/1812.02230} {arXiv:1812.02230}
+  \BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Achille}\ and\ \citenamefont
+  {Soatto}(2018)}]{achille}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {A.}~\bibnamefont
+  {Achille}}\ and\ \bibinfo {author} {\bibfnamefont {S.}~\bibnamefont
+  {Soatto}},\ }in\ \href {\doibase 10.1109/ITA.2018.8503149} {\emph {\bibinfo
+  {booktitle} {2018 Information Theory and Applications Workshop (ITA)}}}\
+  (\bibinfo {year} {2018})\ pp.\ \bibinfo {pages} {1--9}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Larocca}\ \emph
+  {et~al.}(2022{\natexlab{b}})\citenamefont {Larocca}, \citenamefont {Sauvage},
+  \citenamefont {Sbahi}, \citenamefont {Verdon}, \citenamefont {Coles},\ and\
+  \citenamefont {Cerezo}}]{Larocca_2022}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {M.}~\bibnamefont
+  {Larocca}}, \bibinfo {author} {\bibfnamefont {F.}~\bibnamefont {Sauvage}},
+  \bibinfo {author} {\bibfnamefont {F.~M.}\ \bibnamefont {Sbahi}}, \bibinfo
+  {author} {\bibfnamefont {G.}~\bibnamefont {Verdon}}, \bibinfo {author}
+  {\bibfnamefont {P.~J.}\ \bibnamefont {Coles}}, \ and\ \bibinfo {author}
+  {\bibfnamefont {M.}~\bibnamefont {Cerezo}},\ }\href {\doibase
+  10.1103/prxquantum.3.030341} {\bibfield  {journal} {\bibinfo  {journal} {PRX
+  Quantum}\ }\textbf {\bibinfo {volume} {3}} (\bibinfo {year}
+  {2022}{\natexlab{b}}),\ 10.1103/prxquantum.3.030341}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Cameron}\ and\ \citenamefont
+  {Cara}(2002)}]{CAMERON2002641}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {P.~J.}\ \bibnamefont
+  {Cameron}}\ and\ \bibinfo {author} {\bibfnamefont {P.}~\bibnamefont {Cara}},\
+  }\href {\doibase https://doi.org/10.1016/S0021-8693(02)00550-1} {\bibfield
+  {journal} {\bibinfo  {journal} {Journal of Algebra}\ }\textbf {\bibinfo
+  {volume} {258}},\ \bibinfo {pages} {641} (\bibinfo {year}
+  {2002})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Whiston}\ and\ \citenamefont
+  {Saxl}(2002)}]{WHISTON2002651}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {J.}~\bibnamefont
+  {Whiston}}\ and\ \bibinfo {author} {\bibfnamefont {J.}~\bibnamefont {Saxl}},\
+  }\href {\doibase https://doi.org/10.1016/S0021-8693(02)00648-8} {\bibfield
+  {journal} {\bibinfo  {journal} {Journal of Algebra}\ }\textbf {\bibinfo
+  {volume} {258}},\ \bibinfo {pages} {651} (\bibinfo {year}
+  {2002})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {McDougall-Bagnall}\ and\ \citenamefont
+  {Quick}(2011)}]{MCDOUGALLBAGNALL2011332}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {J.}~\bibnamefont
+  {McDougall-Bagnall}}\ and\ \bibinfo {author} {\bibfnamefont {M.}~\bibnamefont
+  {Quick}},\ }\href {\doibase https://doi.org/10.1016/j.jalgebra.2011.08.030}
+  {\bibfield  {journal} {\bibinfo  {journal} {Journal of Algebra}\ }\textbf
+  {\bibinfo {volume} {346}},\ \bibinfo {pages} {332} (\bibinfo {year}
+  {2011})}\BibitemShut {NoStop}%
+\end{thebibliography}%

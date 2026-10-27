@@ -1,0 +1,32 @@
+\section{Proofs regarding core properties of \refreduction} \label{sec:reduction:proofs}
+First we prove that \refreduction can be executed in FPT time parameterized by $|X_C|$.
+\begin{lemma} \label{lem:shrink:running:time}
+	\Refreduction can be performed in $2^{\Oh(|X_C|)} \cdot n^{\Oh(1)}$ time.
+\end{lemma}
+\begin{proof}
+	Executing \refmark in step~\ref{itm:shrink:mark:b:star} of the algorithm takes $2^{\Oh(|X_C|)} \cdot n^{\Oh(1)}$ time. We proceed by arguing that the remainder of the algorithm can be performed in $n^{\Oh(1)}$ time.
+	
+	The loop from step~\ref{itm:shrink:loop} forms the computational bottle-neck of the remaining part of the algorithm. It consists of $2 \cdot |X_C \cup B^\ast|^2$ iterations. As $|B^\ast| = |X_C|^{\Oh(1)}$ by construction, this results in $|X_C|^{\Oh(1)}$ iterations. In each of these iterations, we need to check whether $G[X_B \setminus B^\ast]$ connects two given vertices $u$ and $v$ using a path of a given parity $p$. 
+	
+	This check can be done by iterating over all components $H$ of $G[X_B \setminus B^\ast]$ and returning whether at least one of those connects $u$ and $v$ with a path of parity $p$. Now, it suffices to show that this can be computed for a single arbitrary such component $H$ in polynomial time.
+	
+	Because every component $H$ of $G[X_B \setminus B^\ast]$ is a connected bipartite subgraph, checking whether an arbitrary such component connects two given vertices $u$ and $v$ with a path of a given parity $p$ is in fact quite simple. If $p = \text{even}$, it suffices to return whether $u$ and $v$ each have a neighbor in the same partite set of $H$, which can clearly be done in polynomial time. To see that this suffices, note that any even path in $H$ starts and ends in the same partite set, since $H$ is bipartite. Moreover, because~$H$ is connected, any two vertices in it are connected by a path.
+	
+	By similar arguments, if $p = \text{odd}$, it suffices to return whether $u$ and $v$ have neighbors in opposite partite sets of $H$.
+\end{proof}
+%
+Next, we show that \refreduction outputs a strictly smaller graph than its input graph when the OCC it is given is reducible. Recall that we call an OCC $(X_B, X_C, X_R)$ reducible if $|X_B| > g_r(|X_C|)$ for some polynomial $g_r(x)$. The exact definition of this polynomial had been postponed so far. Having reached the statement whose proof relies on this definition, we now specify this exact polynomial.
+
+Its definition is based on \Cref{lem:covering:corollary} in which sets $Z$ and $T$ are specified. Setting the value of $s$ in this lemma to $3$ yields the existence of a constant $c \in \N$ such that $|Z| \leq c \cdot |T|^{8}$ for large enough $|T|$. Given this constant $c$, we define $g_r \colon \N \to \N$ as $g_r(x) = (6(2^8 c+1)^2+2^8 c) \cdot x^{16}$. With this definition, we can prove the following result. 
+\begin{lemma} \label{lem:shrink:size}
+	Let $G$ be a graph and let $(X_B, X_C, X_R)$ be an OCC of it. If $(X_B, X_C, X_R)$ is reducible, then running \refreduction with these input parameters yields an output graph~$G'$ with $|V(G')| < |V(G)|$.
+\end{lemma}
+\begin{proof}
+	Note that by construction of $G'$, we have $X_C \cup X_R \subseteq V(G) \cap V(G')$, so that we can define $X_B' := V(G') \setminus (X_C \cup X_R)$. Since $X_B = V(G) \setminus (X_C \cup X_R)$, it suffices to show that $|X_B'| < |X_B|$. To do so, we separately bound the sizes of $B^\ast$ and $V(G') \setminus V(G)$ of which $X_B'$ is the union. 
+	
+	We express bounds in terms of $|X_C|$ and the values of $c$ and $g_r$ as defined above. Bounding the size of $B^\ast$ using these terms is simple: as it was constructed in \refmark via \Cref{lem:covering:corollary}, it has at most $c \cdot (2 |X_C|)^8$ vertices.
+	
+	To bound the size of $V(G') \setminus V(G)$, note that it includes at most $6$ vertices for every pair of vertices from $X_C \cup B^\ast$. Hence, $|V(G') \setminus V(G)| \leq 6 \cdot |X_C \cup B^\ast|^2 = 6 \cdot (|X_C| + |B^\ast|)^2$. Inserting the bound $|B^\ast| \leq c \cdot (2 |X_C|)^8$ into this expression, we obtain $|V(G') \setminus V(G)| \leq 6 \cdot \left((2^8 c+1) \cdot |X_C|^8 \right)^2 = 6 \cdot (2^8 c+1)^2 \cdot |X_C|^{16}$.
+	
+	Combining the bounds on $|B^\ast|$ and $|V(G') \setminus v(G)|$, we get $|X_B'| \leq \left(6(2^8 c+1)^2+2^8 c\right) \cdot |X_C|^{16} = g_r(|X_C|)$. As $(X_B, X_C, X_R)$ is a reducible OCC by assumption, it follows that $|X_B| > g_r(|X_C|) \geq |X_B'|$.
+\end{proof}

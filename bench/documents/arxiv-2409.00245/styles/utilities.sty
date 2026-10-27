@@ -1,0 +1,51 @@
+%-------------------------------------------------------------------------------
+%   Spacing
+%-------------------------------------------------------------------------------
+
+% vertical space
+\newcommand{\br}{\vspace{1em}}
+
+%-------------------------------------------------------------------------------
+%   Math Symbols
+%-------------------------------------------------------------------------------
+\newcommand*\abs[1]{\left\lvert#1\right\rvert}
+\newcommand*\norm[1]{\left\lVert#1\right\rVert}
+
+\newcommand{\N}{\ensuremath{\mathbb{N}}}
+\newcommand{\Z}{\ensuremath{\mathbb{Z}}}
+\newcommand{\R}{\ensuremath{\mathbb{R}}}
+\newcommand{\F}{\ensuremath{\mathcal{F}}}
+
+\newcommand{\bypass}{\mathsf{bypass}}
+\newcommand{\mwc}{\mathsf{MwCut}}
+\newcommand{\rmwc}{\mathsf{ResMwCut}}
+
+\def\rem#1{{\marginpar{\raggedright\scriptsize #1}}}
+
+%% To turn off the margin comments: comment out the following line.
+%\def\DEBUG{true}
+
+\ifdefined\DEBUG{}
+
+\newcommand{\bmp}[1]{\textcolor{purple}{BMP: #1}}
+\newcommand{\bmpr}[1]{\todo[bordercolor=purple, linecolor=purple]{BMP: #1}}
+\newcommand{\yo}[1]{\rem{\textcolor{NavyBlue}{\(\bullet \)[Yo] #1}}}
+\newcommand{\rfa}[1]{\textcolor{ForestGreen}{RFA: [#1]}}
+\newcommand{\rfar}[1]{\todo[bordercolor=ForestGreen, linecolor=ForestGreen]{RFA: #1}}
+\newcommand{\bdsr}[1]{\todo[bordercolor=blue, linecolor=blue]{BDS: #1}}
+\newcommand\YM[1]{\todo[bordercolor=Turquoise, linecolor=Turquoise, textcolor=NavyBlue]{YM: #1}}
+
+\else
+
+\newcommand{\bmp}[1]{}
+\newcommand{\bmpr}[1]{}
+\newcommand{\yo}[1]{}
+\newcommand{\rfa}[1]{}
+\newcommand{\rfar}[1]{}
+\newcommand{\bdsr}[1]{}
+\newcommand\YM[1]{}
+
+\fi
+
+% Big-O notation
+\newcommand{\Oh}{\ensuremath{\mathcal{O}}}

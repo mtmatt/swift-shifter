@@ -1,0 +1,208 @@
+\section{Constructing the functor} \label{sec:functor}
+
+This last section is devoted to the construction of the functor $\fe : \bMF \to \bh_2 \sCRW$. We will do this in pieces by prescribing, for each $n$, the value of $\fe$ on $n$-cells ($n = 0,1,2$) and supplying the structure morphisms necessary for a symmetric monoidal $2$-functor.
+
+\subsection{From variables to derived symplectic stacks} \label{sec:e-0}
+
+For an object $\undl{x} \in \bMF$ of length $m$ we define $\fe(\undl{x}) := \bT^\ast \KK^m \in \sCRW$, which we know from \Cref{sec:affine-planes} to be equivalent to $\Spec \KK[\undl{x}, \undl{p_x}]$. There are canonical equivalences $\bT^\ast \KK^{m+n} \simeq \bT^\ast \KK^m \times \bT^\ast \KK^n$ of derived symplectic stacks (\Cref{eqn:product-of-affine-planes}), so $\fe$ canonically preserves the monoidal product. It also preserves the unit: $\fe(\emptyset) \simeq \bT^\ast \KK^0 \simeq \ast$.
+
+\subsection{From polynomials to Lagrangian morphisms}
+
+For a polynomial $(\undl{a}, V) : \undl{x} \to \undl{y}$ we need $\fe(\undl{a}, V)$ to be a Lagrangian span
+\begin{equation*}
+	\begin{tikzcd}[column sep = small, row sep = small]
+		& L_{(\undl{a}, V)} \ar[dl] \ar[dr] & \\
+		\bT^\ast \KK^m & & \bT^\ast \KK^n
+	\end{tikzcd}
+\end{equation*}
+or alternatively, using \Cref{eqn:product-of-affine-planes,eqn:cotangent-complex-self-dual}, a Lagrangian morphism
+\begin{equation*}
+	L_{(\undl{a}, V)} \to \bT^\ast \KK^{m+n}.
+\end{equation*}
+Set
+\begin{equation*}
+	L_{(\undl{a},V)} := \Spec R_{(\undl{a},V)}
+\end{equation*}
+where $R_{(\undl{a},V)}$ is the cdga introduced in \Cref{lmm:quasi-iso-end} whose underlying $\KK[\undl{xya}]$-module is $\KK[\undl{xya};\undl{\alpha}]$ and whose differential is induced by $d \alpha_i = \partial_{a_i} V$.
+
+\begin{prp} \label{prp:e-1cells}
+	Define the cdga maps
+	\begin{align*}
+		f_{\undl{x}} : \KK[\undl{x}, \undl{p_x}] & \to R_{(\undl{a},V)}, & f_{\undl{x}}(x_i) = x_i, \quad f_{\undl{x}}(p_{x_i}) = -\partial_{x_i} V, \\
+		f_{\undl{y}} : \KK[\undl{y}, \undl{p_y}] & \to R_{(\undl{a},V)}, & f_{\undl{y}}(y_i) = y_i, \quad f_{\undl{y}}(p_{y_i}) = \partial_{y_i} V.
+	\end{align*}
+	The induced morphism
+	\begin{equation*}
+		f : L_{(\undl{a},V)} \to \Spec \KK[\undl{xy}, \undl{p_x p_y}] \simeq \bT^\ast \KK^{m+n}
+	\end{equation*}
+	carries the structure of a Lagrangian morphism of derived stacks.
+\end{prp}
+
+Before starting the proof we recall a useful construction. A polynomial $p \in \KK[\undl{u}]$ induces a map
+\begin{equation*}
+	\gamma_p : \KK[\undl{u}, \undl{p_u}] \to \KK[\undl{u}], \qquad \gamma_p(u_i) = u_i, \quad \gamma_p(p_{u_i}) = \partial_{u_i} p
+\end{equation*}
+which passes to a map of derived stacks
+\begin{equation*}
+	\Gamma_p : \KK^{\vnorm{\undl{u}}} \simeq \Spec \KK[\undl{u}] \to \Spec \KK[\undl{u}, \undl{p_u}] \simeq \bT^\ast \KK^{\vnorm{\undl{u}}}
+\end{equation*}
+called the \emph{graph of $dp$}; here $dp$ is a $1$-form on $\KK^{\vnorm{\undl{u}}}$ canonically obtained from $p$ (see \cite{Calaque2015}). By \cite[Theorem 2.15]{Calaque2019} there is a canonical Lagrangian structure on $\Gamma_p$ induced by the nullhomotopy $d(dp) \simeq 0$.
+
+\begin{proof}[Proof of \Cref{prp:e-1cells}]
+	We will write $f$ as the pullback of two Lagrangian spans, which is again Lagrangian by \cite[Theorem 4.4]{Calaque2015}. Consider the two polynomials $0 \in \KK[\undl{a}]$ and $V \in \KK[\undl{xya}]$. They induce Lagrangian morphisms
+	\begin{equation*}
+		\Gamma_0 : \KK^{k} \to \bT^\ast \KK^k, \quad \Gamma_V : \KK^{m+n+k} \to \bT^\ast \KK^{m+n+k} \simeq (\bT^\ast \KK^k)^\diamond \times \bT^\ast \KK^{m+n},
+	\end{equation*}
+	namely the graphs of $d0$ and $dV$, which we can convert to two Lagrangian spans
+	\begin{equation*}
+		\begin{tikzcd}
+			& \KK^k \ar[dl] \ar[dr] & & \KK^{m+n+k} \ar[dr] \ar[dl] & \\
+			\ast & & \bT^\ast \KK^k & & \bT^\ast \KK^{m+n}
+		\end{tikzcd}
+	\end{equation*}
+	after flipping some signs (see \Cref{eqn:cotangent-complex-self-dual}). The derived pullback of these spans is
+	\begin{equation*}
+		\begin{tikzcd}
+			& \Spec (\KK[\undl{a}] \otimes_{\KK[\undl{a}, \undl{p_a}]} \KK[\undl{xya}]) \ar[dl] \ar[dr, "g"] & \\
+			\ast & & \bT^\ast \KK^{m+n}
+		\end{tikzcd}
+	\end{equation*}
+	and it can be easily verified that
+	\begin{equation*}
+		R_{(\undl{a}, V)} \simeq \KK[\undl{a}] \otimes_{\KK[\undl{a}, \undl{p_a}]} \KK[\undl{xya}].
+	\end{equation*}
+	One way to see this, for example, is to replace the map $\KK[\undl{a}, \undl{p_a}] \to \KK[\undl{a}]$ by the quasi-isomorphic cofibration $\KK[\undl{a}, \undl{p_a}] \to \KK[\undl{a},\undl{p_a};\undl{\alpha}]$, where the latter cdga has differential $d\alpha_i = p_{a_i} - \partial_{a_i} V$, and then computing the ordinary tensor product of cdgas. The result is isomorphic to the presentation of $R_{(\undl{a},V)}$ given in the previous section. Moreover, $g \simeq f$ after the identification, and so we're done.
+\end{proof}
+
+Geometrically we can think of $L_{(\undl{a}, V)}$ as a (Lagrangian) family of Lagrangian graphs parametrized by the parameters $\undl{a} \in \KK^k$. Indeed, instantiating the variables $a_i$ at points $A_i \in \KK$ will return an honest Lagrangian submanifold of $\bT^\ast \KK^{m+n}$, namely the graph of the differential of the polynomial $V(\undl{xy}, A_1, \dotsc, A_k) \in \KK[\undl{xy}]$.
+
+Now we can define $\fe(\undl{a},V)$ to be the Lagrangian span
+\begin{equation*}
+	\begin{tikzcd}
+		& L_{(\undl{a}, V)} \ar[dl] \ar[dr] & \\
+		\bT^\ast \KK^m & & \bT^\ast \KK^n
+	\end{tikzcd}
+\end{equation*}
+described above. The following properties of $L_{(\undl{a},V)}$ are just a matter of computing some derived tensor products:
+\begin{prp} \label{prp:functoriality-1cells}
+	Let $(\undl{a}, V) : \undl{x} \to \undl{y}$, $(\undl{a'}, V') : \undl{x'} \to \undl{y'}$, and $(\undl{b}, W) : \undl{y} \to \undl{z}$ be $1$-morphisms in $\bMF$, and let $o = \vnorm{\undl{z}}$, $m' = \vnorm{\undl{x'}}$, $n' = \vnorm{\undl{y'}}$. 
+	\begin{enumerate}
+		\item $\fe$ preserves the horizontal composition and the monoidal product of $1$-morphisms, i.e. we have equivalences
+		\begin{align*}
+			\fe(\undl{a}, V) \times_{\bT^\ast \KK^{n}} \fe(\undl{b}, W) & \simeq \fe(\undl{ab}, V + W) & \text{as spans from $\bT^\ast \KK^m$ to $\bT^\ast \KK^o$}, \\
+			\fe(\undl{a}, V) \times \fe(\undl{a'}, V') & \simeq \fe(\undl{aa'}, V + V') & \text{as spans from $\bT^\ast \KK^{m+m'}$ to $\bT^\ast \KK^{n+n'}$}.
+		\end{align*}
+		\item $\fe$ preserves the units for the above operations, i.e. we have equivalences
+		\begin{align*}
+			\fe(\id_{\undl{x}}) & \simeq \text{diagonal span from $\bT^\ast \KK^m$ to itself}, \\
+			\fe(\emptyset, 0) & \simeq \text{diagonal span from $\ast$ to itself}.
+		\end{align*}
+	\end{enumerate}
+\end{prp}
+These equivalences are essentially unique, since the two sides are presentations of the limit of the same diagram and two limits can be identified with each other via an essentially unique equivalence.
+
+\subsection{From matrix factorizations to dg-modules}
+
+The next step is to define $\fe$ on $2$-morphisms, so matrix factorizations. Recall from \Cref{eqn:cat-of-2-morphisms} that the $\infty$-category of $2$-morphisms between $\fe(\undl{a}, V) : \bT^\ast \KK^m \to \bT^\ast \KK^n$ and $\fe(\undl{b}, W) : \bT^\ast \KK^m \to \bT^\ast \KK^n$ is the $\infty$-category $\Mod^{\ZZ_2}_{A_{W - V}}$ of $\ZZ_2$-graded dg-modules over the cdga 
+\begin{equation*}
+	A_{W-V} := R_{(\undl{a}, V)} \otimes_{\KK[\undl{xy}, \undl{p_x p_y}]} R_{(\undl{b}, W)}.
+\end{equation*}
+This algebra has a nice explicit model: 
+\begin{equation*}
+	\KK[\undl{xyab}; \undl{\chi \upsilon \alpha \beta}]
+\end{equation*}
+as a $\ZZ_2$-graded exterior algebra over $\KK[\undl{xyab}]$ with one Greek variable $\chi_i$, $\upsilon_i$, $\alpha_i$, and $\beta_i$ in odd degree for each corresponding Roman variable $x_i$, $y_i$, $a_i$, and $b_i$ in even degree. The differential is given on generators by
+\begin{equation*}
+	d\chi_i = \partial_{x_i} W - \partial_{x_i} V, \quad d \upsilon_i = \partial_{y_i} W - \partial_{y_i} V, \quad d \alpha_i = - \partial_{a_i} V, \quad d\beta_i = \partial_{b_i} W.
+\end{equation*}
+More succinctly, if $\tau$ is a Greek variable corresponding to a Roman variable $t$ then $d\tau = \partial_t (W - V)$. Therefore $A_{W - V}$ is the algebra of functions on the full derived critical locus of the polynomial $W - V \in \KK[\undl{xyab}]$. Notice that we omit the extra variables $\undl{a}$ and $\undl{b}$ from the notation $A_{W - V}$ unlike with $R_{(\undl{a}, V)}$ and $R_{(\undl{b}, W)}$; this is because we don't have to keep track of which variables to differentiate with respect to, as we are including all of them.
+
+\begin{prp} \label{prp:end-is-module}
+	Let $M$ be a representative for a $2$-morphism $(\undl{a}, V) \to (\undl{b}, W)$, namely a matrix factorization of $W - V \in \KK[\undl{xyab}]$. Then the $\ZZ_2$-graded cochain complex $\End(M)$ inherits a canonical $A_{W - V}$-action, i.e. $\End(M) \in \Mod_{A_{W - V}}^{\ZZ_2}$.
+\end{prp}
+
+\begin{proof}
+	We have a quasi-isomorphism
+	\begin{equation*}
+		\End(M) \simeq \End(I_{(\undl{a}, V)} \otimes_{\KK[\undl{xya}]} M \otimes_{\KK[\undl{xyb}]} I_{(\undl{b},W)})
+	\end{equation*}
+	since $I_{(\undl{a}, V)}$ and $I_{(\undl{b},W)}$ are units for the composition of $2$-morphisms in $\bMF$. The right-hand side has a canonical action of $\End(I_{(\undl{a}, V)})$ from the left factor and of $\End(I_{(\undl{b},W)})$ from the right factor in the tensor product. The two actions agree on $\KK[\undl{xy}]$ and can be further made to agree on $\KK[\undl{xy}, \undl{p_x p_y}]$: the action of $p_{x_i}$ is multiplication by $\partial_{x_i}(W - V)$, which is nulhomotopic as an endomorphism of $M$ (as can be seen by differentiating the equation $d_M^2 = W - V$), and similarly for $p_{y_i}$. Thus $\End(M)$ inherits an action of
+	\begin{equation*}
+		\End(I_{(\undl{a}, V)}) \otimes_{\KK[\undl{xy},\undl{p_x p_y}]} \End(I_{(\undl{b},W)}) \simeq R_{(\undl{a}, V)} \otimes_{\KK[\undl{xy},\undl{p_x p_y}]} R_{(\undl{b}, W)} = A_{W - V}
+	\end{equation*}
+	where the first equivalence is due to \Cref{lmm:quasi-iso-end}.
+\end{proof}
+
+One might reasonably object to the usage of quasi-isomorphisms without unique inverses to define this action. This is justified by the fact that we are working in an $\infty$-category, so a module over an algebra needs to be interpreted in the correct homotopical sense, with the structure diagrams for the algebra action commuting up to coherent homotopies (in this case, coherent quasi-isomorphisms). Since $\End(-)$ and $- \otimes -$ are sufficiently functorial and in particular respect quasi-isomorphisms, this is not a problem for us: in the homotopy $2$-category $\bh_2 \sCRW$ the homotopies turn into coherent isomorphisms, and so are appropriately invertible. 
+
+Using an explicit homotopy equivalence $M \simeq I_{(\undl{a}, V)} \otimes_{\KK[\undl{xya}]} M \otimes_{\KK[\undl{xyb}]} I_{(\undl{b},W)}$ it would be possible to rigidify the situation to obtain explicit formulas for the action of $A_{W - V}$ on $\End(M)$. Despite our efforts we couldn't find formulas that were satisfyingly clear or elucidating, so we are happy to leave this task to the interested reader. We expect, however, that they will reflect the formulas for the Clifford action described in \cite{Murfet2018}, since the cut operation presented in that paper is one way to ``wedge'' the unit $I_{(\undl{a}, V)}$ inside the composition of two matrix factorizations.
+
+Finally, we set $\fe(M) := \End(M)$ with the $A_{W - V}$-action as in the proposition. It is clear that this assignment is independent of the chosen representative within the class $[M]$, so we omit the square brackets for simplicity. We have the following properties.
+\begin{prp} \label{prp:functoriality-2cells}
+	Fix objects $\undl{x}, \undl{y}, \undl{x'}, \undl{y'}, \undl{z}$ and $1$-morphisms $(\undl{a}, V), (\undl{b}, W), (\undl{c}, X) : \undl{x} \to \undl{y}$ and $(\undl{a'}, V'), (\undl{b'}, W') : \undl{y} \Rightarrow \undl{z}$ and $(\undl{a''}, V''), (\undl{b''}, W'') : \undl{x'} \Rightarrow \undl{y'}$ Let $M : (\undl{a}, V) \Rightarrow (\undl{b}, W)$, $N : (\undl{b}, V) \Rightarrow (\undl{c}, X)$, $M' : (\undl{a'}, V') \Rightarrow (\undl{b'}, W')$, and $M'' : (\undl{a''}, V'') \Rightarrow (\undl{b''}, W'')$ be representatives for $2$-morphisms in $\bMF$.
+	\begin{enumerate}
+		\item $\fe$ preserves the horizontal composition, the vertical composition, and the product of $2$-morphisms, i.e. we have equivalences
+		\begin{align*}
+			\fe(M) \otimes_{\KK[\undl{y}, \undl{p_y}]} \fe(M') & \simeq \fe(M \otimes_{\KK[\undl{y}]} M') & \text{as $A_{W + W' - (V + V')}$-modules}, \\
+			\fe(M) \otimes_{R_{(\undl{b}, W)}} \fe(N) & \simeq \fe(M \otimes_{\KK[\undl{xyb}]} N) & \text{as $A_{X - V}$-modules}, \\
+			\fe(M) \otimes_\KK \fe(M'') & \simeq \fe(M \otimes_{\KK} M'') & \text{as $A_{W + W'' - (V + V'')}$-modules}.
+		\end{align*}
+		\item $\fe$ preserves the units for the above operations, i.e. we have equivalences
+		\begin{align*}
+			\fe(I_{\id_{\undl{x}}}) & \simeq \KK[\undl{x}, \undl{p_x}] & \text{as $\KK[\undl{x}, \undl{p_x}] \otimes_\KK \KK[\undl{x}, \undl{p_x}]$-modules}, \\
+			\fe(I_{(\undl{a}, V)}) & \simeq R_{(\undl{a}, V)} & \text{as $R_{(\undl{a}, V)} \otimes_\KK R_{(\undl{a}, V)}$-modules}, \\
+			\fe(I_{(\emptyset, 0)}) & \simeq \KK & \text{as $\KK$-modules}.
+		\end{align*}
+	\end{enumerate}
+\end{prp}
+
+\begin{proof}
+To obtain the module structures as in the right column, note that an $A_{W - V}$-module and a $A_{X - W}$-module can be tensored to obtain an $A_{X - W} \otimes_{R_{(\undl{b}, W)}} A_{W - V}$-module and the action can be further restricted to that of a $A_{X - V}$-module via the canonical composite map
+\begin{align*}
+	A_{X - V} & \simeq R_{(\undl{a}, V)} \otimes_{\KK[\undl{xz}, \undl{p_x p_z}]} R_{(\undl{c}, X)} \\
+	& \to R_{(\undl{a}, V)} \otimes_{\KK[\undl{xy}, \undl{p_x p_y}]} R_{(\undl{b}, W)} \otimes_{\KK[\undl{yz}, \undl{p_y p_z}]} R_{(\undl{c}, X)} \\
+	& \simeq (R_{(\undl{a}, V)} \otimes_{\KK[\undl{xy}, \undl{p_x p_y}]} R_{(\undl{b}, W)}) \otimes_{R_{(\undl{b}, W)}} (R_{(\undl{b}, W)} \otimes_{\KK[\undl{yz}, \undl{p_y p_z}]} R_{(\undl{c}, X)}) \\
+	& \simeq A_{W - V} \otimes_{R_{(\undl{b}, W)}} A_{X - W}.
+\end{align*}
+This corresponds to the composition of $2$-morphisms in $\sCRW$ that was reviewed in \Cref{sec:affine-part}.
+
+The equivalences in (2) can be verified by computation: the second one is \Cref{lmm:quasi-iso-end} and the other two follow from the second one. The equivalences in (1) require the quasi-isomorphism
+\begin{equation*}
+	\End(A) \simeq A \otimes_{\KK[\undl{w}]} A^\vee
+\end{equation*}
+which exists for cohomologically finite matrix factorizations $A$ of a polynomial $p \in \KK[\undl{w}]$. Here $M^\vee$ is (possibly a shift of) the linear dual of $M$ as a matrix factorization and the equivalence is the usual (signed) evaluation map -- see \cite[Section 4]{KR2008} for example. In particular this holds for all the $2$-morphisms in $\bMF$ by definition, see the beginning of \Cref{sec:bMF}. We can now write down the equivalences in (1) as chains of equivalences involving the matrix factorizations and their duals. The technique is the same for all three, so we only show the second one:
+\begin{align*}
+	\fe(M) \otimes_{R_{(\undl{b}, W)}} \fe(N) & = \End(M) \otimes_{R_{(\undl{b}, W)}} \End(N) \\
+	& \simeq (M \otimes_{\KK[\undl{xyab}]} M^\vee) \otimes_{R_{(\undl{b}, W)}} (N \otimes_{\KK[\undl{xybc}]} N^\vee) \\
+	& \simeq (M \otimes_{\KK[\undl{xyb}]} N) \otimes_{\KK[\undl{xyabc}]} (M \otimes_{\KK[\undl{xyb}]} N)^\vee \\
+	& \simeq \End(M \otimes_{\KK[\undl{xyb}]} N) \\
+	& = \fe(M \otimes_{\KK[\undl{xyb}]} N).
+\end{align*}
+It's straightforward to see that the actions of $R_{(\undl{a}, V)}$ and $R_{(\undl{c}, W)}$ commute with all equivalences (the first and last two are tautological, the third is a reordering), so in the end we obtain an equivalence of modules over $R_{(\undl{a}, V)} \otimes_{\KK[\undl{xz}, \undl{p_x p_z}]} R_{(\undl{c}, X)} \simeq A_{X - V}$, as needed.
+\end{proof}
+
+\subsection{The functor}
+
+The results of the previous three subsections imply the following result:
+\begin{thm} \label{thm:main}
+	There is a symmetric monoidal functor
+	\begin{equation*}
+		\fe : \bMF \to \bh_2 \sCRW
+	\end{equation*}
+	from the $2$-category of matrix factorizations to the homotopy $2$-category of $\sCRW$ whose values on $k$-morphisms are given by
+	\begin{align*}
+		\fe(\undl{x}) & = \bT^\ast \KK^{\vnorm{\undl{x}}} & \text{on objects}, \\
+		\fe(\undl{a}, V) & = \left(
+		{\begin{tikzcd}[ampersand replacement = \&, column sep=tiny, row sep = small]
+			\& \Spec R_{(\undl{a}, V)} \ar[dr] \ar[dl] \& \\
+			\bT^\ast \KK^{\vnorm{\undl{x}}} \& \& \bT^\ast \KK^{\vnorm{\undl{y}}}
+		\end{tikzcd}}
+		\right)
+		& \text{on $1$-morphisms $\undl{x} \to \undl{y}$}, \\
+		\fe(M) & = \End(M) \text{ (as a $A_{W - V}$-module)} & \text{on $2$-morphisms $(\undl{a}, V) \Rightarrow (\undl{b}, W)$}.
+	\end{align*}
+\end{thm}
+
+\begin{proof}
+	The equivalences described in \Cref{sec:e-0}, \Cref{prp:functoriality-1cells}, and \Cref{prp:functoriality-2cells} are all the structure isomorphisms required for the assignment $\fe$ in the claim to be a functor of symmetric monoidal $2$-categories. Since these equivalences reduce to the structure equivalences for the pullback of stacks and the tensor product of modules, which are appropriately unital and associative, they satisfy all the necessary unit, associativity, and coherence identities in $\bh_2 \sCRW$ as well.
+\end{proof}

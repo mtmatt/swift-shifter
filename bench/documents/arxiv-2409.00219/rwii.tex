@@ -1,0 +1,308 @@
+\documentclass{amsart}
+\usepackage{amsfonts,amsmath,amssymb,amsthm,anyfontsize,array,bm,booktabs,caption,enumitem,extarrows,hyperref,longtable,mathalfa,mathdots,mathtools,microtype,slashed,tabularx,tikz,tikz-cd,parskip,comment,wasysym,subcaption}
+\usepackage[nameinlink]{cleveref}
+\usetikzlibrary{arrows}
+
+\graphicspath{{pics/}}
+
+% font/style packages
+\usepackage[sc,osf]{mathpazo}
+\usepackage[mathscr]{euscript}
+
+% theorems
+\theoremstyle{definition}
+\newtheorem{dfn}{Definition}[section]
+
+\theoremstyle{theorem}
+\newtheorem{prp}[dfn]{Proposition}
+\newtheorem{lmm}[dfn]{Lemma}
+\newtheorem{ass}[dfn]{Assumption}
+\newtheorem{thm}[dfn]{Theorem}
+\newtheorem{crl}[dfn]{Corollary}
+\newtheorem*{qst}{Question}
+
+\newcounter{mainthms}
+\renewcommand*{\themainthms}{\Alph{mainthms}}
+\theoremstyle{theorem}
+\newtheorem{mainthm}[mainthms]{Theorem}
+
+
+% equation numbering
+\numberwithin{equation}{subsection}
+
+% color
+\newcommand{\red}[1]{{\color{red} #1}}
+
+% above and under
+\newcommand{\what}[1]{\widehat{#1}}
+\newcommand{\conj}[1]{\overline{#1}}
+\newcommand{\wilde}[1]{\widetilde{#1}}
+\newcommand{\undl}[1]{\underline{#1}}
+
+% brackets
+\newcommand{\brak}[1]{\langle #1 \rangle}
+\newcommand{\vnorm}[1]{\left\lvert #1 \right\rvert}
+\newcommand{\Vnorm}[1]{\left\lVert #1 \right\rVert}
+
+% arrows
+\newcommand{\xlra}[1]{\xlongrightarrow{#1}}
+\newcommand{\xlla}[1]{\xlongleftarrow{#1}}
+
+% rotated symbols
+\newcommand{\vdotsb}{\rotatebox[origin=c]{-90}{$\dotsb$}}
+\newcommand{\ddotsb}{\rotatebox[origin=c]{-45}{$\dotsb$}}
+\newcommand{\dvdotsb}{\rotatebox[origin=c]{45}{$\dotsb$}}
+\newcommand{\vcong}{\rotatebox[origin=c]{-90}{$\cong$}}
+
+% miscellanea
+\newcommand{\inv}{{-1}}
+\newcommand{\vphi}{\varphi}
+\newcommand{\veps}{\varepsilon}
+\newcommand{\sub}{\subseteq}
+\newcommand{\twoslash}{/\!\!/}
+
+% quick calligraphy
+\newcommand{\mc}[1]{\mathcal{#1}}
+\newcommand{\mf}[1]{\mathfrak{#1}}
+\newcommand{\ms}[1]{\mathscr{#1}}
+\newcommand{\mb}[1]{\mathbb{#1}}
+\newcommand{\cat}[1]{\mathsf{#1}}
+
+% script
+\newcommand{\sA}{\ms{A}}
+\newcommand{\sB}{\ms{B}}
+\newcommand{\sC}{\ms{C}}
+\newcommand{\sD}{\ms{D}}
+\newcommand{\sE}{\ms{E}}
+\newcommand{\sQ}{\ms{Q}}
+\newcommand{\Spaces}{\ms{S}}
+\newcommand{\sX}{\ms{X}}
+\newcommand{\sY}{\ms{Y}}
+\newcommand{\sZ}{\ms{Z}}
+\newcommand{\sPP}{\ms{PP}}
+\newcommand{\sCRW}{\ms{CRW}}
+
+% cal
+\newcommand{\cA}{\mc{A}}
+\newcommand{\cE}{\mc{E}}
+\newcommand{\cF}{\mc{F}}
+\newcommand{\cM}{\mc{M}}
+\newcommand{\cMF}{\mc{MF}}
+\newcommand{\cN}{\mc{N}}
+\newcommand{\cO}{\mc{O}}
+\newcommand{\cP}{\mc{P}}
+\newcommand{\cQ}{\mc{Q}}
+\newcommand{\cZ}{\mc{Z}}
+
+% bold, blackboard bold, & fraktur
+\newcommand{\bA}{\mathbf{A}}
+\newcommand{\bB}{\mathbf{B}}
+\newcommand{\bC}{\mathbf{C}}
+\newcommand{\cRW}{\mathbf{RW}}
+\newcommand{\bfD}{\mathbf{D}}
+\newcommand{\bE}{\mathbf{E}}
+\newcommand{\bd}{\mf{d}} % fraktur d
+\newcommand{\fe}{\mf{e}}
+\newcommand{\bh}{\mathbf{h}}
+\newcommand{\bH}{\mathbf{H}}
+\newcommand{\bMF}{\mathbf{MF}}
+\newcommand{\bT}{\mathrm{T}}
+\newcommand{\bD}{\mathbf{\Delta}} % bold Delta
+\newcommand{\bS}{\mathbf{\Sigma}}
+\newcommand{\bL}{\mathbf{\Lambda}}
+\newcommand{\bG}{\mathbf{\Gamma}}
+\newcommand{\bsd}{\mathbf{\Theta}}
+\newcommand{\bvx}{\mathbf{\Xi}}
+\newcommand{\CC}{\mb{C}}
+\newcommand{\KK}{\mb{K}}
+\newcommand{\LL}{\mb{L}}
+\newcommand{\NN}{\mb{N}}
+\newcommand{\QQ}{\mb{Q}}
+\newcommand{\TT}{\mb{T}}
+\newcommand{\ZZ}{\mb{Z}}
+
+% roman and roman-script
+%% category operators
+\newcommand{\Hom}{\mathrm{Hom}}
+\newcommand{\End}{\mathrm{End}}
+\newcommand{\Aut}{\mathrm{Aut}}
+\newcommand{\Fun}{\mathrm{Fun}}
+\newcommand{\Map}{\mathrm{Map}}
+\newcommand{\Nat}{\mathrm{Nat}}
+\newcommand{\Cat}{\mathrm{Cat}}
+\newcommand{\Seg}{\mathrm{Seg}}
+\newcommand{\CAlg}{\mathrm{CAlg}}
+\newcommand{\Mon}{\mathrm{Mon}}
+\newcommand{\RKan}{\mathrm{RKan}}
+\newcommand{\LKan}{\mathrm{LKan}}
+\DeclareMathOperator{\Spec}{Spec}
+\newcommand{\HC}{\mathrm{HC}}
+\newcommand{\Tw}{\mathrm{Tw}}
+\newcommand{\id}{\mathrm{id}}
+\DeclareMathOperator{\dom}{dom}
+\DeclareMathOperator{\im}{im}
+\DeclareMathOperator*{\colim}{colim}
+
+%% abbreviations
+\newcommand{\rmcl}{\mathrm{cl}}
+\newcommand{\rmcart}{\mathrm{cart}}
+\newcommand{\rmcocart}{\mathrm{cocart}}
+\newcommand{\rmint}{\mathrm{int}}
+\newcommand{\rminj}{\mathrm{inj}}
+\newcommand{\opp}{{\mathrm{op}}}
+\newcommand{\crep}{\mathrm{cr}}
+\newcommand{\rmc}{\mathrm{c}}
+\newcommand{\Art}{\mathrm{Art}}
+
+%% specific categories
+\newcommand{\Bord}{\mathbf{Bord}}
+\newcommand{\bCat}{\mathbf{C}\mathrm{at}}
+\newcommand{\sCat}{\ms{C}\mathrm{at}}
+\newcommand{\Path}{\mathbf{P}\mathrm{ath}}
+\newcommand{\qCat}{\mathbf{qCat}}
+\newcommand{\Set}{\mathbf{S}}
+\newcommand{\GS}{\mathrm{GS}}
+\newcommand{\PP}{\mathrm{PP}}
+\newcommand{\Lag}{\mathrm{Lag}}
+\newcommand{\dSt}{\mathrm{d}\ms{S}\mathrm{t}}
+\newcommand{\dAff}{\mathrm{d}\ms{A}\mathrm{ff}}
+\newcommand{\Mod}{\ms{M}\mathrm{od}}
+\newcommand{\sCAlg}{\ms{CA}\mathrm{lg}}
+\newcommand{\QCoh}{\ms{QC}\mathrm{oh}}
+\newcommand{\PreSymp}{\ms{P}\mathrm{re}\ms{S}\mathrm{ymp}}
+\newcommand{\Symp}{\ms{S}\mathrm{ymp}}
+
+\newenvironment{tofix}{\begin{center} \color{red}}{\end{center}}
+
+\title[Higher categories of push-pull spans, II]{Higher categories of push-pull spans, II:\\Matrix factorizations}
+\date{\today}
+\author{Lorenzo Riva}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+	This is the second part of a project aimed at formalizing Rozansky-Witten models in the functorial field theory framework. In the first part we constructed a symmetric monoidal $(\infty, 3)$-category $\sCRW$ of commutative Rozansky-Witten models with the goal of approximating the $3$-category of Kapustin and Rozansky. In this paper we extend work of Brunner, Carqueville, Fragkos, and Roggenkamp on the affine Rozansky-Witten models: we exhibit a functor connecting their $2$-category of matrix factorizations with the homotopy $2$-category of $\sCRW$, and calculate the associated TFTs.
+\end{abstract}
+
+\setcounter{tocdepth}{2}
+\tableofcontents
+
+\include{sec_intro.tex}
+\include{sec_crw.tex}
+\include{sec_matrix-fact.tex}
+\include{sec_functor.tex}
+
+\begin{comment}
+\bibliographystyle{alpha}
+\bibliography{refs.bib}
+\end{comment}
+
+\begin{thebibliography}{PTVV13}
+
+\bibitem[BCFR23]{BCFR2023}
+Ilka Brunner, Nils Carqueville, Pantelis Fragkos, and Daniel Roggenkamp.
+\newblock {T}runcated affine {R}ozansky--{W}itten models as extended defect {TQFT}s, 2023.
+
+\bibitem[BCR23]{BCR2023}
+Ilka Brunner, Nils Carqueville, and Daniel Roggenkamp.
+\newblock Truncated affine {R}ozansky-{W}itten models as extended {TQFT}s.
+\newblock {\em Comm. Math. Phys.}, 400(1):371--415, 2023.
+
+\bibitem[Cal15]{Calaque2015}
+Damien Calaque.
+\newblock Lagrangian structures on mapping stacks and semi-classical {TFT}s.
+\newblock In {\em Stacks and categories in geometry, topology, and algebra}, volume 643 of {\em Contemp. Math.}, pages 1--23. Amer. Math. Soc., Providence, RI, 2015.
+
+\bibitem[Cal19]{Calaque2019}
+Damien Calaque.
+\newblock Shifted cotangent stacks are shifted symplectic.
+\newblock {\em Annales de la Facult\'e des sciences de Toulouse : Math\'ematiques}, Ser. 6, 28(1):67--90, 2019.
+
+\bibitem[CHS22]{CHS2022}
+Damien Calaque, Rune Haugseng, and Claudia Scheimbauer.
+\newblock The aksz construction in derived algebraic geometry as an extended topological field theory, 2022.
+
+\bibitem[CM16]{CM2016}
+Nils Carqueville and Daniel Murfet.
+\newblock Adjunctions and defects in {L}andau-{G}inzburg models.
+\newblock {\em Adv. Math.}, 289:480--566, 2016.
+
+\bibitem[CMM20]{CM2020}
+Nils Carqueville and Flavio Montiel~Montoya.
+\newblock Extending {L}andau-{G}inzburg models to the point.
+\newblock {\em Comm. Math. Phys.}, 379(3):955--977, 2020.
+
+\bibitem[Hau18]{Haugseng2018}
+Rune Haugseng.
+\newblock Iterated spans and classical topological field theories.
+\newblock {\em Math. Z.}, 289(3-4):1427--1488, 2018.
+
+\bibitem[HV19]{HV2019}
+Jan Hesse and Alessandro Valentino.
+\newblock The {S}erre automorphism via homotopy actions and the cobordism hypothesis for oriented manifolds.
+\newblock {\em Cah. Topol. G\'eom. Diff\'er. Cat\'eg.}, 60(2):194--236, 2019.
+
+\bibitem[KR08]{KR2008}
+Mikhail Khovanov and Lev Rozansky.
+\newblock Matrix factorizations and link homology.
+\newblock {\em Fund. Math.}, 199(1):1--91, 2008.
+
+\bibitem[KR10]{KR2010}
+Anton Kapustin and Lev Rozansky.
+\newblock Three-dimensional topological field theory and symplectic algebraic geometry {II}.
+\newblock {\em Commun. Number Theory Phys.}, 4(3):463--549, 2010.
+
+\bibitem[KRS09]{KRS2009}
+Anton Kapustin, Lev Rozansky, and Natalia Saulina.
+\newblock Three-dimensional topological field theory and symplectic algebraic geometry. {I}.
+\newblock {\em Nuclear Phys. B}, 816(3):295--355, 2009.
+
+\bibitem[Lur17]{HA2017}
+Jacob Lurie.
+\newblock {\em Higher Algebra}.
+\newblock 2017.
+
+\bibitem[Mur18]{Murfet2018}
+Daniel Murfet.
+\newblock The cut operation on matrix factorisations.
+\newblock {\em J. Pure Appl. Algebra}, 222(7):1911--1955, 2018.
+
+\bibitem[PP14]{Pstragowski2014}
+Piotr Pstragowski.
+\newblock On dualizable objects in monoidal bicategories, framed surfaces and the cobordism hypothesis, 2014.
+
+\bibitem[Pst22]{Pstragowski2022}
+Piotr Pstragowski.
+\newblock On dualizable objects in monoidal bicategories.
+\newblock {\em Theory Appl. Categ.}, 38:Paper No. 9, 257--310, 2022.
+
+\bibitem[PTVV13]{PTVV2013}
+Tony Pantev, Bertrand To\"{e}n, Michel Vaqui\'{e}, and Gabriele Vezzosi.
+\newblock Shifted symplectic structures.
+\newblock {\em Publ. Math. Inst. Hautes \'{E}tudes Sci.}, 117:271--328, 2013.
+
+\bibitem[Riv25]{Riva2024}
+Lorenzo Riva.
+\newblock Higher categories of push--pull spans, {I}: construction and applications.
+\newblock {\em Math. Z.}, 309(2):Paper No. 28, 2025.
+
+\bibitem[Rom23]{Romo2023}
+Jack Rom\"o.
+\newblock Homotopy bicategories of complete 2-fold segal spaces, 2023.
+
+\bibitem[RW97]{RW1997}
+L.~Rozansky and E.~Witten.
+\newblock Hyper-{K}\"ahler geometry and invariants of three-manifolds.
+\newblock {\em Selecta Math. (N.S.)}, 3(3):401--458, 1997.
+
+\bibitem[SP09]{SP2009}
+Christopher~John Schommer-Pries.
+\newblock {\em The classification of two-dimensional extended topological field theories}.
+\newblock ProQuest LLC, Ann Arbor, MI, 2009.
+\newblock Thesis (Ph.D.)--University of California, Berkeley.
+
+\end{thebibliography}
+
+\end{document}

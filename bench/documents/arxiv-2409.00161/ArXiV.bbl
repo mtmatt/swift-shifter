@@ -1,0 +1,105 @@
+%merlin.mbs apsrev4-1.bst 2010-07-25 4.21a (PWD, AO, DPC) hacked
+%Control: key (0)
+%Control: author (8) initials jnrlst
+%Control: editor formatted (1) identically to author
+%Control: production of article title (-1) disabled
+%Control: page (0) single
+%Control: year (1) truncated
+%Control: production of eprint (0) enabled
+\begin{thebibliography}{6}%
+\makeatletter
+\providecommand \@ifxundefined [1]{%
+ \@ifx{#1\undefined}
+}%
+\providecommand \@ifnum [1]{%
+ \ifnum #1\expandafter \@firstoftwo
+ \else \expandafter \@secondoftwo
+ \fi
+}%
+\providecommand \@ifx [1]{%
+ \ifx #1\expandafter \@firstoftwo
+ \else \expandafter \@secondoftwo
+ \fi
+}%
+\providecommand \natexlab [1]{#1}%
+\providecommand \enquote  [1]{``#1''}%
+\providecommand \bibnamefont  [1]{#1}%
+\providecommand \bibfnamefont [1]{#1}%
+\providecommand \citenamefont [1]{#1}%
+\providecommand \href@noop [0]{\@secondoftwo}%
+\providecommand \href [0]{\begingroup \@sanitize@url \@href}%
+\providecommand \@href[1]{\@@startlink{#1}\@@href}%
+\providecommand \@@href[1]{\endgroup#1\@@endlink}%
+\providecommand \@sanitize@url [0]{\catcode `\\12\catcode `\$12\catcode
+  `\&12\catcode `\#12\catcode `\^12\catcode `\_12\catcode `\%12\relax}%
+\providecommand \@@startlink[1]{}%
+\providecommand \@@endlink[0]{}%
+\providecommand \url  [0]{\begingroup\@sanitize@url \@url }%
+\providecommand \@url [1]{\endgroup\@href {#1}{\urlprefix }}%
+\providecommand \urlprefix  [0]{URL }%
+\providecommand \Eprint [0]{\href }%
+\providecommand \doibase [0]{http://dx.doi.org/}%
+\providecommand \selectlanguage [0]{\@gobble}%
+\providecommand \bibinfo  [0]{\@secondoftwo}%
+\providecommand \bibfield  [0]{\@secondoftwo}%
+\providecommand \translation [1]{[#1]}%
+\providecommand \BibitemOpen [0]{}%
+\providecommand \bibitemStop [0]{}%
+\providecommand \bibitemNoStop [0]{.\EOS\space}%
+\providecommand \EOS [0]{\spacefactor3000\relax}%
+\providecommand \BibitemShut  [1]{\csname bibitem#1\endcsname}%
+\let\auto@bib@innerbib\@empty
+%</preamble>
+\bibitem [{\citenamefont {Maccone}\ and\ \citenamefont {Sacha}(2020)}]{MS}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {L.}~\bibnamefont
+  {Maccone}}\ and\ \bibinfo {author} {\bibfnamefont {K.}~\bibnamefont
+  {Sacha}},\ }\href {\doibase 10.1103/PhysRevLett.124.110402} {\bibfield
+  {journal} {\bibinfo  {journal} {Phys. Rev. Lett.}\ }\textbf {\bibinfo
+  {volume} {124}},\ \bibinfo {pages} {110402} (\bibinfo {year}
+  {2020})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Allcock}(1969)}]{Allcock1}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {G.~R.}\ \bibnamefont
+  {Allcock}},\ }\href {\doibase 10.1016/0003-4916(69)90251-6} {\bibfield
+  {journal} {\bibinfo  {journal} {Ann. Phys.}\ }\textbf {\bibinfo {volume}
+  {53}},\ \bibinfo {pages} {253} (\bibinfo {year} {1969})}\BibitemShut
+  {NoStop}%
+\bibitem [{\citenamefont {Mielnik}(1994)}]{Bogdan}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {B.}~\bibnamefont
+  {Mielnik}},\ }\href {\doibase 10.1007/BF02057859} {\bibfield  {journal}
+  {\bibinfo  {journal} {Found. Phys.}\ }\textbf {\bibinfo {volume} {24}},\
+  \bibinfo {pages} {1113} (\bibinfo {year} {1994})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Muga}\ and\ \citenamefont {Leavens}(2000)}]{MUGA1}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {J.~G.}\ \bibnamefont
+  {Muga}}\ and\ \bibinfo {author} {\bibfnamefont {C.~R.}\ \bibnamefont
+  {Leavens}},\ }\href {\doibase 10.1016/S0370-1573(00)00047-8} {\bibfield
+  {journal} {\bibinfo  {journal} {Phys. Rep.}\ }\textbf {\bibinfo {volume}
+  {338}},\ \bibinfo {pages} {353} (\bibinfo {year} {2000})}\BibitemShut
+  {NoStop}%
+\bibitem [{\citenamefont {Roncallo}\ \emph {et~al.}(2023)\citenamefont
+  {Roncallo}, \citenamefont {Sacha},\ and\ \citenamefont {Maccone}}]{Roncallo}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {S.}~\bibnamefont
+  {Roncallo}}, \bibinfo {author} {\bibfnamefont {K.}~\bibnamefont {Sacha}}, \
+  and\ \bibinfo {author} {\bibfnamefont {L.}~\bibnamefont {Maccone}},\ }\href
+  {\doibase 10.22331/q-2023-03-30-968} {\bibfield  {journal} {\bibinfo
+  {journal} {{Quantum}}\ }\textbf {\bibinfo {volume} {7}},\ \bibinfo {pages}
+  {968} (\bibinfo {year} {2023})}\BibitemShut {NoStop}%
+\bibitem [{\citenamefont {Dollard}(1969)}]{dollard1969scattering}%
+  \BibitemOpen
+  \bibfield  {author} {\bibinfo {author} {\bibfnamefont {J.~D.}\ \bibnamefont
+  {Dollard}},\ }\href {https://doi.org/10.1007/BF01661573} {\bibfield
+  {journal} {\bibinfo  {journal} {Commun. Math. Phys.}\ }\textbf {\bibinfo
+  {volume} {12}},\ \bibinfo {pages} {193} (\bibinfo {year} {1969})},\ \bibinfo
+  {note} {{N.B.:} For \(\smash{\psi(\vb{x})\in L^2\big(\mathbb{R}^d\big)}\),
+  Lemma 2 generalizes to
+  $$\lim_{t\to\pm\infty}\left|\kern-0.15em\left|\,e^{-\,it\kern0.1em
+  H_0/\hbar}\psi(\vb{x})-\exp(\frac{i \text{x}^2}{2
+  \kern0.1em\tau})\frac{\tilde{\psi}\!\left(\vb{x}/\tau\right)}{(i\tau)^{d/2}}\,\right|\kern-0.15em\right|=0,$$
+  where \(\smash{\tau=\hbar\,t/m}\), \(H_0\) is the free-particle Hamiltonian,
+  and \(\hbar^{-\,d/2}\tilde{\psi}(\vb{p}/\hbar)\) is the momentum-space wave
+  function \(\braket{\vb{p}}{\psi}\).}\BibitemShut {Stop}%
+\end{thebibliography}%

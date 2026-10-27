@@ -1,0 +1,81 @@
+\section{Khovanskii Theorems}\label{sec:khovanskii}
+
+The following theorems were proved by Askold Khovanskii in \cite{Khovanskii2016} for $k = \C$. We generalize them to arbitrary field. As before, $M$ is the character (monomial) lattice and for finite subsets $A \subset M$ we define $k^A \defeq \{ f \in \Gamma(T^n_k, \mathcal O)\ | \Supp f \subset A \}$.
+
+\begin{definition}\label{def:khovanskii_condition}
+    We say that a collection of subsets $\Delta_1, \dots, \Delta_m \subset M$ satisfy the \textbf{Khovanskii condition} if for any non-empty subset $J \subset \{ 1, \dots, m \}$ we have that\footnote{see \autoref{sssec:techincal_codim} for the definition of dimension} $\dim \sum_{j \in J} \Delta_j > |J|$.
+\end{definition}
+
+\begin{theorem}[Irreducibility]\label{thm:khovanskii_irreducibility}
+    Let $A_1, \dots, A_m \subset M$ be finite subsets. If $A_1, \dots, A_m$ satisfy the Khovasnkii condition, then the general system from $k^{A_\bullet} = k^{A_1} \times \dots \times k^{A_m}$ defines a geometrically irreducible variety in $T^n$.
+\end{theorem}
+
+\begin{definition}
+    For a collection $A_1, \dots, A_m$ and a non-empty indices subset $J \subset ~\{ 1, \dots, m \}$ we define \textbf{the defect of $J$}: $\delta(J) \defeq \dim \left( \sum_{j \in J} A_j \right) - |J|$.
+\end{definition}
+
+\begin{theorem}[Irreducible Components]\label{thm:khovanskii_components}
+    We use the same notation as in the above theorem and denote by $\Delta_i$ the convex hulls of $A_i$ in $M_\R$. Let $N$ be the number of geometric irreducible components of the variety defined by the general system from $k^{A_\bullet}$ in $T^n$. Then we have the following alternative\footnote{note that for a given indices subset one can compute the defect in two ways: for $A_1, \dots, A_m$ (using dimension introduced in \autoref{sssec:techincal_codim}) and $\Delta_1, \dots, \Delta_m$ (using usual polytope dimension) and they will always coincide}:
+    \begin{enumerate}
+        \item If $\delta(J) > 0$ for all non-empty $J \subset \{1, \dots, m \}$, then $N = 1$.
+
+        \item If there is a non-empty subset  $J \subset \{1, \dots, m \}$ such that $\delta(J) < 0$, then $N = 0$, meaning that the general system from $k^{A_\bullet}$ has no solutions.
+
+        \item If $\delta(J) \ge 0$ for all $J \subset \{ 1, \dots, m \}$ and for some non-empty subset the defect is zero, then there is the greatest subset $J_0$ such that $\delta(J_0) = 0$ and $N =~\MVol_L (\Delta_j)_{j \in J_0}$, where $L$ is the minimal saturated sublattice of $M$ such that\footnote{i.e. $\chi_i \chi_j^{-1} \in L \ \forall \chi_i \in A_i$, $\chi_j \in A_j$ for any two $i, j \in J_0$.} $A_i - A_j \subset L$ for all $i, j \in J_0$
+    \end{enumerate}
+\end{theorem}
+
+\paragraph{Proof of the Irreducibility theorem}
+We will use \autoref{thm:sufficient}. Without loss of generality\footnote{because the characters are invertible over $T^n$, so we can multiply any equation by any character, i.e. shift $A_i$.} $1 \in A_i$ for all $1 \le i \le m$. Then $A_i = \{ 1, \chi^i_1, \dots, \chi^i_{r_i} \}$ and over $(p, q) \in T^n \times T^n$ we have:
+\[
+\E^2(p, q) =  
+    \begin{pmatrix}
+        1 & \chi_1^1(p) & \cdots & \chi_{r_1}^1(p) & 0 & 0 & \cdots & 0 & \cdots & 0 & 0 & \cdots & 0 \\
+        0 & 0 & \cdots & 0 & 1 &  \chi^2_1(p) & \cdots & \chi^2_{r_2}(p) & \cdots & 0 & 0 & \cdots & 0 \\
+        \vdots & \vdots & \ddots & \vdots & \vdots & \vdots & \ddots & \vdots & \ddots & \vdots & \vdots & \ddots & \vdots \\
+        0 & 0 & \cdots & 0 & 0 & 0 & \cdots & 0 & \cdots & 1 & \chi^m_1(p) & \cdots & \chi^m_{r_m}(p) \\
+        1 & \chi_1^1(q) & \cdots & \chi_{r_1}^1(q) & 0 & 0 & \cdots & 0 & \cdots & 0 & 0 & \cdots & 0 \\
+        0 & 0 & \cdots & 0 & 1 &  \chi^2_1(q) & \cdots & \chi^2_{r_2}(q) & \cdots & 0 & 0 & \cdots & 0 \\
+        \vdots & \vdots & \ddots & \vdots & \vdots & \vdots & \ddots & \vdots & \ddots & \vdots & \vdots & \ddots & \vdots \\
+        0 & 0 & \cdots & 0 & 0 & 0 & \cdots & 0 & \cdots & 1 & \chi^m_1(q) & \cdots & \chi^m_{r_m}(q)
+    \end{pmatrix}
+\]
+Clearly the $i$-th and the $(i + m)$-th rows of this gigantic matrix are proportional if and only if they coincide. Now, for subset $J \subset \{ 1, \dots, m \}$ define the locally closed subschemes\footnote{note that in particular if $\chi(p) = \chi(q)\ \forall \chi \in A_i$ and $i \not \in J$, then $(p, q) \not \in \mathcal S_J$}
+\[
+\mathcal S_J \defeq \left\{ (p, q) \in T^n \times T^n\ |\ \Big(j \in J \iff \chi(p) = \chi(q)\Big)\forall \chi \in A_j \right\}
+\]
+Recall that $\mathcal S_r$ is the subset of points of $T^n \times T^n$ where $\rk \E^2$ is $2m - r$. Then we have the decomposition $\mathcal S_r = \bigcup_{|J| = r} \mathcal S_J$. Now we see that the condition that $\dim \mathcal S_r +~r <~2n$ is equivalent to $\codim \mathcal S_J - |J| > 0$. By claim \ref{claim:prelim_quasisubtori} $\codim \mathcal S_J \ge \dim \sum_{j \in J} \Delta_j$.
+\qed
+
+\paragraph{Proof of the Irreducible Components Theorem}
+The first case is clear. 
+
+The second case. Without loss of generality $\delta(\{1, \dots, s \}) < 0$. After shifting $\Delta_i$ and choosing appropriate coordinates we get that $A_1, \dots, A_s$ are contained in the sublattice generated by $x_1, \dots, x_l$, $l = \dim \sum_j \Delta_j$, in particular $l < s$. If the coefficients are generic enough, then subsystem of first $l$ equations has only finitely many solution, so if we add any non-trivial equation with coefficients generic enough, there will be no solutions. More formally: we can view the subsystem of the first $s$ equations as a square system. Mixed volume of polytopes that are contained in one hyperplane is equal to zero, so by the Bernstein-Kouchnirenko formula the first $s$ equations of the general system have no common solution, so the whole system has no solutions. 
+
+The third case. Note that for any two subsets $J, J' \subset \{1, \dots, m \}$ we have that\footnote{$\dim \sum_{j \in J \cup J'} \Delta_j - |J \cup J'| \le \dim \sum_{j \in J} \Delta_j + \dim \sum_{j \in J'} \Delta_j - \dim \sum_{j \in J' \cap J} \Delta_j - |J \cup J'| = \delta(J) + \delta(J') - \delta(J' \cap J)$} $\delta(J \cup J') \le \delta(J) + \delta(J') - \delta(J \cap J') \le \delta(J) + \delta(J')$ as $\delta \ge 0$. Then $J_0 = \bigcup_{\delta(J) = 0} J$. Wihtout loss of generality $J_0 = \{ 1, \dots, s\}$. After choosing appropriate coordinates $x_1, \dots, x_n$ in torus $T^n$ and shifting $\Delta_i$ we may assume that $\Delta_1, \dots, \Delta_s$ are contained in the sublattice of $M$ generated by $x_1, \dots, x_s$. The idea is as follows. The subsystem of the first $s$ equations must define a finite number (determined by Bernstein-Kouchnirenko) of shifted subtori and each shifted subtorus will contain a single irreducible component. Now denote by $k^{A_{\le q}} \defeq k^{A_1} \times ~\cdots ~\times ~k^{A_q}$, then we have $X(A_{\le s}) \defeq \{ (\mathbf f, p) \in k^{A_{\le s}} \times T^s\ |\ \mathbf{f}(p) = 0 \}$ and the commutative diagram\footnote{everything is well-defined because we shifted $\A_i$ so that $f_i$ depend only on $x_1, \dots, x_s$ for $i < s$.}:
+\[
+\begin{tikzcd}
+    T^n \arrow{r} & T^s \\
+    \arrow{u} X(A_\bullet) \arrow{r} \arrow{d} & X(A_{\le s}) \arrow{u} \arrow{d} \\
+    k^{A_\bullet} \arrow{r} & k^{A_{\le s}} 
+\end{tikzcd}
+\]
+After all the shifts and the changes of coordinates we have that\footnote{recall that we defined $L$ as the minimal saturated sublattice of $M$ such that $\chi_i \chi_j^{-1} \in L\ \forall \chi \in A_i$, $\chi_j \in A_j\ i, j \in J_0$ } $L$ is generated by $x_1, \dots, x_s$. Let us denote by $A_i/L$ the images of $A_i$ under the projection $M \to M/L$. Then we have the following projection, which is just the evaluation of $x_1, \dots, x_s$ on the given solution of the first $s$ equations:
+\[
+k^{A_\bullet} \times_{k^{A_{\le s}}} X(A_{\le s}) \to k^{A_{> s}/L}
+\]
+This morphism in turn gives us the commutative diagram
+\[
+\begin{tikzcd}
+    X(A_\bullet) \arrow{r} \arrow{d} & X(A_{> s}/L) \arrow{d} \\
+    k^{A_\bullet} \times_{k^{A_{\le s}}} X(A_{\le s}) \arrow{r} & k^{A_{> s}/L}
+\end{tikzcd},
+\]
+where $X(A_{>s}/L) \defeq \{ (\mathbf f_{> s}, p) \in k^{A_{> s}/L} \times T^{n - s}\ |\ \mathbf f(p) = 0 \}$ and $T^{n - s}$ is the torus corresponding to the lattice $M/L$. Fix a point $(\mathbf f, p_{\le s}) \in k^{A_\bullet} \times_{k^{A_{\le s}}} X(A_{\le s})$ and denote by $\mathbf f_{> s} \in k^{A_{> s}/L}$ its image. Then one can easily see that the induced morphism of fibres $X(A_\bullet)_{(\mathbf f, p_{\le s})} \to X(A_{> s}/L)_{\mathbf f_{> s}}$ is an isomorphism. For any non-empty subset $J \subset \{ s + 1, \dots, m \}$ we have that 
+\begin{multline*}
+\dim \sum_{j \in J} \Delta_j/L - |J| = \dim \sum_{j \in J \cup J_0} \Delta_j/L - |J| \ge \dim \sum_{j \in J \cup J_0} \Delta_j - |J| - \dim L
+= \\
+= \dim \sum_{j \in J \cup J_0} \Delta_j - |J| - |J_0| = \delta(J \cup J_0) > 0,
+\end{multline*}
+because any subset properly containing $J_0$ must be of positive defect. So the general fibre of $X(A_{> s}/L) \to k^{A_{> s}/L}$ is geometrically irreducible. $X(A_{\le s})$ is irreducible and $k^{A_\bullet}$ is a trivial bundle over $k^{A_{\le s}}$, so $ k^{A_\bullet} \times_{k^{A_{\le s}}} X(A_{\le s})$ is irreducible. The generic fibre of $X(A_{> s}/L) \to k^{A_{> s}/L}$ is the same as the generic fibre of $X(A_\bullet) \to k^{A_\bullet} \times_{k^{A_{\le s}}} X(A_{\le s})$, so the general fibre\footnote{'generic' and 'general' are interchangable by \cite[IV.3, 9.7.8]{EGA}} of the latter morphism must be geometrically irreducible. Finally, we have the factorization $X(A_\bullet) \to k^{A_\bullet} \times_{k^{A_{\le s}}} X(A_{\le s}) \to k^{A_\bullet}$. By the Bernstein-Kouchnirenko Formula, $X(A_{\le s}) \to k^{A_{\le s}}$ is a generically finite morphism of degree $\MVol_L(\Delta_1, \dots, \Delta_s)$, so $ k^{A_\bullet} \times_{k^{A_{\le s}}} X(A_{\le s}) \to k^{A_\bullet}$ must be a generically finite morphism of the same degree and the composition $X(A_\bullet) \to k^{A_\bullet}$ has $\MVol_L(\Delta_1, \dots, \Delta_s)$ geometric irreducible components in its general fibre.
+\qed

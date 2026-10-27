@@ -1,0 +1,52 @@
+\section{Introduction}
+% change subsection title
+\subsection{To make long story short}
+Let $k$ be an arbitrary field, $T^n \defeq \Spec k\left[ x_1^{\pm1}, \dots, x_n^{\pm 1} \right]$ be the algebraic $n$-dimensional torus over $k$, $f \in \Gamma(T^n, \O) =  k\left[ x_1^{\pm1}, \dots, x_n^{\pm 1} \right] $ be a Laurent polynomial in $n$ variables. Then we call the finite set
+\[
+\Supp f \defeq \left\{ x_1^{d_1} \cdot \hdots \cdot x_n^{d_n} \middle|\ c_{\mathbf d} \ne 0 \right\}, \text{ where } f = \sum_{\mathbf d \in \Z^n} c_{\mathbf d} x_1^{d_1} \cdot \hdots \cdot x_n^{d_n},
+\]
+{\itshape \bfseries the support set of the Laurent polynomial $f$}. The study of complete intersections in $T^n$ in terms of the support sets of the equations is usually called the Newton Polytope Theory. In this paper we address the question of irreducibility in this setting.
+
+Denote by $M \simeq \Z^n$ the monomial lattice. For a finite subset $A \subset M$ consider $k^A \defeq \left\{ f \in \Gamma(T^n, \O)\ |\ \Supp f \subset A \right\}$ --- the space of polynomials supported at $A$. Then $k^{A_1} \times \cdots \times k^{A_m}$ could be viewed as the space of systems of equations such that the $i$-th equation is supported at $A_i$. Classical theorems by Khovanskii (cf. \cite{Khovanskii2016}) give a criterion for irreducibility of a variety defined by the general system of equations from $\C^{A_1} \times \dots \times \C^{A_m}$. In this text we call that criterion\footnote{technically the Khovnaskii condition is not a criterion of irreducibility, but rather a sufficient condition. However, Khovanskii in his work gives a precise criterion and we generalize his criterion to arbtrary charasteristic} the Khovanskii condition, cf. \autoref{def:khovanskii_condition}. We give a new proof for these results as well as generalize them to arbitrary characteristic in \autoref{sec:khovanskii}. 
+
+However the main point of this work is to extend the Newton polytope theory beyond general systems of equations. Indeed, in the many topics where this theory is classically applied, one can see growing role of slightly degenerate systems of equations, in the following sense: some equations in the system are, as before, general linear combinations of given collections of monomials, but the others are obtained from them by e.g. permuting variables or taking partial derivatives. Systems of equations that are general modulo a symmetry occur e.g. in the study of nearly rational varieties (starting at least from examples in \cite{Bayle1994}) or in Galois theory (see \cite{Esterov2022}), which, further, surveys similar examples from several other topics, and gives a version of Khovanskii's irreducibility theorem for such general symmetric systems of equations).
+We focus on another extension of the classical Newton polytope setting: general systems, in which some equations are partial derivatives of the others. This includes e.g. examples from enumerative geometry (see \cite{Esterov2013} and references therein) and polynomial optimization (see e.g. \cite{DHOBT}, \cite{BSW}, \cite{LNRW}). For instance, given a generic hypersurface defined by $f = 0$ with a prescribed Newton polytope, its coordinate projection has the critical locus $f = f'_x = 0$ and the higher Thom--Bordmann strata $f = f'_x = f'_{xx} = \dots =0$, which are important for enumerative singularity theory. This naturally extends further to so-called engineered complete intersections \cite{Esterov2024}, in which the coefficients of the equations are general modulo given linear dependencies among them. This generality includes many new interesting objects, such as hyperplane arrangement complements, generalized complete intersection Calabi--Yau varieties (studied since \cite{AAGGL}), and some other examples originating from mathematical physics (e.g. \cite{BMMT}). We extend Khovanskii's irreducibility theorem to such objects.
+
+\paragraph{Results} The main goal we pursue is to study a new class of toric complete intersections, viz. the varieties defined by general systems from vector subspaces of $k^{A_1} \times \cdots \times k^{A_m}$, i.e. we allow fixed liner relations on coefficients. In the said generality we are able to give a rather abstract  condition, \autoref{thm:sufficient}. In the specific context of Engineered Complete Intersections\footnote{see \autoref{sssec:prelim_engineered} and \autoref{sec:ECI} or the original preprint \cite{Esterov2024}} we have an explicit combinatorial condition, \autoref{thm:ECI}. In particular, as a concrete application we get\footnote{\autoref{cor:ECI_simpler_poly}}:
+\begin{claim*}
+    Let $A$ be a finite set of Laurent monomials. Fix any function $l: A \to k$. Let $p_1, \dots, p_m \in k[T]$ be polynomials s.t. $\deg p_i = i - 1$. For $f = \sum_{\chi \in A} c_\chi \cdot \chi \in k^A$ define $g_i(f) \defeq \sum_\chi p_i(l(\chi)) c_\chi \cdot \chi$. If there are at least $m$ fibres of the function $l$ each of dimension\footnote{see \autoref{sssec:techincal_codim} for the formal definition of dimension} at least $m + 1$, then for the general $f \in k^A$ the system $g_1(f) = ~\cdots = ~g_m(f) = 0$ defines an irreducible variety.
+\end{claim*}
+A direct corollary of the above claim is the following example. For simplicity until the end of this paragraph we assume that $\char k = 0$. In \autoref{ssec:ECI_critical} one can find the same examples in full generality, in particular, in arbitrary characteristic.
+\begin{example*}
+    Fix a coordinate system $x, y_1, \dots, y_{n - 1}$ in $T^n$ and a finite set of monomials $A \subset M$. Define 
+    $H_d \defeq \{ \chi \in M\ |\ \deg_x \chi = d\}$. 
+    If there are distinct $d_1, \dots, d_{m + 1} \in \Z$ such that $\dim A \cap H_{d_i} > m + 1$ for all $i$, then the locus
+    \[
+    f = \frac{\partial}{\partial x}f = \cdots = \frac{\partial^m}{\partial x^m} f = 0
+    \]
+    is irreducible for the general $f \in k^A$.
+\end{example*}
+
+Another example that does not follow from the above claim, but is a corollary of our general \autoref{thm:ECI}:
+\begin{example*}
+    Fix a coordinate system $x, y, z_1 \dots, z_{n - 2}$ in $T^n$ and a finite set $A \subset M$. Consider the map $c: A \to \Q^2$, $\chi \mapsto (\deg_x \chi, \deg_y \chi)$. Assume that there is a line\footnote{we assume that $0 \in l$} $l \subset \Q^2$ such that both $A \backslash c^{-1}(l)$ and $c^{-1} (l \backslash 0)$ are of dimension at least 3. Then for the general $f \in k^A$ the following locus is irreducible:
+    \[
+    \frac{\partial}{\partial x} f = \frac{\partial}{\partial y} f = 0.
+    \]
+\end{example*}
+
+%\subsection{Results}
+%We have two main results. The first one --- rather abstract-theoretical --- \autoref{thm:sufficient}. It is a sufficient condition for irreducibility of the variety defined by a general system with fixed monomials and fixed linear relations on coefficients. It is not that easy to use that condition on actual examples, but it has the advantage of being computable meaning that by using computer algebra one can check the condition on any given set of monomials and linear relations.
+
+%From our theoretical result we derive a more applicable condition --- \autoref{thm:ECI}. It provides an explicit combinatorial condition on irreducibility for engineered complete intersections --- notion coined in \cite{Esterov2024} that covers many classes of non-classical systems. In particular, we re-prove and generalize to arbitrary characteristic the irreducibility results of \cite{Khovanskii2016} --- see
+%\autoref{thm:khovanskii_irreducibility}, \autoref{thm:khovanskii_components} --- we prove them separately, but \autoref{thm:khovanskii_irreducibility} can be considered as a special case of \autoref{thm:ECI}.
+
+\subsection{Paper Structure}
+In \autoref{sec:preliminaries} we set up the notation, recall some basic facts from the Newton Polytope Theory (\autoref{ssec:prelim_newton}) and give a quick introduction to engineered complete intersections (\autoref{sssec:prelim_engineered}) which is later used in \autoref{sec:ECI}; also in \autoref{ssec:prelim_technical} we define the geometric irreducibility and prove all the general technical statements we need.
+
+We formulate and prove the sufficient condition for irreducibility in its most general form in \autoref{sec:general} --- it is \autoref{thm:sufficient}.
+%and further in this paper we use only this condition. There is also another condition which is more complicated than \autoref{thm:sufficient} but has the advantage of being a full criterion --- it is \autoref{thm:criterion}.
+
+Then in \autoref{sec:khovanskii} as the first application of our method we generalize to arbitrary characteristic the results on irreducibility from the classical setting --- namely, the theorems of Khovanskii counting the number of irreducible component, \cite{Khovanskii2016} --- see \autoref{thm:khovanskii_irreducibility} and \autoref{thm:khovanskii_components}.
+
+Finally, in \autoref{sec:ECI} we give a combinatorial sufficient condition for irreducibility for all engineered complete intersection: \autoref{thm:ECI}. As an application, we provide examples on how this condition works for some critical loci: $f = f'_x = 0$, $f'_x = f'_y = 0$, $f = f'_x = f'_{xx} = 0$, etc. 

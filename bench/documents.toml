@@ -1,0 +1,245 @@
+# The benchmark's test documents (#150): where each came from, under what
+# licence, and when it was fetched. Every directory in documents/ has an
+# entry here, and nothing goes in without a clear licence (see README.md).
+#
+# dir      directory under documents/
+# main     the file to compile, relative to dir
+# source   where it came from: an arXiv version, or "written for this benchmark"
+# license  the licence link, as shown on the arXiv abstract page
+# covers   what it tests: math, macros, tables, two-column, multi-file,
+#          bibliography, cjk
+# changes  anything changed in the source, beyond leaving out unused files
+
+[[document]]
+dir = "arxiv-2409.00117"
+main = "main.tex"
+source = "https://arxiv.org/abs/2409.00117v2"
+title = "Pointwise estimates for the fundamental solutions of higher order Schr\\\"{o}dinger equations in odd dimensions II: high dimensional case"
+authors = ["Cheng, Han", "Huang, Shanlin", "Huang, Tianxiao", "Zheng, Quan"]
+license = "http://creativecommons.org/publicdomain/zero/1.0/"
+subject = "Analysis of PDEs (math.AP)"
+fetched = "2026-10-26"
+covers = ["math", "macros", "bibliography"]
+
+[[document]]
+dir = "arxiv-2409.00136"
+main = "main.tex"
+source = "https://arxiv.org/abs/2409.00136v1"
+title = "Fundamental Solution for a New Class of Non-Archimedean Pseudo-Differential Equations"
+authors = ["Kochubei, Anatoly N.", "Serdiuk, Mariia V."]
+license = "http://creativecommons.org/licenses/by/4.0/"
+subject = "Analysis of PDEs (math.AP)"
+fetched = "2026-10-26"
+covers = ["math", "bibliography"]
+
+[[document]]
+dir = "arxiv-2409.00177"
+main = "main.tex"
+source = "https://arxiv.org/abs/2409.00177v1"
+title = "The extra basis in noncommuting variables"
+authors = ["Aliniaeifard, Farid", "van Willigenburg, Stephanie"]
+license = "http://creativecommons.org/licenses/by/4.0/"
+subject = "Combinatorics (math.CO)"
+fetched = "2026-10-26"
+covers = ["math", "macros", "bibliography"]
+
+[[document]]
+dir = "arxiv-2409.00188"
+main = "main.tex"
+source = "https://arxiv.org/abs/2409.00188v2"
+title = "Irreducibility of toric complete intersections"
+authors = ["Zhizhin, Andrey"]
+license = "http://creativecommons.org/publicdomain/zero/1.0/"
+subject = "Algebraic Geometry (math.AG)"
+fetched = "2026-10-26"
+covers = ["math", "multi-file", "bibliography"]
+
+[[document]]
+dir = "arxiv-2409.00219"
+main = "rwii.tex"
+source = "https://arxiv.org/abs/2409.00219v2"
+title = "Higher categories of push-pull spans, II: Matrix factorizations"
+authors = ["Riva, Lorenzo"]
+license = "http://creativecommons.org/licenses/by/4.0/"
+subject = "Category Theory (math.CT)"
+fetched = "2026-10-26"
+covers = ["math", "macros", "multi-file", "bibliography"]
+
+[[document]]
+dir = "arxiv-2409.00095"
+main = "revision-version1-09-23.tex"
+source = "https://arxiv.org/abs/2409.00095v2"
+title = "Risk-indifference Pricing of American-style Contingent Claims"
+authors = ["Kumar, Rohini", "Miller, Frederick \"Forrest\"", "Nasralah, Hussein", "Sturm, Stephan"]
+license = "http://creativecommons.org/licenses/by/4.0/"
+subject = "Pricing of Securities (q-fin.PR)"
+fetched = "2026-10-26"
+covers = ["math", "macros", "bibliography"]
+
+[[document]]
+dir = "arxiv-2409.00178"
+main = "main.tex"
+source = "https://arxiv.org/abs/2409.00178v2"
+title = "Generalised symmetries in linear gravity"
+authors = ["Hull, Chris", "Hutt, Maxwell L", "Lindström, Ulf"]
+license = "http://creativecommons.org/licenses/by/4.0/"
+subject = "High Energy Physics - Theory (hep-th)"
+fetched = "2026-10-26"
+covers = ["math", "multi-file", "bibliography"]
+
+[[document]]
+dir = "arxiv-2409.00245"
+main = "main.tex"
+source = "https://arxiv.org/abs/2409.00245v2"
+title = "Preprocessing to Reduce the Search Space for Odd Cycle Transversal"
+authors = ["Jansen, Bart M. P.", "Mizutani, Yosuke", "Sullivan, Blair D.", "Verhaegh, Ruben F. A."]
+license = "http://creativecommons.org/licenses/by/4.0/"
+subject = "Data Structures and Algorithms (cs.DS)"
+fetched = "2026-10-26"
+covers = ["math", "multi-file", "bibliography"]
+
+[[document]]
+dir = "arxiv-2409.00161"
+main = "ArXiV.tex"
+source = "https://arxiv.org/abs/2409.00161v1"
+title = "(Un)physical consequences of \"Quantum Measurements of Time\""
+authors = ["Cavendish, Will", "Das, Siddhant", "Nöth, Markus", "Rafsanjani, Ali Ayatollah"]
+license = "http://creativecommons.org/licenses/by/4.0/"
+subject = "Quantum Physics (quant-ph)"
+fetched = "2026-10-26"
+covers = ["two-column", "bibliography"]
+
+[[document]]
+dir = "arxiv-2409.00212"
+main = "LNL-Osada-1.tex"
+source = "https://arxiv.org/abs/2409.00212v1"
+title = "Theory of Lee-Naughton-Lebed's Oscillations in Moderately Strong Electric Fields in Layered Quasi-One-Dimensional Conductors"
+authors = ["Lebed, Andrei G."]
+license = "http://creativecommons.org/licenses/by/4.0/"
+subject = "Strongly Correlated Electrons (cond-mat.str-el)"
+fetched = "2026-10-26"
+covers = ["two-column", "math"]
+
+[[document]]
+dir = "arxiv-2409.00176"
+main = "arXivV2.tex"
+source = "https://arxiv.org/abs/2409.00176v2"
+title = "Current Algebra and Generalised Cartan Geometry"
+authors = ["Hassler, Falk", "Hulik, Ondrej", "Osten, David"]
+license = "http://creativecommons.org/licenses/by/4.0/"
+subject = "High Energy Physics - Theory (hep-th)"
+fetched = "2026-10-26"
+covers = ["math", "macros", "bibliography"]
+changes = "logoEu.jpg renamed to logoEU.jpg, as the source refers to it"
+
+[[document]]
+dir = "arxiv-2409.00172"
+main = "guided.tex"
+source = "https://arxiv.org/abs/2409.00172v1"
+title = "Inference, interference and invariance: How the Quantum Fourier Transform can help to learn from data"
+authors = ["Wakeham, David", "Schuld, Maria"]
+license = "http://creativecommons.org/licenses/by/4.0/"
+subject = "Quantum Physics (quant-ph)"
+fetched = "2026-10-26"
+covers = ["two-column", "math", "bibliography"]
+changes = "\\pdfoutput=1 (pdfTeX only, stops XeLaTeX) commented out in guided.tex"
+
+[[document]]
+dir = "arxiv-2409.00068"
+main = "main.tex"
+source = "https://arxiv.org/abs/2409.00068v1"
+title = "An alternative formulation of attention pooling function in translation"
+authors = ["Conti, Eddie"]
+license = "http://creativecommons.org/licenses/by/4.0/"
+subject = "Computation and Language (cs.CL)"
+fetched = "2026-10-26"
+covers = ["math", "bibliography"]
+
+[[document]]
+dir = "arxiv-2409.00087"
+main = "main.tex"
+source = "https://arxiv.org/abs/2409.00087v1"
+title = "A Lightweight Human Pose Estimation Approach for Edge Computing-Enabled Metaverse with Compressive Sensing"
+authors = ["Hieu, Nguyen Quang", "Hoang, Dinh Thai", "Nguyen, Diep N."]
+license = "http://creativecommons.org/licenses/by/4.0/"
+subject = "Signal Processing (eess.SP)"
+fetched = "2026-10-26"
+covers = ["two-column", "bibliography"]
+
+[[document]]
+dir = "arxiv-2410.00143"
+main = "rho.tex"
+source = "https://arxiv.org/abs/2410.00143v6"
+title = "Restricted sums of sets of cardinality $2p + 1$ in $\\mathbb{Z}_p^2$"
+authors = ["Terkel, Jacinda"]
+license = "http://creativecommons.org/licenses/by/4.0/"
+subject = "Combinatorics (math.CO)"
+fetched = "2026-10-26"
+covers = ["math", "macros", "bibliography"]
+
+[[document]]
+dir = "arxiv-2410.00141"
+main = "manuscript.tex"
+source = "https://arxiv.org/abs/2410.00141v2"
+title = "Simplified approach to estimate Lorenz number using experimental Seebeck coefficient for non parabolic band"
+authors = ["Kumar, Ankit"]
+license = "http://creativecommons.org/licenses/by/4.0/"
+subject = "Materials Science (cond-mat.mtrl-sci)"
+fetched = "2026-10-26"
+covers = ["math", "bibliography"]
+
+[[document]]
+dir = "arxiv-2410.00109"
+main = "odd_gammaSF.tex"
+source = "https://arxiv.org/abs/2410.00109v1"
+title = "Low-energy enhancement of the magnetic dipole radiation in odd-mass lanthanides"
+authors = ["DeMartini, D.", "Alhassid, Y."]
+license = "http://creativecommons.org/licenses/by/4.0/"
+subject = "Nuclear Theory (nucl-th)"
+fetched = "2026-10-26"
+covers = ["two-column", "tables", "math", "bibliography"]
+changes = "hyperref's pdftex option (pdfTeX only) removed in odd_gammaSF.tex"
+
+[[document]]
+dir = "en-tables"
+main = "main.tex"
+source = "written for this benchmark"
+title = "Tables in Practice: A Reference Document"
+authors = ["Swift Shifter contributors"]
+license = "GPL-3.0-or-later"
+subject = "Tables"
+fetched = "2026-10-26"
+covers = ["tables", "math"]
+
+[[document]]
+dir = "zh-math"
+main = "main.tex"
+source = "written for this benchmark"
+title = "矩陣範數與 Gradient Descent 的收斂"
+authors = ["Swift Shifter contributors"]
+license = "GPL-3.0-or-later"
+subject = "Mixed Chinese and English"
+fetched = "2026-10-26"
+covers = ["cjk", "math", "macros"]
+
+[[document]]
+dir = "zh-tables"
+main = "main.tex"
+source = "written for this benchmark"
+title = "檔案格式轉換工具比較報告"
+authors = ["Swift Shifter contributors"]
+license = "GPL-3.0-or-later"
+subject = "Mixed Chinese and English"
+fetched = "2026-10-26"
+covers = ["cjk", "tables"]
+
+[[document]]
+dir = "zh-twocolumn"
+main = "main.tex"
+source = "written for this benchmark"
+title = "雙欄排版下的閱讀順序判斷"
+authors = ["Swift Shifter contributors"]
+license = "GPL-3.0-or-later"
+subject = "Mixed Chinese and English"
+fetched = "2026-10-26"
+covers = ["cjk", "two-column", "math", "bibliography"]

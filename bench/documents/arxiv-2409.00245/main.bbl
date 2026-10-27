@@ -1,0 +1,184 @@
+\begin{thebibliography}{10}
+
+\bibitem{Abu-KhzamFLS07}
+Faisal~N. Abu-Khzam, Michael~R. Fellows, Michael~A. Langston, and W.~Henry
+  Suters.
+\newblock Crown structures for vertex cover kernelization.
+\newblock {\em Theory Comput. Syst.}, 41(3):411--430, 2007.
+\newblock \href {https://doi.org/10.1007/s00224-007-1328-0}
+  {\path{doi:10.1007/s00224-007-1328-0}}.
+
+\bibitem{BumpusJK22}
+Benjamin~Merlin Bumpus, Bart M.~P. Jansen, and Jari J.~H. de~Kroon.
+\newblock Search-space reduction via essential vertices.
+\newblock In Shiri Chechik, Gonzalo Navarro, Eva Rotenberg, and Grzegorz
+  Herman, editors, {\em Proceedings of the 30th Annual European Symposium on
+  Algorithms, {ESA} 2022}, volume 244 of {\em LIPIcs}, pages 30:1--30:15.
+  Schloss Dagstuhl - Leibniz-Zentrum f{\"{u}}r Informatik, 2022.
+\newblock URL: \url{https://doi.org/10.4230/LIPIcs.ESA.2022.30}, \href
+  {https://doi.org/10.4230/LIPICS.ESA.2022.30}
+  {\path{doi:10.4230/LIPICS.ESA.2022.30}}.
+
+\bibitem{CyganFKLMPPS15}
+Marek Cygan, Fedor~V. Fomin, Lukasz Kowalik, Daniel Lokshtanov, D{\'{a}}niel
+  Marx, Marcin Pilipczuk, Michal Pilipczuk, and Saket Saurabh.
+\newblock {\em Parameterized Algorithms}.
+\newblock Springer, 2015.
+\newblock \href {https://doi.org/10.1007/978-3-319-21275-3}
+  {\path{doi:10.1007/978-3-319-21275-3}}.
+
+\bibitem{CyganPPW13}
+Marek Cygan, Marcin Pilipczuk, Michal Pilipczuk, and Jakub~Onufry Wojtaszczyk.
+\newblock On multiway cut parameterized above lower bounds.
+\newblock {\em {ACM} Trans. Comput. Theory}, 5(1):3:1--3:11, 2013.
+\newblock \href {https://doi.org/10.1145/2462896.2462899}
+  {\path{doi:10.1145/2462896.2462899}}.
+
+\bibitem{DonkersJ19}
+Huib Donkers and Bart M.~P. Jansen.
+\newblock A {Turing} {Kernelization} {Dichotomy} for {Structural}
+  {Parameterizations} of -{Minor}-{Free} {Deletion}.
+\newblock In {\em Graph-{Theoretic} {Concepts} in {Computer} {Science}: 45th
+  {International} {Workshop}, {WG} 2019, {Vall} de {Núria}, {Spain}, {June}
+  19–21, 2019, {Revised} {Papers}}, pages 106--119, Berlin, Heidelberg, June
+  2019. Springer-Verlag.
+\newblock \href {https://doi.org/10.1007/978-3-030-30786-8_9}
+  {\path{doi:10.1007/978-3-030-30786-8_9}}.
+
+\bibitem{DonkersJ24}
+Huib Donkers and Bart~M.P. Jansen.
+\newblock Preprocessing to reduce the search space: Antler structures for
+  feedback vertex set.
+\newblock {\em Journal of Computer and System Sciences}, 144, 2024.
+\newblock \href {https://doi.org/10.1016/j.jcss.2024.103532}
+  {\path{doi:10.1016/j.jcss.2024.103532}}.
+
+\bibitem{Fellows03}
+Michael~R. Fellows.
+\newblock Blow-ups, win/win's, and crown rules: Some new directions in {FPT}.
+\newblock In Hans~L. Bodlaender, editor, {\em Proceedings of the 29th
+  International Workshop on Graph-theoretic Concepts in Computer Science, WG
+  2003}, volume 2880 of {\em Lecture Notes in Computer Science}, pages 1--12.
+  Springer, 2003.
+\newblock \href {https://doi.org/10.1007/978-3-540-39890-5_1}
+  {\path{doi:10.1007/978-3-540-39890-5_1}}.
+
+\bibitem{GoodrichHS21}
+Timothy~D. Goodrich, Eric Horton, and Blair~D. Sullivan.
+\newblock An updated experimental evaluation of graph bipartization methods.
+\newblock {\em {ACM} J. Exp. Algorithmics}, 26:12:1--12:24, 2021.
+\newblock \href {https://doi.org/10.1145/3467968} {\path{doi:10.1145/3467968}}.
+
+\bibitem{Goodrich18}
+Timothy~D. Goodrich, Blair~D. Sullivan, and Travis~S. Humble.
+\newblock Optimizing adiabatic quantum program compilation using a
+  graph-theoretic framework.
+\newblock {\em Quantum Information Processing}, 17(5), 4 2018.
+\newblock URL: \url{https://www.osti.gov/biblio/1460229}, \href
+  {https://doi.org/10.1007/s11128-018-1863-4}
+  {\path{doi:10.1007/s11128-018-1863-4}}.
+
+\bibitem{Huffner09}
+Falk H{\"u}ffner.
+\newblock Algorithm engineering for optimal graph bipartization.
+\newblock {\em J. Graph Algorithms Appl.}, 13(2):77--98, 2009.
+
+\bibitem{JansenK21}
+Bart M.~P. Jansen and Jari J.~H. de~Kroon.
+\newblock {FPT} algorithms to compute the elimination distance to bipartite
+  graphs and more.
+\newblock In Lukasz Kowalik, Michal Pilipczuk, and Pawel Rzazewski, editors,
+  {\em Graph-Theoretic Concepts in Computer Science - 47th International
+  Workshop, {WG} 2021, Warsaw, Poland, June 23-25, 2021, Revised Selected
+  Papers}, volume 12911 of {\em Lecture Notes in Computer Science}, pages
+  80--93. Springer, 2021.
+\newblock \href {https://doi.org/10.1007/978-3-030-86838-3\_6}
+  {\path{doi:10.1007/978-3-030-86838-3\_6}}.
+
+\bibitem{JansenKW23}
+Bart M.~P. Jansen, Jari J.~H. de~Kroon, and Michal Wlodarczyk.
+\newblock Single-exponential {FPT} algorithms for enumerating secluded
+  {\(\mathscr{f}\)}-free subgraphs and deleting to scattered graph classes.
+\newblock In Satoru Iwata and Naonori Kakimura, editors, {\em Proceedings of
+  the 34th International Symposium on Algorithms and Computation, {ISAAC}
+  2023}, volume 283 of {\em LIPIcs}, pages 42:1--42:18. Schloss Dagstuhl -
+  Leibniz-Zentrum f{\"{u}}r Informatik, 2023.
+\newblock \href {https://doi.org/10.4230/LIPICS.ISAAC.2023.42}
+  {\path{doi:10.4230/LIPICS.ISAAC.2023.42}}.
+
+\bibitem{JansenKW22}
+Bart M.~P. Jansen, Jari J.~H. de~Kroon, and Michał Włodarczyk.
+\newblock Vertex {Deletion} {Parameterized} by {Elimination} {Distance} and
+  {Even} {Less}, 2022.
+\newblock arXiv:2103.09715 [cs].
+\newblock \href {https://doi.org/10.48550/arXiv.2103.09715}
+  {\path{doi:10.48550/arXiv.2103.09715}}.
+
+\bibitem{JansenV24}
+Bart M.~P. Jansen and Ruben F.~A. Verhaegh.
+\newblock Search-space reduction via essential vertices revisited: Vertex
+  multicut and cograph deletion.
+\newblock In Hans~L. Bodlaender, editor, {\em Proceedings of the 19th
+  Scandinavian Symposium on Algorithm Theory, SWAT 2024}, LIPIcs. Schloss
+  Dagstuhl - Leibniz-Zentrum f{\"{u}}r Informatik, 2024.
+\newblock In press.
+\newblock \href {https://arxiv.org/abs/2404.09769} {\path{arXiv:2404.09769}}.
+
+\bibitem{KratschW14}
+Stefan Kratsch and Magnus Wahlstr{\"{o}}m.
+\newblock Compression via matroids: {A} randomized polynomial kernel for odd
+  cycle transversal.
+\newblock {\em {ACM} Trans. Algorithms}, 10(4):20:1--20:15, 2014.
+\newblock \href {https://doi.org/10.1145/2635810} {\path{doi:10.1145/2635810}}.
+
+\bibitem{KratschW20}
+Stefan Kratsch and Magnus Wahlstr{\"{o}}m.
+\newblock Representative sets and irrelevant vertices: New tools for
+  kernelization.
+\newblock {\em J. {ACM}}, 67(3):16:1--16:50, 2020.
+\newblock \href {https://doi.org/10.1145/3390887} {\path{doi:10.1145/3390887}}.
+
+\bibitem{LokshtanovNRRS14}
+Daniel Lokshtanov, N.~S. Narayanaswamy, Venkatesh Raman, M.~S. Ramanujan, and
+  Saket Saurabh.
+\newblock Faster parameterized algorithms using linear programming.
+\newblock {\em {ACM} Trans. Algorithms}, 11(2):15:1--15:31, 2014.
+\newblock \href {https://doi.org/10.1145/2566616} {\path{doi:10.1145/2566616}}.
+
+\bibitem{NaorSS95}
+Moni Naor, Leonard~J. Schulman, and Aravind Srinivasan.
+\newblock Splitters and near-optimal derandomization.
+\newblock In {\em 36th Annual Symposium on Foundations of Computer Science,
+  Milwaukee, Wisconsin, USA, 23-25 October 1995}, pages 182--191. {IEEE}
+  Computer Society, 1995.
+\newblock \href {https://doi.org/10.1109/SFCS.1995.492475}
+  {\path{doi:10.1109/SFCS.1995.492475}}.
+
+\bibitem{PilipczukZ18}
+Marcin Pilipczuk and Michal Ziobro.
+\newblock Experimental evaluation of parameterized algorithms for graph
+  separation problems: Half-integral relaxations and matroid-based
+  kernelization.
+\newblock {\em CoRR}, abs/1811.07779, 2018.
+\newblock \href {https://arxiv.org/abs/1811.07779} {\path{arXiv:1811.07779}}.
+
+\bibitem{ReedSV04}
+Bruce~A. Reed, Kaleigh Smith, and Adrian Vetta.
+\newblock Finding odd cycle transversals.
+\newblock {\em Oper. Res. Lett.}, 32(4):299--301, 2004.
+\newblock \href {https://doi.org/10.1016/j.orl.2003.10.009}
+  {\path{doi:10.1016/j.orl.2003.10.009}}.
+
+\bibitem{Schrijver03}
+Alexander Schrijver.
+\newblock {\em Combinatorial optimization: polyhedra and efficiency},
+  volume~24.
+\newblock Springer, 2003.
+
+\bibitem{Wernicke14}
+Sebastian Wernicke.
+\newblock {\em On the algorithmic tractability of single nucleotide
+  polymorphism (SNP) analysis and related problems}.
+\newblock diplom.de, 2014.
+
+\end{thebibliography}

@@ -1,0 +1,76 @@
+% Written for Swift Shifter's benchmark (#150); part of the repository,
+% under its licence (GPL-3.0-or-later).
+\documentclass[11pt]{ctexart}
+\usepackage{amsmath,amssymb,amsthm}
+
+\newtheorem{theorem}{定理}[section]
+\newtheorem{lemma}[theorem]{引理}
+\theoremstyle{definition}
+\newtheorem{definition}[theorem]{定義}
+
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\norm}[1]{\left\lVert #1 \right\rVert}
+\DeclareMathOperator{\tr}{tr}
+
+\title{矩陣範數與 Gradient Descent 的收斂}
+\author{Swift Shifter 測試文件}
+\date{2026 年 10 月}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+本文以中英混排的方式，整理 matrix norm 的幾個基本性質，並說明 gradient
+descent 在 strongly convex 函數上的線性收斂。文中的公式包含行內公式、編號公式、
+多行對齊與定理環境，用來測試轉換器是否保留數學內容。
+\end{abstract}
+
+\section{矩陣範數}
+
+對矩陣 $A \in \R^{m \times n}$，Frobenius norm 定義為
+\begin{equation}
+  \norm{A}_F = \sqrt{\sum_{i=1}^{m} \sum_{j=1}^{n} a_{ij}^2} = \sqrt{\tr(A^\top A)}.
+  \label{eq:frobenius}
+\end{equation}
+由式~\eqref{eq:frobenius} 可知 $\norm{A}_F = \norm{A^\top}_F$。另一個常用的範數是
+spectral norm $\norm{A}_2 = \sigma_{\max}(A)$，也就是最大的 singular value。
+
+\begin{definition}
+若對所有 $x, y \in \R^n$ 都有 $f(y) \ge f(x) + \nabla f(x)^\top (y - x) + \frac{\mu}{2}\norm{y - x}^2$，
+則稱 $f$ 為 $\mu$-strongly convex。
+\end{definition}
+
+\begin{lemma}\label{lem:norms}
+對任意 $A \in \R^{m \times n}$，若 $r = \operatorname{rank}(A)$，則
+\[
+  \norm{A}_2 \le \norm{A}_F \le \sqrt{r}\, \norm{A}_2 .
+\]
+\end{lemma}
+
+\begin{proof}
+設 $\sigma_1 \ge \dots \ge \sigma_r > 0$ 為 $A$ 的 singular values，則
+$\norm{A}_F^2 = \sum_{k=1}^{r} \sigma_k^2$，兩邊的不等式都由此直接得到。
+\end{proof}
+
+\section{Gradient Descent 的收斂}
+
+考慮更新規則
+\begin{align}
+  x_{k+1} &= x_k - \eta \nabla f(x_k), \label{eq:gd}\\
+  e_k     &= f(x_k) - f(x^\star). \nonumber
+\end{align}
+
+\begin{theorem}\label{thm:linear}
+若 $f$ 為 $\mu$-strongly convex 且 $\nabla f$ 為 $L$-Lipschitz，取步長 $\eta = 1/L$，
+則依式~\eqref{eq:gd} 更新時
+\begin{equation}
+  e_{k} \le \left(1 - \frac{\mu}{L}\right)^{k} e_0 .
+\end{equation}
+\end{theorem}
+
+定理~\ref{thm:linear} 說明誤差以幾何級數下降，比值 $\kappa = L/\mu$ 稱為
+condition number。$\kappa$ 越大，收斂越慢；這也是為什麼實務上常用
+preconditioning 或 momentum。引理~\ref{lem:norms} 在估計 $L$ 時很有用：
+對二次函數 $f(x) = \frac12 x^\top A x$，$L = \norm{A}_2 \le \norm{A}_F$。
+
+\end{document}

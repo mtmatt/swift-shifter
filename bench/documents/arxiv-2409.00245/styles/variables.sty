@@ -1,0 +1,89 @@
+%----------------------------------------
+%    Problems
+%----------------------------------------
+\def\sat{\probname{SAT}}
+\def\maxsat{\probname{MaxSAT}}
+\def\ilp{\probname{ILP}}
+\def\PrbVC{\probname{Vertex Cover}}
+\def\PrbFVSLong{\probname{Feedback Vertex Set}}
+\def\PrbFVS{\probname{FVS}}
+\def\PrbDFVSLong{\probname{Directed Feedback Vertex Set}}
+\def\PrbDFVS{\probname{DFVS}}
+\def\PrbOCTLong{\probname{Odd Cycle Transversal}}
+\def\PrbOCT{\probname{OCT}}
+
+\def\PrbFFS{\probname{$\mathcal{F}$-free Subgraph}}
+
+%----------------------------------------
+%    Notation
+%----------------------------------------
+% number of connected components
+\def\cc{\ensuremath{\textnormal{\textsf{cc}}}}
+% treewidth
+\def\tw{\ensuremath{\textnormal{\textsf{tw}}}}
+% pathwidth
+\def\pw{\ensuremath{\textnormal{\textsf{pw}}}}
+% modular-width
+\def\mw{\ensuremath{\textnormal{\textsf{mw}}}}
+% clique-width
+\def\cw{\ensuremath{\textnormal{\textsf{cw}}}}
+% neighborhood diversity
+\def\nd{\ensuremath{\textnormal{\textsf{nd}}}}
+% cluster deletion number
+\def\cd{\ensuremath{\textnormal{\textsf{cd}}}}
+% twin-cover
+\def\tc{\ensuremath{\textnormal{\textsf{tc}}}}
+% vertex cover number
+\def\vc{\ensuremath{\textnormal{\textsf{vc}}}}
+% block deletion number
+\def\bd{\ensuremath{\textnormal{\textsf{bd}}}}
+% twin width number
+\def\tww{\ensuremath{\textnormal{\textsf{tww}}}}
+% infeasible
+\def\infeasible{\ensuremath{\textnormal{\textsf{Infeasible}}}}
+% feedback vertex set number
+\def\fvs{\ensuremath{\textnormal{\textsf{fvs}}}}
+% directed feedback vertex set number
+\def\dfvs{\ensuremath{\textnormal{\textsf{dfvs}}}}
+
+% set of bipartite graphs
+\def\bip{\ensuremath{\textnormal{\textsf{bip}}}}
+
+% F-free subgraph
+\def\FFS{\ensuremath{\textnormal{FFS}}\xspace}
+\def\ffs{\ensuremath{\textnormal{\textsf{ffs}}}}
+
+\newcommand{\oct}{\textnormal{\textsf{oct}}}
+
+\newcommand{\octcut}{OCT-cut\xspace}
+\newcommand{\antler}{antler\xspace}
+\newcommand{\antlers}{antlers\xspace}
+\newcommand{\octmane}{tight OCC\xspace}
+\newcommand{\zoctmane}{$z$-tight OCC\xspace}
+
+\newcommand{\Occ}{Odd Cycle Cut\xspace}
+\newcommand{\Occs}{Odd Cycle Cuts\xspace}
+\newcommand{\occ}{OCC\xspace}
+\newcommand{\occs}{OCCs\xspace}
+\newcommand{\tocc}{tight OCC\xspace}
+\newcommand{\toccs}{tight OCCs\xspace}
+\newcommand{\zocc}{$z$-tight OCC\xspace}
+\newcommand{\zoccs}{$z$-tight OCCs\xspace}
+
+% notation for color coding
+\def\cA{\ensuremath{\mathsf{\dot{A}}}}
+\def\cB{\ensuremath{\mathsf{\dot{B}}}}
+\def\cC{\ensuremath{\mathsf{\dot{C}}}}
+\def\cH{\ensuremath{\mathsf{\dot{H}}}}
+\def\cR{\ensuremath{\mathsf{\dot{R}}}}
+
+% reduction rules
+\newtheorem*{reduction}{Reduction step}
+\crefname{reduction}{Reduction step}{Reduction steps}
+\newtheorem*{marking}{Marking step}
+\crefname{marking}{Marking step}{Marking steps}
+
+\newcommand{\refmark}{the \hyperref[algo:mark:B:star]{Marking step}\xspace}
+\newcommand{\Refmark}{The \hyperref[algo:mark:B:star]{Marking step}\xspace}
+\newcommand{\refreduction}{the \hyperref[algo:shrink]{Reduction step}\xspace}
+\newcommand{\Refreduction}{The \hyperref[algo:shrink]{Reduction step}\xspace}

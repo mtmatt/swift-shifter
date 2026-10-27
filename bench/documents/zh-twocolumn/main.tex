@@ -1,0 +1,73 @@
+% Written for Swift Shifter's benchmark (#150); part of the repository,
+% under its licence (GPL-3.0-or-later).
+\documentclass[10pt,twocolumn]{ctexart}
+\usepackage{amsmath}
+\usepackage{geometry}
+\geometry{margin=2cm}
+
+\title{雙欄排版下的閱讀順序判斷}
+\author{Swift Shifter 測試文件}
+\date{2026 年 10 月}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+從 PDF 擷取文字時，雙欄頁面的閱讀順序是最常見的錯誤來源。本文描述一個以文字座標為基礎的
+簡單方法：先找出欄間的空白帶，再依欄位由上而下排序。我們也討論 header、footer 與跨欄標題
+等例外情況。
+\end{abstract}
+
+\section{問題}
+
+PDF 只記錄每個字形在頁面上的位置，並不記錄段落或閱讀順序。對單欄頁面，依 $y$ 座標排序
+通常就夠了；但在雙欄頁面上，同一高度的兩行分屬不同欄位，若只依 $y$ 排序，左右兩欄的文字
+會被交錯合併，產生難以閱讀的結果。
+
+這個問題在學術論文中特別常見。多數會議論文採用雙欄格式，而且常有跨欄的標題、圖表與公式。
+
+\section{方法}
+
+\subsection{找出欄間空白}
+
+把頁面沿 $x$ 軸切成寬度為 $w$ 的長條，計算每一條中被文字覆蓋的比例 $c(x)$。欄間空白是
+頁面中段 $c(x)$ 接近零的連續區間：
+\begin{equation}
+  G = \{\, x \mid c(x) < \epsilon,\ x_{\min} < x < x_{\max} \,\}.
+\end{equation}
+若 $G$ 為空，就把頁面當成單欄。
+
+\subsection{排序}
+
+找到空白帶的中心 $g$ 之後，每個文字區塊依其中心點 $x_b$ 分到左欄或右欄，再分別依 $y$
+排序。跨過 $g$ 的區塊，例如標題或寬表格，則依其 $y$ 座標插在兩欄之間，並把頁面在該處切成
+上下兩段，各自重複上述步驟。
+
+\subsection{Header 與 footer}
+
+出現在每頁相同位置、而且內容相似（例如頁碼或期刊名稱）的區塊，視為 header 或 footer，
+不放進正文。判斷時比較連續數頁中位置差在 $\delta$ 以內的區塊，若文字的 edit distance 小於
+門檻就移除。
+
+\section{評估}
+
+我們以原始碼為標準答案，計算擷取結果的 normalized edit distance：
+\begin{equation}
+  d(a, b) = \frac{\operatorname{lev}(a, b)}{\max(|a|, |b|)}.
+\end{equation}
+分數 $1 - d$ 越接近 1 越好。初步結果顯示，加入欄位判斷後，雙欄頁面的分數明顯提高，而單欄
+頁面幾乎不受影響。
+
+\section{限制}
+
+這個方法假設欄位是規則的直條，對不規則的雜誌排版、文繞圖，或一頁中欄數改變的情況效果較差。
+這些情況需要更完整的版面分析，例如以機器學習模型辨識區塊類型。
+
+\begin{thebibliography}{9}
+\bibitem{lev} V. I. Levenshtein. Binary codes capable of correcting deletions,
+  insertions, and reversals. \emph{Soviet Physics Doklady}, 10(8):707--710, 1966.
+\bibitem{breuel} T. M. Breuel. Two geometric algorithms for layout analysis.
+  In \emph{Document Analysis Systems V}, pages 188--199, 2002.
+\end{thebibliography}
+
+\end{document}

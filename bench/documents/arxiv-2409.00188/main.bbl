@@ -1,0 +1,92 @@
+\begin{thebibliography}{DHOBT13}
+\expandafter\ifx\csname url\endcsname\relax
+  \def\url#1{\texttt{#1}}\fi
+\expandafter\ifx\csname doi\endcsname\relax
+  \def\doi#1{\burlalt{doi:#1}{http://dx.doi.org/#1}}\fi
+\expandafter\ifx\csname urlprefix\endcsname\relax\def\urlprefix{URL }\fi
+\expandafter\ifx\csname href\endcsname\relax
+  \def\href#1#2{#2}\fi
+\expandafter\ifx\csname burlalt\endcsname\relax
+  \def\burlalt#1#2{\href{#2}{#1}}\fi
+
+\bibitem[AAGGL15]{AAGGL}
+L.~B. Anderson, F.~Apruzzi, X.~Gao, J.~Gray, and S.-J. Lee.
+\newblock A new construction of calabi-yau manifolds: Generalized {CICY}s, 2015.
+\newblock \doi{10.48550/ARXIV.1507.03235}.
+
+\bibitem[B75]{bernstein}
+D.~Bernstein.
+\newblock The number of roots of a system of equations.
+\newblock {\em Functional Analysis and Its Applications}, 9(3):183--185, 1975.
+\newblock \doi{https://doi.org/10.1007/BF01075595}.
+
+\bibitem[B94]{Bayle1994}
+L.~Bayle.
+\newblock Classification des varietes coplexes projectives de dimension trois dont une section hyperplane générale est une surface d'enriques.
+\newblock {\em Journal für die reine und angewandte Mathematik}, 449:9--64, 1994.
+\newblock \urlprefix\url{http://eudml.org/doc/153604}.
+
+\bibitem[BMMT22]{BMMT}
+P.~Breiding, M.~Michałek, L.~Monin, and S.~Telen.
+\newblock The algebraic degree of coupled oscillators, 2022.
+\newblock \doi{10.48550/ARXIV.2208.08179}.
+
+\bibitem[BSW20]{BSW}
+P.~Breiding, F.~Sottile, and J.~Woodcock.
+\newblock Euclidean distance degree and mixed volume, 2020.
+\newblock \doi{10.48550/ARXIV.2012.06350}.
+
+\bibitem[DHOBT13]{DHOBT}
+J.~Draisma, E.~Horobet, G.~Ottaviani, B.~Sturmfels, and R.~R. Thomas.
+\newblock The euclidean distance degree of an algebraic variety, 2013.
+\newblock \doi{10.48550/ARXIV.1309.0049}.
+
+\bibitem[E13]{Esterov2013}
+A.~Esterov.
+\newblock Characteristic classes of affine varieties and plucker formulas for affine morphisms, 2013.
+\newblock \doi{10.48550/ARXIV.1305.3234}.
+
+\bibitem[E24]{Esterov2024}
+A.~Esterov.
+\newblock Engineered complete intersections: slightly degenerate bernstein--kouchnirenko--khovanskii, 2024.
+\newblock \doi{10.48550/ARXIV.2401.12099}.
+
+\bibitem[EGA]{EGA}
+J.~Dieudonn{\'e} and A.~Grothendieck.
+\newblock \'{E}l\'ements de g\'eom\'etrie alg\'ebrique.
+\newblock {\em Inst. Hautes \'Etudes Sci. Publ. Math.}, 4, 8, 11, 17, 20, 24, 28, 32, 1961--1967.
+
+\bibitem[EL22]{Esterov2022}
+A.~Esterov and L.~Lang.
+\newblock Bernstein-kouchnirenko-khovanskii with a symmetry, 2022.
+\newblock \doi{10.48550/arxiv.2207.03923}.
+
+\bibitem[Ew96]{Ewald1996}
+G.~Ewald.
+\newblock {\em Combinatorial Convexity and Algebraic Geometry}.
+\newblock Springer New York, 1996.
+\newblock \doi{10.1007/978-1-4612-4044-0}.
+
+\bibitem[K77]{Kushnirenko1977}
+A.~G. Kushnirenko.
+\newblock Newton polytopes and the bezout theorem.
+\newblock {\em Functional Analysis and Its Applications}, 10(3):233–235, 1977.
+\newblock \doi{10.1007/bf01075534}.
+
+\bibitem[KH16]{Khovanskii2016}
+A.~G. Khovanskii.
+\newblock Newton polytopes and irreducible components of complete intersections.
+\newblock {\em Izvestiya: Mathematics}, 80(1):263--284, Feb. 2016.
+\newblock \doi{10.1070/im8307}.
+
+\bibitem[LNRW21]{LNRW}
+J.~Lindberg, N.~Nicholson, J.~I. Rodriguez, and Z.~Wang.
+\newblock The maximum likelihood degree of sparse polynomial systems, 2021.
+\newblock \doi{10.48550/ARXIV.2105.07449}.
+
+\bibitem[Stacks]{stacks-project}
+T.~{Stacks Project Authors}.
+\newblock \textit{Stacks Project}.
+\newblock \url{https://stacks.math.columbia.edu}.
+
+\end{thebibliography}

@@ -1,0 +1,153 @@
+% Written for Swift Shifter's benchmark (#150); part of the repository,
+% under its licence (GPL-3.0-or-later).
+\documentclass[11pt]{article}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{longtable}
+
+\title{Tables in Practice: A Reference Document}
+\author{Swift Shifter contributors}
+\date{October 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document collects the kinds of tables that appear in technical papers:
+plain grids, rule-only tables, merged cells, aligned numbers, formulas in
+cells, and a table that breaks across pages. It exists to test how well a
+converter keeps their structure.
+\end{abstract}
+
+\section{A plain grid}
+
+Table~\ref{tab:grid} has a rule between every row and column.
+
+\begin{table}[h]
+  \centering
+  \caption{Image formats and their properties.}
+  \label{tab:grid}
+  \begin{tabular}{|l|c|c|r|}
+    \hline
+    Format & Lossy & Alpha & Typical size (KB) \\
+    \hline
+    PNG  & no  & yes & 420 \\
+    \hline
+    JPEG & yes & no  & 95  \\
+    \hline
+    WebP & yes & yes & 70  \\
+    \hline
+    AVIF & yes & yes & 48  \\
+    \hline
+  \end{tabular}
+\end{table}
+
+\section{Rules only}
+
+Table~\ref{tab:booktabs} uses \texttt{booktabs}: no vertical rules, and three
+horizontal ones.
+
+\begin{table}[h]
+  \centering
+  \caption{Conversion time per page, in milliseconds.}
+  \label{tab:booktabs}
+  \begin{tabular}{lrrr}
+    \toprule
+    Engine & Median & Mean & 95th percentile \\
+    \midrule
+    Native   & 3.1  & 4.0  & 9.8   \\
+    Typst    & 12.4 & 15.2 & 31.0  \\
+    External & 88.0 & 97.5 & 210.3 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Merged cells}
+
+Table~\ref{tab:merged} spans columns with \verb|\multicolumn| and rows with
+\verb|\multirow|.
+
+\begin{table}[h]
+  \centering
+  \caption{Accuracy by document type and layout.}
+  \label{tab:merged}
+  \begin{tabular}{llcc}
+    \toprule
+    & & \multicolumn{2}{c}{Accuracy (\%)} \\
+    \cmidrule(lr){3-4}
+    Type & Layout & Text & Structure \\
+    \midrule
+    \multirow{2}{*}{Paper}  & one column & 98.1 & 91.4 \\
+                            & two columns & 93.7 & 84.2 \\
+    \midrule
+    \multirow{2}{*}{Report} & one column & 97.5 & 89.9 \\
+                            & two columns & 92.0 & 80.6 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\section{Formulas in cells}
+
+\begin{table}[h]
+  \centering
+  \caption{Common distances between strings $a$ and $b$.}
+  \label{tab:math}
+  \begin{tabular}{>{\raggedright}p{3.5cm}l}
+    \toprule
+    Name & Definition \\
+    \midrule
+    Normalized edit distance & $\dfrac{\operatorname{lev}(a,b)}{\max(|a|,|b|)}$ \\[1.2ex]
+    Jaccard distance on tokens & $1 - \dfrac{|A \cap B|}{|A \cup B|}$ \\[1.2ex]
+    Character error rate & $\dfrac{S + D + I}{N}$ \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Here $S$, $D$ and $I$ count substitutions, deletions and insertions, and $N$
+is the length of the reference.
+
+\section{A long table}
+
+\begin{longtable}{rll}
+  \caption{Every format the converter reads, by family.}\label{tab:long} \\
+  \toprule
+  No. & Format & Family \\
+  \midrule
+  \endfirsthead
+  \toprule
+  No. & Format & Family \\
+  \midrule
+  \endhead
+  \bottomrule
+  \endfoot
+  1  & PNG       & image \\
+  2  & JPEG      & image \\
+  3  & WebP      & image \\
+  4  & AVIF      & image \\
+  5  & HEIC      & image \\
+  6  & TIFF      & image \\
+  7  & GIF       & image \\
+  8  & BMP       & image \\
+  9  & MP4       & video \\
+  10 & MOV       & video \\
+  11 & MKV       & video \\
+  12 & WebM      & video \\
+  13 & MP3       & audio \\
+  14 & FLAC      & audio \\
+  15 & WAV       & audio \\
+  16 & Ogg       & audio \\
+  17 & Markdown  & document \\
+  18 & HTML      & document \\
+  19 & EPUB      & document \\
+  20 & Typst     & document \\
+  21 & LaTeX     & document \\
+  22 & PDF       & document \\
+  23 & JSON      & data \\
+  24 & YAML      & data \\
+  25 & TOML      & data \\
+  26 & CSV       & data \\
+\end{longtable}
+
+\end{document}

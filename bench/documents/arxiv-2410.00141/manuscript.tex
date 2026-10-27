@@ -1,0 +1,166 @@
+\documentclass[%
+ aip,
+% jmp,
+% bmf,
+% sd,
+% rsi,
+ amsmath,amssymb,
+%preprint,
+reprint, onecolumn %%%%% Comment onecolumn to override one column format %%%%%%%
+%author-year,%
+%author-numerical,%
+% Conference Proceedings
+]{revtex4-1}
+
+\usepackage{graphicx}% Include figure files
+\usepackage{dcolumn}% Align table columns on decimal point
+\usepackage{bm}% bold math
+%\usepackage[mathlines]{lineno}% Enable numbering of text and display math
+%\linenumbers\relax % Commence numbering lines
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{mathptmx}
+\usepackage{etoolbox}
+
+%% Apr 2021: AIP requests that the corresponding 
+%% email to be moved after the affiliations
+\makeatletter
+\def\@email#1#2{%
+ \endgroup
+ \patchcmd{\titleblock@produce}
+  {\frontmatter@RRAPformat}
+  {\frontmatter@RRAPformat{\produce@RRAP{*#1\href{mailto:#2}{#2}}}\frontmatter@RRAPformat}
+  {}{}
+}%
+\makeatother
+\begin{document}
+
+\preprint{AIP/123-QED}
+
+\title[]{Simplified approach to estimate Lorenz number using experimental Seebeck coefficient for non parabolic band}
+% Force line breaks with \\
+\author{Ankit Kumar}
+ \altaffiliation[]{}%Lines break automatically or can be forced with \\
+\email{kumar.ankit@students.iiserpune.ac.in}
+\affiliation{Department of Physics, Indian Institute of Science Education and Research, Pune, Maharashtra, India, 411008}%
+
+\date{\today}% It is always \today, today,
+             %  but any date may be explicitly specified
+
+\begin{abstract}
+Reduction of lattice thermal conductivity ($\kappa_L$) is one of the most effective ways of improving thermoelectric properties. However extraction of $\kappa_L$ from the total measured thermal conductivity can be misleading if Lorenz ($L$) number is not estimated correctly. The $\kappa_L$ is obtained using Wiedemann-Franz law which estimates electronic part of thermal conductivity $\kappa_e$ = $L$$\sigma$T where, $\sigma$ and T are electrical conductivity and temperature. The $\kappa_L$ is then estimated as $\kappa_L$ = $\kappa_T$ - $L$$\sigma$T. For the metallic system the Lorenz number has universal value of 2.44 $\times$ 10$^{-8}$ W$\Omega$K$^{-2}$ (degenerate limit), but for no-degenerate semiconductors, the value can deviate significantly for acoustic phonon scattering, the most common scattering mechanism for thermoelectric above room temperatures. Up till now, $L$ is estimated by solving a series of equation derived form Boltzmann transport equations. For the single parabolic band (SPB) an equation was proposed to estimate $L$ directly from the experimental Seebeck coefficient. However using SPB model will lead to overestimation of $L$ in case of low band gap semiconductors which result in underestimation of $\kappa_L$ sometimes even negative $\kappa_L$. In this letter we propose a simpler equation to estimate $L$ for a non parabolic band. Experimental Seebeck coefficient, band gap($E_g$), and Temperature ($T$) are the main inputs in the equation which nearly eliminates the need of solving multiple Fermi integrals besides giving accurate values of $L$. 
+\end{abstract}
+
+
+
+\date{\today}
+
+
+\draft % marks overfull lines with a black rule on the right
+\maketitle %\maketitle must follow title, authors, abstract and \pacs
+
+
+
+
+
+% Body of paper goes here. Use proper sectioning commands. 
+% References should be done using the \cite, \ref, and \label commands
+
+
+Direct conversion of heat into electricity is done using thermoelectric materials. The conversion efficiency is dependent on a dimensionless quantity called figure of merit (zT) = $S^2\sigma T$/($\kappa_e$ + $\kappa_L$), where $S$, $\sigma$, $T$, $\kappa_e$ and $\kappa_L$ are Seebeck coefficient, electrical conductivity, absolute temperature, electronic thermal conductivity, and lattice thermal conductivity respectively. Typical measurement of thermal conductivity gives the total value which is $\kappa_T$ = $\kappa_e$ + $\kappa_L$. Using measured $\sigma$ and the Wiedemann-Franz law, $\kappa_e$ is estimated as: $\kappa_e$ = L$\sigma$T, where $L$ is the Lorenz number~\cite{jones1985theoretical}. Once $\kappa_e$ is known, $\kappa_L$ can be determined by removing the electronic contribution from total thermal conductivity, $\kappa_T$ - L$\sigma$T = $\kappa_L$. In the case of a bipolar system, $\kappa_T$  - L$\sigma$T = $\kappa_L$ + $\kappa_{bipolar}$ and hence the knowledge of $\kappa_{bipolar}$ becomes necessary for the exact estimation of $\kappa_L$. However, in most cases of interest, either $\kappa_{bipolar}$ is small or is not there at all.
+
+In order to get a high zT value, $\kappa_T$ has to be reduced but $\sigma$ has to be increased. As $\kappa_e$ and $\sigma$ are directly correlated, reducing $\kappa_L$ is an effective way to increase zT.~\cite{snyder2008complex} However, estimation of $\kappa_L$ using $L$ can often be misleading. If one uses the value of $L$ used for a metallic system for semiconductors (SPB) where the actual $L$ is less than 2.44 $\times$ 10$^{-8}$ W$\Omega$K$^{-2}$, the estimated $\kappa_L$ comes out to be less than actual value. Similarly for non parabolic bands $L$ is even smaller than that of SBP.  In that case if $L$ is estimated using SPB model it will give $\kappa_L$ to be quite less. These results can be misleading in the scene that the actual $\kappa_L$ is not that low. For example, incautious determination of $L$ in case of lanthanum telluride can even cause $\kappa_L$ to be negative, which is not physical~\cite{may2008thermoelectric}. Therefore, careful evaluation of $L$ is critical in characterizing enhancements in zT due to $\kappa_L$ reduction. 
+
+In case of metals, charge carriers are free-electrons like, where $L$ converges to 2.44 $\times$ 10$^{-8}$ W$\Omega$ K$^{-2}$ (degenerate limit). However, heavily doped semiconductors will have $L$ very close to the degenerate limit. From thermoelectric point of view, most good thermoelectric materials have their carrier densities between lightly doped and heavily doped regions. In such cases the error in $L$ could be as much as 40 \% ~\cite{toberer2012advances}.
+Measuring $L$ directly requires high mobility which is beyond attainable above room temperature~\cite{lukas2012experimental}. So far, $L$ is taken as a constant (2.44 10$^{-8}$ W$\Omega$ K$^{-2}$) or estimated using various band models such as the single parabolic band model (SPB) and single Kane band model (SKB) which considers non parabolic nature of bands. 
+Although both SPB and SKB models work well to estimate $L$, a transcendental set of equations is needs to be solved for $L$ in terms of S that require a numerical solution. 
+By assuming that the carrier relaxation time is limited by acoustic phonon scattering (APS), one of the most relevant scattering mechanisms for thermoelectric materials above room temperature, followings are the equations that needs to be solved for SPB-APS model~\cite{pei2011convergence, wood1988materials}: 
+
+
+\begin{equation}
+	S = \frac{k\textsubscript{B} }{e}\left[ \frac{2F\textsubscript{1}(\eta)}{F\textsubscript{0}(\eta)} -\eta \right],
+\end{equation}
+\begin{equation}
+	L = \left(\frac{k\textsubscript{B}}{e}\right)^2\left[\frac{3F\textsubscript{2}(\eta)}{F\textsubscript{0}(\eta)} - \left(\frac{2F\textsubscript{1}(\eta)}{F\textsubscript{0}(\eta)} \right)^2\right]
+\end{equation}
+
+\begin{equation}
+	\eta = \frac{E\textsubscript{F} }{k\textsubscript{B}T},
+\end{equation}
+where, $\eta$ is the reduced Fermi energy, $E_F$ the Fermi energy, $F_n$($\eta)$ is the Fermi integral, $k_B$ is the Boltzmann constant , and e is the electronic charge.
+
+\begin{equation}
+    F_{k}(\eta) = \int_{0}^{\infty}{\frac{e^k \partial \varepsilon}{1 + exp(E - \eta)}}
+\end{equation} 
+
+For SPB model, a much simpler form is proposed by Hyun-Sik Kim et.al which estimated $L$ within 5 \% error with respect to actual value estimated using SPB model\cite{kim2015characterization}. The expression for $L$ as derived by Kim et.al. is given as: 
+
+\begin{equation}
+	L = 1.5 + exp \left(-\frac{|S|}{116}\right)
+\end{equation}
+
+
+
+However, the SPB model with acoustic phonon scattering does not produce correct results in case of low band gap semiconductors where non-parabolic band structure come into picture. PbTe~\cite{pei2011convergence, lalonde2011reevaluation}, PbSe~\cite{wang2012weak}, and PbS~\cite{wang2013high} are a few examples with narrow band gap described by non-parabolic Kane band model. The non-parabolicity parameter is determined as: $\alpha$ = $k_B$T/$E_g$, where $E_g$ is the band gap~\cite{bhandari1985electronic, ravich2013semiconducting}. Estimation of $L$ using SPB model produced value 26 \% less~\cite{kim2015characterization} than actual. With overestimated $L$, $\kappa_e$ will be overestimated too. Therefore when $\kappa_e$ is subtracted from $\kappa_T$ to get  $\kappa_L$, it will be highly underestimated. 
+Considering non parabilicity into account provides the correct estimation. The Seebeck coefficient and $L$ for for a non-parabolic band is given as:
+\begin{equation}\label{see}
+	S = \frac{k\textsubscript{B} }{e}\left[\frac{^0F^1_{-2}(\eta, \alpha)}{^1F^1_{-2}(\eta, \alpha)} -\eta\right]
+\end{equation}
+\begin{equation}\label{l}
+	L = \left(\frac{k_{B}}{e}\right)^2\left[\frac{^2F^1_{-2}(\eta, \alpha)}{^0F^1_{-2}(\eta, \alpha)} - \left(\frac{^1F^1_{-2}(\eta, \alpha)}{^0F^1_{-2}(\eta,\alpha)} \right)^2\right]
+\end{equation}
+\begin{figure}
+	\centering
+	\includegraphics[width=1\textwidth]{fit.png}
+	\caption {(a) Lorenz number for different $E_g$ at 300 K, and (b, c, d) $L$ for different $E_g$ at different temperatures. Dots are the calculated date using the SKB model and the solid lines are using equation~\ref{new}}
+	\label{fit}   
+\end{figure}
+
+\begin{figure}
+	\centering
+	\includegraphics[width=0.5\textwidth]{reported.png}
+	\caption {Reported Lorenz number (points) and calculated using equation~\ref{new}(lines). The dotted line represents the degenerate limit whereas the solid black line represents the value of $L$ considering the SPB model.}
+	\label{example}   
+\end{figure} 
+
+\begin{equation}
+    \eta = \frac{E_{F} }{k_{B}T}, ~~~and ~~ \alpha = \frac{k_{B}T}{E_{g}}
+\end{equation} 
+
+The function $^nF^m_{k}(\eta,\alpha)$ is the generalized Fermi integral given as:
+
+\begin{equation}
+    ^nF^m_{k}(\eta,\alpha) = \int_{0}^{\infty}{-\left(\frac{\partial f}{\partial \varepsilon}\right) \varepsilon\textsuperscript{n}(\varepsilon +\alpha \varepsilon\textsuperscript{2})\textsuperscript{m}(1 + 2\alpha\varepsilon\textsuperscript{2})\textsuperscript{k}\partial \varepsilon}
+\end{equation} 
+
+where $\varepsilon$ is the reduced energy $E/k_BT$, and $f$ is the Fermi distribution function. The parameter n, m and k are the indices of the integral whose value depend on the transport property and scattering mechanism.
+
+The SKB model is much more complex than the SPB model as it has additional parameter of non parabolicity ($\alpha$). Considering the exponential form of $L$ for the SPB model, we assumed a similar function of $L$ for SKB with additional parameter of temperature ($T$) and band gap ($E_g$) or in other words $\alpha$. The assumed form for $L$ is given as:
+\begin{equation} \label{new}
+    L  = A + Bexp \left[\frac{-|S|}{f(E_g)g(T)} \right]
+\end{equation}
+where $A$ and $B$ are constants. The $T$ and $E_g$ dependence is accounted by function $f$ and $g$. 
+In order to find the unknown constants ($A, B$) and functional form ($f, g$), we have generated a data set using equation~\ref{see} and~\ref{l} for wide range for $E_g$ and $T$. A and B are estimated by keeping function $f$ and $g$ as parameters while fitting the $L$ vs $S$ data with the proposed equation. As a result, apart from A and B,  we got the information of how f and g are varying as a function of $Eg$ and $T$ and from analyzing that function f and g are determined giving a complete expression of $L$ as function of $S$ with $E_g$ and $T$ as parameters. The final equation for $L$ can be expressed as:
+
+\begin{equation} \label{new}
+    L  = 1.1 + 1.35 exp \left[\frac{-|S|}{\left[162 - 128exp \left(-\frac{Eg}{0.614}\right)     \right]  \left[\frac{15.71}{\sqrt{T}} + 0.0925   \right]}       \right]
+\end{equation} 
+where $L$ is in 10$^{-8}$ W$\Omega$K$^{-2}$ and $S$ in $\mu$VK$^{-1}$. \\
+
+In order to show the validity of proposed equation, we have shown a good agreement between simulated $L$ as a function of $S$ using equation~\ref{see} and~\ref{l} and using our proposed equation~\ref{new}. Figure~\ref{fit}a shows the $L$ at 300K with changing band gaps. The dot represents the data obtained by solving equation~\ref{see} and~\ref{l} whereas the line represents value of $L$ generated using equation~\ref{new}. The values are in good agreement. Now to see if the equation hold for other temperatures we have done a similar simulation for band gap of 0.2, 0.4 and 0.6 with temperature of 300 K, 600 K, and 900 K as shown in figure~\ref{fit}b,c,d. In every case our proposed equation produces value of $L$ close to the value produced by solving equation~\ref{see} and~\ref{l}. This concludes the validity of our equation which can be used instead of equation~\ref{see} and~\ref{l}.
+ 
+As a test case, we have considered a few examples where APS is the dominant scattering mechanism. One of the best example is PbTe system as shown in the figure~\ref{example}. The $L$ calculated using equation~\ref{new} fits perfectly with the reported value of $L$ obtained using equation~\ref{see} and~\ref{l}~\cite{lalonde2011reevaluation}. Another example of Sb doped ZrNiSn shows small deviation from the reported value which was calculated by considering Acoustic phonon, Polar and Alloy scattering~\cite{xie2014intrinsic}. In this case just using the SKB model is not so accurate but still the SKB estimate better value of $L$ compared to SPB model as shown with pink (SKB) and black (SPB) lines. Our proposed equation provides an easy way to use SKB model to estimate $L$ for system with small band gaps. The systems with low band gap where complex scattering mechanism are in play, using SKB model with our proposed equation will provide more accurate value than using SPB model. 
+Overall, we have proposed an equation to estimate $L$ considering non parabolicity into account which require, experimental Seebeck, band gap and measurement temperature. Using our equation one can estimate the lattice thermal conductivity more accurately.
+
+\newpage
+\begin{acknowledgments}
+AK acknowledge Prime Minister Research Fellowship for financial support. AK also acknowledge Prof. Surjeet Singh and Dr. Prasenjit Ghosh for valuable discussions.
+\end{acknowledgments}
+
+% Create the reference section using BibTeX:
+\bibliography{main}
+
+\end{document}
+%
+% ****** End of file aiptemplate.tex ******

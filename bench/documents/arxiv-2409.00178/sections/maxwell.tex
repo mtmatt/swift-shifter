@@ -1,0 +1,66 @@
+\section{Higher-form symmetries of Maxwell theory}
+\label{sec:maxwell}
+
+Our treatment of linear gravity will follow and generalise that for spin-1, so we begin with a brief review of Maxwell theory on a $d$-dimensional manifold $\mathcal{M}$ with Lorentzian signature. The curvature 2-form $F$ can be written locally in terms of a $U(1)$ connection 1-form $A$, with $F=\dd{A}$. The action is
+\begin{equation}\label{eq:S_Maxwell}
+    S_{\text{M}} = -\frac{1}{2e^2} \int_{\mathcal{M}} F \wedge \star F
+\end{equation}
+where $e$ is a coupling constant.
+The Bianchi identity $\dd{F} = 0$ and the field equation $\dd\star F=0$ imply the existence of two conserved 2-form currents
+\begin{equation}
+    J_{\text{e}} = \frac{1}{e^2} F\qc J_{\text{m}} = \frac{1}{2\pi} \star F
+\end{equation}
+These currents can  be integrated to give
+ topological operators 
+\begin{equation}\label{eq:Q_m}
+    Q_{\text{e}} = \int_{\Sigma_{d-2}} \star J_e\qc Q_{\text{m}} = \int_{\Sigma_2} \star J_m
+\end{equation}
+for any codimension-2 cycle $\Sigma_{d-2}$ and dimension-2 cycle $\Sigma_2$.
+The charge $Q_{\text{e}}$ generates a $U(1)$ symmetry acting on Wilson lines and the charge  $Q_{\text{m}}$ generates a $U(1)$ symmetry acting on 't Hooft lines in $d=4$, or 't Hooft $(d-3)$-branes in $d>4$ \cite{Gaiotto2015GeneralizedSymmetries}.
+
+The field strength $F$ is invariant under shifts of the gauge field $A\to A+\lambda$ by a 1-form $\lambda$ which is closed, $\dd\lambda=0$. 
+This is then a symmetry of the action associated with the conserved current $J_{\text{e}}$.
+The global symmetries of this type are those which are not gauge symmetries, which means that $\lambda $ is closed but not exact, so that the symmetry group is given by the first cohomology group.
+In fact, the symmetry is slightly larger: the gauge field can be shifted by a flat connection modulo gauge transformations \cite{Gaiotto2015GeneralizedSymmetries}.
+
+The theory can also be formulated in terms of a dual $(d-3)$-form potential $\tilde{A}$ with $F=\star \dd \tilde{A}$. There is then a $(d-3)$-form shift symmetry $\tilde{A}\to \tilde{A} + \tilde{\lambda}$ with $\dd\tilde \lambda=0$ associated with the conserved current $J_{\text{m}}$. 
+Again, the non-trivial transformations correspond to closed forms $\tilde{\lambda}$ modulo exact ones.
+As before, there is a larger symmetry in which $\tilde{A}$ is shifted by a flat gerbe connection modulo gauge transformations.
+
+Note that, in the standard formulation of the theory in terms of the 1-form gauge field $A$, the `magnetic' $(d-3)$-form symmetry does not correspond to any transformation of the gauge field $A$ and in the dual description in terms of the $(d-3)$-form gauge field $\tilde{A}$, the `electric' 1-form symmetry does not correspond to a transformation of the gauge field $\tilde{A}$.
+
+These two higher-form symmetries are viewed as global symmetries, as the parameters are restricted to be closed, and have a mixed 't Hooft anomaly \cite{Gaiotto2015GeneralizedSymmetries}. This can be seen by coupling  to background gauge fields. The electric 1-form symmetry can be gauged by introducing a 2-form background $U(1)$ gauge field $B$ which transforms as $B \to B + \dd\lambda$. This implies that the combination $F-B$ is invariant, and the gauging is achieved by replacing $F$ in \eqref{eq:S_Maxwell} with $F-B$,
+\begin{equation}\label{eq:Maxwell_electric_gauged}
+    S_{\text{M}}^{\text{e}} = -\frac{1}{2e^2} \int_{\mathcal{M}} (F-B)\wedge\star(F-B)
+\end{equation}
+ Since the magnetic symmetry is not related to any transformation of the gauge field $A$, it can be gauged by introducing the standard coupling of the current $J_{\text{m}}$ to a background $(d-2)$-form $U(1)$ gauge field $\tilde{B}$,
+\begin{equation}
+    S_{\text{M}}^{\text{m}} = -\frac{1}{2e^2} \int_{\mathcal{M}} F\wedge\star F + \frac{1}{2\pi} \int_{\mathcal{M}} F \wedge \tilde{B}
+\end{equation}
+where $\tilde{B} \to \tilde{B} + \dd{\tilde{\lambda}}$ under the magnetic symmetry.
+
+Introducing both the electric and magnetic background fields results in
+\begin{equation}
+    S_{\text{M}}^{\text{e}+\text{m}} = -\frac{1}{2e^2} \int_{\mathcal{M}} (F-B)\wedge\star(F-B) + \frac{1}{2\pi} \int_{\mathcal{M}} F \wedge \tilde{B}
+\end{equation}
+This is invariant under the magnetic transformation $\tilde{B} \to \tilde{B} + \dd{\tilde{\lambda}}$, but is no longer invariant under the electric transformations $A\to A+\lambda$, $B\to B+\dd{\lambda}$, signalling an anomaly. In particular, we find
+\begin{equation}\label{eq:Maxwell_anomaly}
+    \delta S_{\text{M}}^{\text{e}+\text{m}} = \frac{1}{2\pi} \int_{\mathcal{M}} \dd{\lambda} \wedge \tilde{B}
+\end{equation}
+A counterterm $-\frac{1}{2\pi} B\wedge\tilde{B}$ can be added to the Lagrangian to cancel this variation, but the resulting action is then not invariant under the magnetic transformation. 
+There is no counterterm that gives an action that is invariant under both symmetries. 
+
+The anomaly can be cancelled by the inflow mechanism if it is coupled to a $(d+1)$-dimensional theory. This involves extending $B$ and $\tilde{B}$ into a $(d+1)$-dimensional bulk $\mathcal{N}$, with $\partial\mathcal{N} = \mathcal{M}$, and coupling to a topological field theory with a BF action
+\begin{equation}\label{eq:S_inflow_Maxwell}
+    S_{\text{M}}^{\text{inflow}} = -\frac{1}{2\pi} \int_{\mathcal{N}} B \wedge \dd\tilde{B}
+\end{equation}
+This $(d+1)$-dimensional theory is non-trivial, indicating that there is no choice of $d$-dimensional counterterm which will remove the anomaly. 
+Alternatively, we can understand the anomaly via the descent procedure. The $(d+2)$-form anomaly polynomial which produces the $(d+1)$-dimensional  action \eqref{eq:S_inflow_Maxwell} by descent is 
+\begin{equation}\label{eq:anomaly_poly_maxwell}
+    \mathcal{I}_{d+2}^{\text{M}} = -\frac{1}{2\pi} \dd{B} \wedge \dd{\tilde{B}}
+\end{equation}
+
+A mixed 't Hooft anomaly between two symmetries implies that gauging one explicitly breaks the other. In terms of the topological operators $Q_\text{e}$ and $Q_\text{m}$, this means that gauging the electric symmetry, for example, will render the magnetic operator $Q_\text{m}$ non-topological. 
+While the Bianchi identity $\dd{F}=0$ remains valid in the gauged theory, $F$ is no longer a gauge-invariant operator. The gauge-invariant quantity of interest is $F-B$, which is not closed for generic background field configurations since $\dd{(F-B)} = -\dd{B} \neq0$. Therefore, $Q_m$ as defined in \eqref{eq:Q_m} is not a gauge-invariant operator in the gauged theory, and modifying its definition to $Q_m = \frac{1}{2\pi} \int_{\Sigma_2} (F-B)$ results in an operator which is gauge-invariant but not topological. The magnetic symmetry is, therefore, broken when the electric symmetry is coupled to a background gauge field. 
+
+For further discussion of the generalised symmetries and anomaly in Maxwell theory, see e.g.\ the reviews in \cite{Hofman:2017vwr, Brennan:2023mmt, Schafer-Nameki:2023jdn, Bhardwaj:2023kri} and references therein.
