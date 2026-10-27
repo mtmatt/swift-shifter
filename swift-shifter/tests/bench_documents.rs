@@ -1,9 +1,12 @@
 //! The benchmark's test documents (`bench/`) match their list: every
 //! directory has an entry in `documents.toml` with a clear licence, and
-//! every entry a directory and a main file.
+//! every entry a directory and a main file. Each compiles with XeLaTeX,
+//! as its PDF is the answer key the benchmark scores against (an ignored
+//! test, run on its own).
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
+use std::process::Command;
 
 #[derive(serde::Deserialize)]
 struct Manifest {
@@ -103,4 +106,128 @@ fn the_documents_cover_what_the_benchmark_measures() {
             .count();
         assert!(count >= 2, "only {count} document(s) cover {cover}");
     }
+}
+
+/// Compile `doc` in a copy under `scratch`: XeLaTeX twice, so references
+/// resolve, with BibTeX between where the document asks for one (a
+/// `\bibdata` in its `.aux`) and the paper came without a `.bbl`.
+/// The PDF, or why there's none: the run that failed and its log's end.
+fn compile(doc: &Document, xelatex: &Path, scratch: &Path) -> Result<PathBuf, String> {
+    let dir = scratch.join(&doc.dir);
+    copy_dir(&bench().join("documents").join(&doc.dir), &dir);
+    let main = dir.join(&doc.main);
+    let work = main.parent().unwrap();
+    let file = main.file_name().unwrap().to_string_lossy().into_owned();
+    let stem = main.file_stem().unwrap().to_string_lossy().into_owned();
+    let uploaded_bbl = work.join(format!("{stem}.bbl")).exists();
+    // `log` is the file the program explains a failure in.
+    let run = |program: &Path, args: &[&str], log: &str| -> Result<(), String> {
+        let out = Command::new(program)
+            .args(args)
+            .current_dir(work)
+            .output()
+            .map_err(|e| format!("{}: {e}", program.display()))?;
+        if out.status.success() {
+            return Ok(());
+        }
+        let log =
+            std::fs::read_to_string(work.join(format!("{stem}.{log}"))).unwrap_or_else(|_| {
+                format!(
+                    "{}{}",
+                    String::from_utf8_lossy(&out.stdout),
+                    String::from_utf8_lossy(&out.stderr)
+                )
+            });
+        let tail: Vec<_> = log.lines().rev().take(15).collect();
+        let tail: Vec<_> = tail.into_iter().rev().collect();
+        Err(format!(
+            "{} failed:\n{}",
+            program.display(),
+            tail.join("\n")
+        ))
+    };
+    let tex = [
+        "-interaction=nonstopmode",
+        "-halt-on-error",
+        "-no-shell-escape",
+        &file,
+    ];
+    run(xelatex, &tex, "log")?;
+    let aux = std::fs::read_to_string(work.join(format!("{stem}.aux"))).unwrap_or_default();
+    if !uploaded_bbl && aux.contains("\\bibdata{") {
+        let bibtex = which::which("bibtex").map_err(|e| format!("bibtex: {e}"))?;
+        run(&bibtex, &[&stem], "blg")?;
+        run(xelatex, &tex, "log")?;
+    }
+    run(xelatex, &tex, "log")?;
+    Ok(work.join(format!("{stem}.pdf")))
+}
+
+fn copy_dir(from: &Path, to: &Path) {
+    std::fs::create_dir_all(to).unwrap();
+    for entry in std::fs::read_dir(from).unwrap() {
+        let entry = entry.unwrap();
+        let target = to.join(entry.file_name());
+        if entry.file_type().unwrap().is_dir() {
+            copy_dir(&entry.path(), &target);
+        } else {
+            std::fs::copy(entry.path(), target).unwrap();
+        }
+    }
+}
+
+/// XeLaTeX, or `None` where it isn't installed (CI installs it, so there a
+/// missing one fails rather than skips).
+fn xelatex() -> Option<PathBuf> {
+    let found = which::which("xelatex").ok();
+    if found.is_none() {
+        assert!(
+            std::env::var("CI").as_deref() != Ok("true"),
+            "xelatex isn't installed, and CI compiles the benchmark with it"
+        );
+        eprintln!("skipping: xelatex not found");
+    }
+    found
+}
+
+/// Slow, and needs TeX Live packages the Tests job doesn't install
+/// (REVTeX, physics), so it runs on its own:
+/// `cargo test --test bench_documents -- --ignored`.
+#[test]
+#[ignore = "compiles every benchmark document; run with --ignored"]
+fn every_document_compiles_with_xelatex() {
+    let Some(xelatex) = xelatex() else { return };
+    let manifest = manifest();
+    let scratch = tempfile::tempdir().unwrap();
+    let threads = std::thread::available_parallelism().map_or(2, |n| n.get());
+    let next = std::sync::atomic::AtomicUsize::new(0);
+    let failures = std::sync::Mutex::new(Vec::new());
+    std::thread::scope(|scope| {
+        for _ in 0..threads {
+            scope.spawn(|| {
+                while let Some(doc) = manifest
+                    .document
+                    .get(next.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
+                {
+                    match compile(doc, &xelatex, scratch.path()) {
+                        Ok(pdf) if pdf.is_file() => {}
+                        Ok(pdf) => failures.lock().unwrap().push(format!(
+                            "{}: no {}",
+                            doc.dir,
+                            pdf.display()
+                        )),
+                        Err(why) => failures.lock().unwrap().push(format!("{}: {why}", doc.dir)),
+                    }
+                }
+            });
+        }
+    });
+    let failures = failures.into_inner().unwrap();
+    assert!(
+        failures.is_empty(),
+        "{} of {} documents don't compile:\n\n{}",
+        failures.len(),
+        manifest.document.len(),
+        failures.join("\n\n")
+    );
 }
