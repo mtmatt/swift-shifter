@@ -4,6 +4,8 @@
 //! as its PDF is the answer key the benchmark scores against (an ignored
 //! test, run on its own).
 
+// Shared with the other benchmark tests; not all of it is used here.
+#[allow(dead_code)]
 mod bench;
 
 use std::collections::BTreeSet;
