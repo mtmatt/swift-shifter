@@ -6,6 +6,7 @@
 //! `.tex` input still goes to pandoc until the reader reads what pandoc
 //! does (see `graph::route_hop`).
 
+pub mod paths;
 mod verbatim;
 
 use mitex_parser::CommandSpec;
