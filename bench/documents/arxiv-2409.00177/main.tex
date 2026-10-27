@@ -3,7 +3,7 @@
 %\documentclass{amsart}  %used for final
 
 %packages
-\usepackage[latin1]{inputenc}
+%\usepackage[latin1]{inputenc} % XeLaTeX takes UTF-8 only, and stops at any other; the file is ASCII; commented out (Swift Shifter benchmark)
 \usepackage{amsmath, bm, mathdots} 
 \usepackage{amsfonts}
 \usepackage{amssymb}
@@ -16,7 +16,7 @@
 \usepackage{verbatim}
 \usepackage[all]{xy}
 \usepackage{graphics}
-%\usepackage{pdfsync} % pdfTeX's source-to-PDF sync, which doesn't change the output; commented out (Swift Shifter benchmark)
+%\usepackage{pdfsync} % pdfTeX's source-to-PDF sync, which doesn't change the output and isn't checked under XeLaTeX; commented out (Swift Shifter benchmark)
 %\usepackage{natbib}
 %\usepackage[notref, notcite]{showkeys} %shows labels
 \usepackage{tikz}
