@@ -436,6 +436,9 @@ body {
 
 .file-status.error {
     color: var(--danger);
+    /* Selectable, so a missing tool's install command can be copied. */
+    user-select: text;
+    cursor: text;
 }
 .file-status.warning {
     color: var(--warn);
@@ -481,81 +484,6 @@ body {
     color: var(--accent);
     white-space: nowrap;
     margin-right: 2px;
-}
-
-/* ─── Install panel ───────────────────────────────────────────────────── */
-#install-panel {
-    flex: 0 0 auto;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    padding: 14px 12px 10px;
-    overflow: hidden;
-}
-
-/* Override UA [hidden]{display:none} — author display:flex has higher specificity */
-#install-panel[hidden] {
-    display: none;
-}
-
-#install-title {
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--text-2);
-    letter-spacing: 0.08em;
-}
-
-#install-subtitle {
-    font-size: 9.5px;
-    color: var(--text-3);
-    letter-spacing: 0.04em;
-    margin-top: -4px;
-}
-
-#install-progress-fill {
-    height: 100%;
-    width: 35%;
-    background: var(--accent);
-    border-radius: 1px;
-    box-shadow: 0 0 6px var(--accent-mid);
-    animation: indeterminate 1.5s ease-in-out infinite;
-}
-
-@keyframes indeterminate {
-    0% {
-        transform: translateX(-100%);
-    }
-    100% {
-        transform: translateX(320%);
-    }
-}
-
-#install-log-wrap {
-    display: none;
-    height: 140px;
-    overflow: hidden;
-    border: 0.5px solid var(--border);
-    border-radius: 5px;
-    background: var(--surface);
-    padding: 6px 8px;
-}
-
-#install-log-wrap.visible {
-    display: block;
-}
-
-#install-log {
-    height: 100%;
-    overflow-y: auto;
-    scrollbar-width: none;
-    font-size: 9px;
-    color: var(--text-3);
-    line-height: 1.6;
-    word-break: break-all;
-}
-
-#install-log::-webkit-scrollbar {
-    display: none;
 }
 
 /* ─── Bottom bar ──────────────────────────────────────────────────────── */
