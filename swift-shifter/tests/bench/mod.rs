@@ -2,6 +2,8 @@
 //! (`bench/documents.toml`), and compiling one with XeLaTeX into the PDF
 //! the benchmark scores against.
 
+pub mod text;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
