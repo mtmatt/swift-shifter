@@ -7,13 +7,14 @@
 //! - formulas kept, a place for it, not yet scored.
 //!
 //! The scores go to `target/bench/latex-typst.json`, for later runs to
-//! compare against, and a table to stdout. A low score doesn't fail the
-//! run: what's wrong is in the scores.
+//! compare against, and to stdout, as a table and in full, for the run's
+//! log. A low score doesn't fail the run: what's wrong is in the scores.
 
 // Shared with the other benchmark tests; not all of it is used here.
 #[allow(dead_code)]
 mod bench;
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::Instant;
@@ -245,27 +246,36 @@ fn latex_to_typst_scores() {
     let out = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/bench");
     std::fs::create_dir_all(&out).unwrap();
     let file = out.join("latex-typst.json");
-    std::fs::write(&file, serde_json::to_string_pretty(&results).unwrap()).unwrap();
+    let json = serde_json::to_string_pretty(&results).unwrap();
+    std::fs::write(&file, &json).unwrap();
 
-    println!(
+    // To stdout itself, not through `println!`, which the test harness
+    // keeps from a test that passes: the scores are for the run's log.
+    let mut log = std::io::stdout().lock();
+    writeln!(
+        log,
         "{:<20} {:<9} {:>6} {:>9}  error",
         "document", "compiled", "text", "warnings"
-    );
+    )
+    .unwrap();
     for s in &scores {
-        println!(
+        writeln!(
+            log,
             "{:<20} {:<9} {:>6} {:>9}  {}",
             s.dir,
             if s.compiled { "yes" } else { "no" },
             s.text_similarity.map_or("-".into(), |t| format!("{t:.3}")),
             s.warnings.count,
-            // All of it is in the scores' file.
+            // All of it is in the scores below.
             s.error
                 .as_deref()
                 .and_then(|e| e.lines().next())
                 .unwrap_or("")
-        );
+        )
+        .unwrap();
     }
-    println!(
+    writeln!(
+        log,
         "{:<20} {:<9} {:>6.3} {:>9}",
         "total",
         format!(
@@ -275,8 +285,9 @@ fn latex_to_typst_scores() {
         ),
         total.text_similarity,
         total.warnings
-    );
-    println!("scores: {}", file.display());
+    )
+    .unwrap();
+    writeln!(log, "scores, in {}:\n{json}", file.display()).unwrap();
 }
 
 #[test]
