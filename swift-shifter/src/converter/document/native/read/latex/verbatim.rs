@@ -206,27 +206,31 @@ thread_local! {
     static END_SEARCHES: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-/// The `verbatim` environment's text, from what's after `\begin`:
+/// The `verbatim` environment's text, from what's after `\begin`: past
+/// what TeX skips before an argument (see [`before_argument`]),
 /// `{verbatim}` (or `{verbatim*}`) to the first `\end` of it, without the
 /// line breaks right after its start and right before its end, as LaTeX
 /// sets it; and how long all that is. `unclosed` holds the environments
 /// found with no `\end`, which aren't looked for again: there's none past
 /// a later `\begin` either.
 fn block(after: &str, unclosed: &mut Vec<&'static str>) -> Option<(Verbatim, usize)> {
+    let skipped = before_argument(after);
+    let after_name = &after[skipped..];
     let name = ["{verbatim}", "{verbatim*}"]
         .into_iter()
-        .find(|name| after.starts_with(name))?;
+        .find(|name| after_name.starts_with(name))?;
     if unclosed.contains(&name) {
         return None;
     }
     #[cfg(test)]
     END_SEARCHES.with(|n| n.set(n.get() + 1));
     let end = format!("\\end{name}");
-    let Some(close) = after[name.len()..].find(&end) else {
+    let start = skipped + name.len();
+    let Some(close) = after[start..].find(&end) else {
         unclosed.push(name);
         return None;
     };
-    let text = &after[name.len()..name.len() + close];
+    let text = &after[start..start + close];
     let text = ["\r\n", "\n", "\r"]
         .into_iter()
         .find_map(|line_end| text.strip_prefix(line_end))
@@ -235,10 +239,41 @@ fn block(after: &str, unclosed: &mut Vec<&'static str>) -> Option<(Verbatim, usi
         .into_iter()
         .find_map(|line_end| text.strip_suffix(line_end))
         .unwrap_or(text);
-    Some((
-        Verbatim::Block(text.to_string()),
-        name.len() + close + end.len(),
-    ))
+    Some((Verbatim::Block(text.to_string()), start + close + end.len()))
+}
+
+/// How much of `text`, after a command's name, TeX skips before its
+/// argument: spaces, a line's end and comments, but not an empty line,
+/// which would be the argument.
+fn before_argument(text: &str) -> usize {
+    let mut at = 0;
+    // A line has ended since the name, so another end makes an empty line.
+    let mut line_ended = false;
+    loop {
+        let rest = &text[at..];
+        if rest.starts_with([' ', '\t']) {
+            at += 1;
+        } else if rest.starts_with('%') {
+            // A comment's line end makes no space, but ends the line.
+            at += rest.find(['\n', '\r']).unwrap_or(rest.len());
+            at += line_end(&text[at..]);
+            line_ended = true;
+        } else if line_end(rest) > 0 && !line_ended {
+            at += line_end(rest);
+            line_ended = true;
+        } else {
+            return at;
+        }
+    }
+}
+
+/// How long the line end at the start of `text` is: `\r\n`, `\n` or `\r`.
+fn line_end(text: &str) -> usize {
+    if text.starts_with("\r\n") {
+        2
+    } else {
+        usize::from(text.starts_with(['\n', '\r']))
+    }
 }
 
 #[cfg(test)]
@@ -283,6 +318,28 @@ mod tests {
                 "\\begin{verbatim}\r\nx\r\n\\end{verbatim}",
                 mark("0\r\n\r\n"),
                 vec![block("x")],
+            ),
+            // Spaces, a line's end and comments may come before the name,
+            // as before any argument (#167); an empty line may not.
+            (
+                "\\begin {verbatim}\n$x$\n\\end{verbatim}",
+                mark("0\n\n"),
+                vec![block("$x$")],
+            ),
+            (
+                "\\begin\n  {verbatim}x\\end{verbatim}",
+                mark("0\n"),
+                vec![block("x")],
+            ),
+            (
+                "\\begin%c\n{verbatim*}x\\end{verbatim*}",
+                mark("0\n"),
+                vec![block("x")],
+            ),
+            (
+                "\\begin\n\n{verbatim}x\\end{verbatim}",
+                "\\begin\n\n{verbatim}x\\end{verbatim}".to_string(),
+                vec![],
             ),
         ];
         for (source, left, verbatims) in cases {

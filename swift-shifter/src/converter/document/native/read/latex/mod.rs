@@ -1262,6 +1262,8 @@ mod tests {
                     para(&[text("b")]),
                 ],
             ),
+            // With a space before its name, as LaTeX allows (#167).
+            ("\\begin {verbatim}\n$x$\n\\end{verbatim}", &[block("$x$")]),
         ];
         for &(source, expected) in cases {
             assert_eq!(read(source).0.blocks, expected, "{source}");
