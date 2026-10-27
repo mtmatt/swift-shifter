@@ -111,7 +111,8 @@ fn the_documents_cover_what_the_benchmark_measures() {
 /// Compile `doc` in a copy under `scratch`: XeLaTeX twice, so references
 /// resolve, with BibTeX between where the document asks for one (a
 /// `\bibdata` in its `.aux`) and the paper came without a `.bbl`.
-/// The PDF, or why there's none: the run that failed and its log's end.
+/// The PDF, or why there's none: the run that failed and what its log
+/// says of it (see [`failure`]).
 fn compile(doc: &Document, xelatex: &Path, scratch: &Path) -> Result<PathBuf, String> {
     let dir = scratch.join(&doc.dir);
     copy_dir(&bench().join("documents").join(&doc.dir), &dir);
@@ -138,13 +139,7 @@ fn compile(doc: &Document, xelatex: &Path, scratch: &Path) -> Result<PathBuf, St
                     String::from_utf8_lossy(&out.stderr)
                 )
             });
-        let tail: Vec<_> = log.lines().rev().take(15).collect();
-        let tail: Vec<_> = tail.into_iter().rev().collect();
-        Err(format!(
-            "{} failed:\n{}",
-            program.display(),
-            tail.join("\n")
-        ))
+        Err(format!("{} failed:\n{}", program.display(), failure(&log)))
     };
     let tex = [
         "-interaction=nonstopmode",
@@ -161,6 +156,37 @@ fn compile(doc: &Document, xelatex: &Path, scratch: &Path) -> Result<PathBuf, St
     }
     run(xelatex, &tex, "log")?;
     Ok(work.join(format!("{stem}.pdf")))
+}
+
+/// The lines of `log` that say why a run failed: from TeX's first error,
+/// a line starting with `!`, 15 of them; with none (BibTeX's, say), its
+/// last 15.
+fn failure(log: &str) -> String {
+    const LINES: usize = 15;
+    let lines: Vec<&str> = log.lines().collect();
+    let from = lines
+        .iter()
+        .position(|line| line.starts_with('!'))
+        .unwrap_or(lines.len().saturating_sub(LINES));
+    lines[from..]
+        .iter()
+        .take(LINES)
+        .copied()
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn a_failure_is_told_from_its_first_error() {
+    let mut log: Vec<String> = (1..=40).map(|n| format!("line {n}")).collect();
+    log[9] = "! Undefined control sequence.".into();
+    log[29] = "! Emergency stop.".into();
+    let told = failure(&log.join("\n"));
+    assert_eq!(told, log[9..24].join("\n"));
+    // With no error, the end.
+    let log: Vec<String> = (1..=40).map(|n| format!("line {n}")).collect();
+    assert_eq!(failure(&log.join("\n")), log[25..].join("\n"));
+    assert_eq!(failure("short"), "short");
 }
 
 fn copy_dir(from: &Path, to: &Path) {

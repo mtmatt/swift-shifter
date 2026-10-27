@@ -31,6 +31,7 @@ license = "http://creativecommons.org/licenses/by/4.0/"
 subject = "Analysis of PDEs (math.AP)"
 fetched = "2026-10-26"
 covers = ["math", "bibliography"]
+changes = "mathtext, inputenc and fontenc's T2A (pdfTeX's Cyrillic setup, stops XeLaTeX; Cyrillic only in comments) commented out in main.tex, fontenc T1 kept"
 
 [[document]]
 dir = "arxiv-2409.00177"
@@ -42,6 +43,7 @@ license = "http://creativecommons.org/licenses/by/4.0/"
 subject = "Combinatorics (math.CO)"
 fetched = "2026-10-26"
 covers = ["math", "macros", "bibliography"]
+changes = "\\usepackage{pdfsync} (pdfTeX's source-to-PDF sync, doesn't change the output) commented out in main.tex"
 
 [[document]]
 dir = "arxiv-2409.00188"
