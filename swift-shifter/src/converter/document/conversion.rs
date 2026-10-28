@@ -262,28 +262,55 @@ pub async fn convert_document(
     path: &str,
     target_format: &str,
     output_dir: Option<&str>,
-) -> Result<String, String> {
+) -> Result<crate::converter::Converted, String> {
+    let pandoc = get_pandoc()?;
+    let out = output_path(path, target_to_ext(target_format), output_dir)?;
+    let progress = |percent: f32| {
+        app.emit(
+            "convert:progress",
+            ProgressPayload {
+                path: path.to_string(),
+                percent,
+            },
+        )
+        .ok();
+    };
+    progress(0.0);
+    let converted = convert_tex(&pandoc, path, target_format, &out).await?;
+    progress(100.0);
+    Ok(converted)
+}
+
+/// `.tex` at `path` converted to `target_format` at `out` by `pandoc`, as
+/// [`convert_document`] converts it: what it made, and what it left out.
+pub(crate) async fn convert_tex(
+    pandoc: &Path,
+    path: &str,
+    target_format: &str,
+    out: &Path,
+) -> Result<crate::converter::Converted, String> {
     let input_ext = Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_lowercase();
 
-    let pandoc = get_pandoc()?;
-
-    let out = output_path(path, target_to_ext(target_format), output_dir)?;
-
-    app.emit(
-        "convert:progress",
-        ProgressPayload {
-            path: path.to_string(),
-            percent: 0.0,
-        },
-    )
-    .ok();
+    // A document using the `import` package goes to pandoc as a copy whose
+    // paths pandoc can follow (#170), read from the document's own folder
+    // as the document is: there the paths a copy doesn't rewrite, as of
+    // images, are found as they were.
+    let source = std::path::absolute(path).map_err(|e| format!("Failed to resolve {path}: {e}"))?;
+    let stage = tempfile::tempdir().map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    let staged = super::native::read::latex::stage::stage(&source, stage.path())
+        .map_err(|e| format!("Failed to read {path}: {e}"))?;
+    let copy = staged.as_ref().map(|staged| staged.main.as_path());
+    let folder = source.parent().unwrap_or(Path::new("/"));
+    let converted = |output: &Path, texinputs: Option<&str>| crate::converter::Converted {
+        output: output.to_string_lossy().to_string(),
+        warnings: not_found(staged.as_ref(), folder, texinputs),
+    };
 
     // Only tex input reaches pandoc; every other document route is native.
-    let source = Path::new(path);
     let from_fmt = ext_to_pandoc_input_format(&input_ext);
     let to_fmt = ext_to_pandoc_format(target_format);
 
@@ -291,17 +318,22 @@ pub async fn convert_document(
     // otherwise pandoc → typst → embedded typst.
     let latex = if target_format == "pdf" {
         let setup = (normalize_ext(&input_ext) == "tex")
-            .then(|| pdf::latex_setup(source))
+            .then(|| pdf::latex_setup(copy.unwrap_or(&source)))
             .flatten();
         if setup.is_none() {
-            return convert_via_pandoc_typst(app, path, &pandoc, source, from_fmt, &out).await;
+            let pdf = pandoc_typst_pdf(pandoc, &source, copy, from_fmt, &file_stem(path)).await?;
+            tokio::fs::write(out, pdf)
+                .await
+                .map_err(|e| format!("Failed to write {}: {e}", out.display()))?;
+            // That pandoc looks in the document's folder for `TEXINPUTS`.
+            return Ok(converted(out, None));
         }
         setup
     } else {
         None
     };
 
-    let mut cmd = pandoc_command(&pandoc, source, from_fmt, to_fmt, &out, latex)?;
+    let mut cmd = pandoc_command(pandoc, &source, copy, from_fmt, to_fmt, out, latex)?;
     cmd.stdout(std::process::Stdio::null());
     cmd.stderr(std::process::Stdio::piped());
 
@@ -331,24 +363,53 @@ pub async fn convert_document(
         };
         return Err(msg);
     }
+    Ok(converted(out, std::env::var("TEXINPUTS").ok().as_deref()))
+}
 
-    app.emit(
-        "convert:progress",
-        ProgressPayload {
-            path: path.to_string(),
-            percent: 100.0,
-        },
-    )
-    .ok();
-
-    Ok(out.to_string_lossy().to_string())
+/// What a staged document leaves out: the files it names that weren't
+/// found, but for those pandoc finds in a folder of `texinputs`, its
+/// `TEXINPUTS`, as pandoc splits it, at `:` on every system, the relative
+/// folders from the document's `folder`.
+fn not_found(
+    staged: Option<&super::native::read::latex::stage::Staged>,
+    folder: &Path,
+    texinputs: Option<&str>,
+) -> Vec<super::native::Warning> {
+    let folders: Vec<PathBuf> = texinputs
+        .unwrap_or_default()
+        .split(':')
+        .filter(|other| !other.is_empty())
+        .map(|other| folder.join(other))
+        .collect();
+    let count = staged.map_or(0, |staged| {
+        staged
+            .missing
+            .iter()
+            .filter(|name| {
+                !folders.iter().any(|other| {
+                    other.join(name).is_file() || other.join(format!("{name}.tex")).is_file()
+                })
+            })
+            .count()
+    });
+    (count > 0)
+        .then_some(super::native::Warning {
+            one: "file the document names wasn't found",
+            many: "files the document names weren't found",
+            count,
+            line: None,
+        })
+        .into_iter()
+        .collect()
 }
 
 /// Pandoc converting `source` (`from_fmt`) to `out` (`to_fmt`), through
-/// the LaTeX engine `latex` sets up where there is one.
+/// the LaTeX engine `latex` sets up where there is one; `copy`, its staged
+/// copy, where there is one (see `in_source_folder`).
 fn pandoc_command(
     pandoc: &Path,
     source: &Path,
+    copy: Option<&Path>,
     from_fmt: &str,
     to_fmt: &str,
     out: &Path,
@@ -357,7 +418,7 @@ fn pandoc_command(
     let out = std::path::absolute(out)
         .map_err(|e| format!("Failed to resolve {}: {e}", out.display()))?;
     let mut cmd = crate::process::async_command(pandoc);
-    let source = in_source_folder(&mut cmd, source)?;
+    let source = in_source_folder(&mut cmd, source, copy)?;
     cmd.args([
         "-f",
         from_fmt,
@@ -379,56 +440,32 @@ fn pandoc_command(
 /// Runs `cmd`, pandoc on `source`, in `source`'s folder: there it finds
 /// what `source` names (`\input`, `\include`, images) as LaTeX would, not
 /// in the app's working directory, which is `/` when it's started from
-/// macOS. `source`, absolute, for the command. A `TEXINPUTS` of the user's
-/// still holds, but its relative folders are now from `source`'s folder,
-/// not the app's (a known limit: the app started from macOS doesn't get
-/// a shell's `TEXINPUTS`).
-fn in_source_folder(cmd: &mut tokio::process::Command, source: &Path) -> Result<PathBuf, String> {
+/// macOS. `source`, absolute, for the command; or `copy`, where it's
+/// given: a copy of `source` staged (see `latex::stage`), which names the
+/// other copies where they are and the rest as `source` does. A
+/// `TEXINPUTS` of the user's still holds, but its relative folders are now
+/// from `source`'s folder, not the app's (a known limit: the app started
+/// from macOS doesn't get a shell's `TEXINPUTS`).
+fn in_source_folder(
+    cmd: &mut tokio::process::Command,
+    source: &Path,
+    copy: Option<&Path>,
+) -> Result<PathBuf, String> {
     let source = std::path::absolute(source)
         .map_err(|e| format!("Failed to resolve {}: {e}", source.display()))?;
     cmd.current_dir(source.parent().unwrap_or(Path::new("/")));
-    Ok(source)
-}
-
-/// PDF via pandoc's typst writer and the embedded typst compiler, for tex
-/// without a LaTeX engine.
-async fn convert_via_pandoc_typst(
-    app: &tauri::AppHandle,
-    path: &str,
-    pandoc: &Path,
-    source: &Path,
-    from_fmt: &str,
-    out: &Path,
-) -> Result<String, String> {
-    let progress = |percent: f32| {
-        app.emit(
-            "convert:progress",
-            ProgressPayload {
-                path: path.to_string(),
-                percent,
-            },
-        )
-        .ok();
-    };
-    progress(0.0);
-    let stem = Path::new(path)
-        .file_stem()
-        .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_default();
-    let pdf = pandoc_typst_pdf(pandoc, source, from_fmt, &stem).await?;
-    tokio::fs::write(out, pdf)
-        .await
-        .map_err(|e| format!("Failed to write {}: {e}", out.display()))?;
-    progress(100.0);
-    Ok(out.to_string_lossy().to_string())
+    Ok(copy.map_or(source, Path::to_path_buf))
 }
 
 /// Pandoc turns `source` into typst markup (extracting images next to it),
 /// and Swift Shifter typesets it under its own page template with the
 /// document's own title and authors (`fallback_title` when it has none).
+/// Pandoc reads `copy`, `source` staged, where it's given, as
+/// `in_source_folder` says.
 pub(crate) async fn pandoc_typst_pdf(
     pandoc: &Path,
     source: &Path,
+    copy: Option<&Path>,
     from_fmt: &str,
     fallback_title: &str,
 ) -> Result<Vec<u8>, String> {
@@ -455,7 +492,7 @@ pub(crate) async fn pandoc_typst_pdf(
             "body.typ",
         ])
         .arg(format!("--resource-path={}", source_dir.display()))
-        .arg(&source)
+        .arg(copy.unwrap_or(&source))
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .output()
@@ -475,7 +512,7 @@ pub(crate) async fn pandoc_typst_pdf(
     let body = tokio::fs::read_to_string(stage.path().join("body.typ"))
         .await
         .map_err(|e| format!("Failed to read pandoc's output: {e}"))?;
-    let mut meta = pandoc_metadata(pandoc, &source, from_fmt, stage.path()).await;
+    let mut meta = pandoc_metadata(pandoc, &source, copy, from_fmt, stage.path()).await;
     if meta.title.is_none() {
         meta.title = Some(fallback_title.to_string());
     }
@@ -494,6 +531,7 @@ pub(crate) async fn pandoc_typst_pdf(
 async fn pandoc_metadata(
     pandoc: &Path,
     source: &Path,
+    copy: Option<&Path>,
     from_fmt: &str,
     stage: &Path,
 ) -> super::native::ast::Meta {
@@ -510,7 +548,7 @@ async fn pandoc_metadata(
     }
     // A title in an `\input` file is the document's too.
     let mut cmd = crate::process::async_command(pandoc);
-    let Ok(source) = in_source_folder(&mut cmd, source) else {
+    let Ok(source) = in_source_folder(&mut cmd, source, copy) else {
         return meta;
     };
     let Ok(output) = cmd
@@ -1035,11 +1073,11 @@ mod tests {
         )
         .unwrap();
         let runtime = tokio::runtime::Runtime::new().unwrap();
-        let meta = runtime.block_on(pandoc_metadata(&pandoc, &tex, "latex", dir.path()));
+        let meta = runtime.block_on(pandoc_metadata(&pandoc, &tex, None, "latex", dir.path()));
         assert_eq!(meta.title.as_deref(), Some("Real Title"));
         assert_eq!(meta.authors, ["Ada", "Grace"]);
         let pdf = runtime
-            .block_on(pandoc_typst_pdf(&pandoc, &tex, "latex", "paper"))
+            .block_on(pandoc_typst_pdf(&pandoc, &tex, None, "latex", "paper"))
             .unwrap();
         // Pandoc swaps an image it can't find for its description, so check
         // that the figure really was embedded.
@@ -1097,6 +1135,7 @@ mod tests {
                 let mut cmd = pandoc_command(
                     &pandoc,
                     &tex,
+                    None,
                     "latex",
                     ext_to_pandoc_format(target),
                     &out,
@@ -1117,8 +1156,177 @@ mod tests {
                     "{folder} {target}: {text}"
                 );
             }
-            let meta = runtime.block_on(pandoc_metadata(&pandoc, &tex, "latex", dir.path()));
+            let meta = runtime.block_on(pandoc_metadata(&pandoc, &tex, None, "latex", dir.path()));
             assert_eq!(meta.title.as_deref(), Some("Input Title"), "{folder}");
         }
+    }
+
+    /// A document using the `import` package, staged, is read from its own
+    /// folder: what its copy doesn't rewrite, as a name a macro makes or
+    /// one a `TEXINPUTS` of the user's finds, is found as it was, in a
+    /// folder whose name has a `:` too (not on Windows), for the metadata
+    /// too.
+    #[test]
+    fn a_staged_document_finds_what_it_doesnt_rewrite() {
+        let Some(pandoc) = installed("pandoc", find_pandoc_binary()) else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let shared = dir.path().join("shared");
+        std::fs::create_dir_all(&shared).unwrap();
+        std::fs::write(shared.join("common.tex"), "Shared text.\n").unwrap();
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let folders: &[&str] = if cfg!(windows) {
+            &["book"]
+        } else {
+            &["book", "book:notes"]
+        };
+        for folder in folders {
+            let book = dir.path().join(folder);
+            std::fs::create_dir_all(book.join("chapters")).unwrap();
+            std::fs::write(book.join("chapters/one.tex"), "Chapter one text.\n").unwrap();
+            std::fs::write(book.join("title.tex"), "\\title{Macro Title}\n").unwrap();
+            let tex = book.join("main.tex");
+            std::fs::write(
+                &tex,
+                "\\documentclass{book}\n\\usepackage{import}\n\
+                 \\newcommand{\\titlefile}{title}\n\\input{\\titlefile}\n\
+                 \\begin{document}\n\\import{chapters/}{one}\n\\input{common}\n\
+                 \\end{document}\n",
+            )
+            .unwrap();
+            let stage = tempfile::tempdir().unwrap();
+            let staged = super::super::native::read::latex::stage::stage(&tex, stage.path())
+                .unwrap()
+                .unwrap();
+            // Only `common`, which `TEXINPUTS` finds: a macro's name isn't
+            // known to be missing.
+            assert_eq!(staged.missing, ["common"], "{folder}");
+            // Which pandoc finds, so it's no warning where it does.
+            assert!(not_found(Some(&staged), &book, Some("../shared:")).is_empty());
+            assert_eq!(not_found(Some(&staged), &book, None).len(), 1);
+            let copy = Some(staged.main.as_path());
+            for target in ["md", "txt"] {
+                let out = book.join(format!("out.{target}"));
+                let mut cmd = pandoc_command(
+                    &pandoc,
+                    &tex,
+                    copy,
+                    "latex",
+                    ext_to_pandoc_format(target),
+                    &out,
+                    None,
+                )
+                .unwrap();
+                let status = runtime
+                    .block_on(async { cmd.env("TEXINPUTS", "../shared:").status().await })
+                    .unwrap();
+                assert!(status.success(), "{folder} {target}");
+                let text = std::fs::read_to_string(&out).unwrap();
+                assert!(
+                    text.contains("Chapter one text.") && text.contains("Shared text."),
+                    "{folder} {target}: {text}"
+                );
+            }
+            let meta = runtime.block_on(pandoc_metadata(&pandoc, &tex, copy, "latex", dir.path()));
+            assert_eq!(meta.title.as_deref(), Some("Macro Title"), "{folder}");
+        }
+    }
+
+    /// A book of chapters in folders of their own, brought in with the
+    /// `import` package as the APCS book is (#170), converts with their
+    /// text, from a working directory not the book's; a file it names that
+    /// isn't there is a warning.
+    #[test]
+    fn a_book_using_the_import_package_converts_with_its_chapters() {
+        let Some(pandoc) = installed("pandoc", find_pandoc_binary()) else {
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let book = dir.path().join("book");
+        for (name, text) in [
+            (
+                "main.tex",
+                "\\documentclass{book}\n\\usepackage{import}\n\
+                 \\import{Files/-Preamble/}{-Preamble}\n\\begin{document}\n\
+                 \\subincludefrom{Files/04DS}{DS}\n\\input{gone}\n\\end{document}\n",
+            ),
+            (
+                "Files/-Preamble/-Preamble.tex",
+                "\\newcommand{\\book}{Book}\n",
+            ),
+            (
+                "Files/04DS/DS.tex",
+                "\\chapter{Data structures}\n\\input{BD-BIT}\n\
+                 \\includegraphics{../Images/BIT.png}\n",
+            ),
+            ("Files/04DS/BD-BIT.tex", "Fenwick trees in the \\book.\n"),
+            ("Files/Images/BIT.png", ""),
+        ] {
+            let file = book.join(name);
+            std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+            std::fs::write(file, text).unwrap();
+        }
+        // Named from the working directory, as the CLI may be given it.
+        let main = from_working_directory(&book.join("main.tex"));
+        let out = book.join("main.typ");
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let converted = runtime
+            .block_on(convert_tex(&pandoc, main.to_str().unwrap(), "typst", &out))
+            .unwrap();
+        let typst = std::fs::read_to_string(&out).unwrap();
+        assert!(typst.contains("Data structures"), "{typst}");
+        assert!(typst.contains("Fenwick trees in the Book."), "{typst}");
+        assert!(typst.contains("Files/Images/BIT.png"), "{typst}");
+        assert_eq!(converted.warnings.len(), 1);
+        assert_eq!(
+            converted.warnings[0].message(),
+            "1 file the document names wasn't found"
+        );
+    }
+
+    /// `path`, absolute, named from the working directory through `..`
+    /// (as it is on Windows, where it may be on another drive).
+    fn from_working_directory(path: &Path) -> PathBuf {
+        let (Ok(cwd), Ok(from_root)) = (std::env::current_dir(), path.strip_prefix("/")) else {
+            return path.to_path_buf();
+        };
+        cwd.components()
+            .skip(1)
+            .map(|_| std::path::Component::ParentDir)
+            .collect::<PathBuf>()
+            .join(from_root)
+    }
+
+    /// The book the `import` work is for (#170), where
+    /// `SWIFT_SHIFTER_IMPORT_BOOK` names its main file, converted to Typst
+    /// next to it, as the CLI would from another folder:
+    /// `SWIFT_SHIFTER_IMPORT_BOOK=… cargo test import_book -- --ignored`.
+    #[test]
+    #[ignore = "converts a book outside the repository; run with --ignored"]
+    fn import_book_converts() {
+        let Ok(main) = std::env::var("SWIFT_SHIFTER_IMPORT_BOOK") else {
+            eprintln!("skipping: SWIFT_SHIFTER_IMPORT_BOOK isn't set");
+            return;
+        };
+        let pandoc = find_pandoc_binary().expect("pandoc");
+        let out = Path::new(&main).with_extension("typ");
+        let runtime = tokio::runtime::Runtime::new().unwrap();
+        let converted = runtime
+            .block_on(convert_tex(&pandoc, &main, "typst", &out))
+            .unwrap();
+        let typst = std::fs::read_to_string(&out).unwrap();
+        eprintln!(
+            "{}: {} bytes, {} lines; warnings: {:?}",
+            out.display(),
+            typst.len(),
+            typst.lines().count(),
+            converted
+                .warnings
+                .iter()
+                .map(|w| w.message())
+                .collect::<Vec<_>>()
+        );
+        assert!(typst.len() > 1000, "{} is nearly empty", out.display());
     }
 }

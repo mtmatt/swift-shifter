@@ -3,12 +3,14 @@
 //! package. Each LaTeX file the document reads is copied into a folder of
 //! its own, where it is from the document's, as it is but for the paths its
 //! commands name (see [`files`], [`paths`]): an import becomes the `\input`
-//! or `\include` of the file it reads, and an `\input`, `\include` or
-//! `\includegraphics` in an imported file names its file from the
-//! document's folder. Pandoc then reads the copies as it reads any
-//! document; no text is moved between files. A file read from imports
-//! looking in other folders is copied once for each, as the files it
-//! names are found in theirs (see [`another`]).
+//! or `\include` of the file it reads, and an `\input` or `\include` in an
+//! imported file names its file's copy, both where the copy is, and an
+//! `\includegraphics` its image from the document's folder. Pandoc then
+//! reads the copies from the document's folder as it reads any document,
+//! finding there what they don't rewrite, as a name a macro makes, as it
+//! would for the document; no text is moved between files. A file read
+//! from imports looking in other folders is copied once for each, as the
+//! files it names are found in theirs (see [`another`]).
 //!
 //! Known limits:
 //! - A name with a comment in it isn't found.
@@ -40,10 +42,10 @@ pub struct Staged {
 
 /// `main`, written out under `into` (see the module), where it uses the
 /// `import` package's commands; None where it doesn't, and is left as it
-/// is for pandoc. An error where `main` or a file it reads can't be read,
-/// a copy written, or it reads more than [`MAX_FILES`].
-// Run by the conversions of `.tex` in the next PR (#170).
-#[allow(dead_code)]
+/// is for pandoc. Both are absolute: the copies name each other from
+/// `into`, the rest from `main`'s folder. An error where `main` can't be
+/// read; where it's staged, also where a file it reads can't be, a copy
+/// written, or it reads more than [`MAX_FILES`].
 pub fn stage(main: &Path, into: &Path) -> std::io::Result<Option<Staged>> {
     let folder = main.parent().unwrap_or(Path::new("."));
     let name = PathBuf::from(main.file_name().unwrap_or_default());
@@ -58,6 +60,9 @@ pub fn stage(main: &Path, into: &Path) -> std::io::Result<Option<Staged>> {
     // A file found but not read, whose copy would be missing: an error
     // where the document is staged.
     let mut unread = None;
+    // Past `MAX_FILES`, what's queued is still read for an import, as a
+    // document without one isn't staged and has no limit.
+    let mut too_many = false;
     while let Some((path, scope, copy)) = queue.pop_front() {
         let bytes = match std::fs::read(folder.join(&path)) {
             Ok(bytes) => bytes,
@@ -79,13 +84,16 @@ pub fn stage(main: &Path, into: &Path) -> std::io::Result<Option<Staged>> {
             let import = named.args.len() == 2;
             imports |= import;
             let Some(found) = paths::find(named.command, &args, &scope, exists) else {
-                missing.push(args.last().copied().unwrap_or_default().to_string());
+                // A name a macro makes is pandoc's to find.
+                if !args.iter().any(|arg| arg.contains('\\')) {
+                    missing.push(args.last().copied().unwrap_or_default().to_string());
+                }
                 continue;
             };
             // Named with its `..` resolved: a folder `ch/sub/../` names may
-            // have no copy for pandoc to go through. A LaTeX file copied is
-            // named as its copy is, `.tex` and all: pandoc reads
-            // `part.v1` as it is, not as `part.v1.tex`.
+            // not be there. A LaTeX file copied is named where its copy is,
+            // `.tex` and all: pandoc reads `part.v1` as it is, not as
+            // `part.v1.tex`.
             let mut named_as = within(&found.path)
                 .map(|path| slashed(&path))
                 .unwrap_or_else(|| slashed(&folder.join(&found.path)));
@@ -96,9 +104,8 @@ pub fn stage(main: &Path, into: &Path) -> std::io::Result<Option<Staged>> {
                 let copy = match copied.get(&key) {
                     Some(copy) => copy.clone(),
                     None if copied.len() >= MAX_FILES => {
-                        return Err(std::io::Error::other(format!(
-                            "the document reads more than {MAX_FILES} files"
-                        )));
+                        too_many = true;
+                        continue;
                     }
                     None => {
                         let copy = if taken.contains(&read) {
@@ -114,7 +121,7 @@ pub fn stage(main: &Path, into: &Path) -> std::io::Result<Option<Staged>> {
                         copy
                     }
                 };
-                named_as = slashed(&copy);
+                named_as = slashed(&into.join(&copy));
             }
             if import {
                 let reads = if named.command.ends_with("includefrom") {
@@ -134,6 +141,11 @@ pub fn stage(main: &Path, into: &Path) -> std::io::Result<Option<Staged>> {
     }
     if let Some(e) = unread {
         return Err(e);
+    }
+    if too_many {
+        return Err(std::io::Error::other(format!(
+            "the document reads more than {MAX_FILES} files"
+        )));
     }
     for (path, bytes) in copies {
         let copy = into.join(path);
@@ -234,8 +246,13 @@ mod tests {
         (dir, staged)
     }
 
+    /// The copy of `path`, the other copies it names named from the
+    /// staged folder, for short.
     fn copy(dir: &tempfile::TempDir, path: &str) -> String {
-        std::fs::read_to_string(dir.path().join("staged").join(path)).unwrap()
+        let into = dir.path().join("staged");
+        std::fs::read_to_string(into.join(path))
+            .unwrap()
+            .replace(&format!("{}/", slashed(&into)), "")
     }
 
     #[test]
@@ -260,6 +277,13 @@ mod tests {
         let staged = staged.unwrap();
         assert_eq!(staged.main, dir.path().join("staged/main.tex"));
         assert_eq!(staged.missing, ["gone"]);
+        // Copies name each other where they are, the rest as before.
+        let main = std::fs::read_to_string(&staged.main).unwrap();
+        let preamble = slashed(&dir.path().join("staged/Files/-Preamble/-Preamble.tex"));
+        assert!(
+            main.starts_with(&format!("\\input{{{preamble}}}")),
+            "{main}"
+        );
         assert_eq!(
             copy(&dir, "main.tex"),
             "\\input{Files/-Preamble/-Preamble.tex}\n\
@@ -422,5 +446,19 @@ mod tests {
         let into = dir.path().join("staged");
         assert!(stage(&dir.path().join("main.tex"), &into).is_err());
         assert!(!into.exists());
+    }
+
+    #[test]
+    fn a_document_without_imports_has_no_limit() {
+        let dir = tempfile::tempdir().unwrap();
+        let inputs: String = (1..=MAX_FILES + 1)
+            .map(|n| format!("\\input{{f{n}}}"))
+            .collect();
+        std::fs::write(dir.path().join("main.tex"), inputs).unwrap();
+        for n in 1..=MAX_FILES + 1 {
+            std::fs::write(dir.path().join(format!("f{n}.tex")), "").unwrap();
+        }
+        let into = dir.path().join("staged");
+        assert_eq!(stage(&dir.path().join("main.tex"), &into).unwrap(), None);
     }
 }

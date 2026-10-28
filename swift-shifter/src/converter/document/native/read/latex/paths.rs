@@ -45,8 +45,6 @@ const GRAPHICS: [&str; 22] = [
 /// in a file read with `scope`: `exists` says whether a path from the
 /// document's folder is a file. None where it isn't found, or `command`
 /// names none (see `files::named`).
-// Read by the conversions of `.tex` in a later PR (#170).
-#[allow(dead_code)]
 pub fn find(
     command: &str,
     args: &[&str],
