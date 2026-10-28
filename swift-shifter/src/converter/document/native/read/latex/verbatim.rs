@@ -3,6 +3,8 @@
 //! its braces, `%` and `\end` included. Each is left as a placeholder
 //! (see [`Cut::mark`]) that the reader puts it back at.
 
+use std::ops::Range;
+
 /// The name placeholders start from (see [`Cut::mark`]).
 const MARK: &str = "\\SwiftShifterVerbatim";
 
@@ -25,6 +27,25 @@ pub(super) struct Cut {
     /// counted as in the source. It's a control word the source doesn't
     /// hold, so no command of its own is taken for one.
     pub(super) mark: String,
+    /// Where each placeholder is in [`Cut::source`], and where what it
+    /// stands for was in the source, in the order of [`Cut::verbatims`].
+    pub(super) spans: Vec<(Range<usize>, Range<usize>)>,
+}
+
+impl Cut {
+    /// Where `at`, a place in [`Cut::source`] outside its placeholders, is
+    /// in the source.
+    pub(super) fn in_source(&self, at: usize) -> usize {
+        // As far past the last placeholder before it as past what that
+        // stands for.
+        let before = self
+            .spans
+            .partition_point(|(placeholder, _)| placeholder.end <= at);
+        match before.checked_sub(1).map(|last| &self.spans[last]) {
+            Some((placeholder, verbatim)) => verbatim.end + (at - placeholder.end),
+            None => at,
+        }
+    }
 }
 
 /// `source` with its verbatim text cut out. What's in a comment or in
@@ -39,6 +60,7 @@ pub(super) fn cut(source: &str) -> Cut {
     let mark = mark(source);
     let mut out = String::with_capacity(source.len());
     let mut cut = Vec::new();
+    let mut spans = Vec::new();
     // What's past `copied` isn't in `out` yet; what's past `at` isn't
     // scanned.
     let (mut copied, mut at) = (0, 0);
@@ -60,8 +82,11 @@ pub(super) fn cut(source: &str) -> Cut {
                 .chars()
                 .filter(|c| matches!(c, '\n' | '\r'))
                 .collect();
-            out.push_str(&source[copied..after - command.len()]);
+            let start = after - command.len();
+            out.push_str(&source[copied..start]);
+            let placeholder = out.len();
             out.push_str(&format!("{mark}{{{}{breaks}}}", cut.len()));
+            spans.push((placeholder..out.len(), start..after + len));
             cut.push(verbatim);
             copied = after + len;
             at = copied;
@@ -72,6 +97,7 @@ pub(super) fn cut(source: &str) -> Cut {
         source: out,
         verbatims: cut,
         mark,
+        spans,
     }
 }
 
@@ -111,7 +137,7 @@ fn mark(source: &str) -> String {
 /// The next command in `text`, past comments: where it starts, and it, a
 /// control word of the characters `in_name` takes, or a control symbol
 /// (`\\`, `\%`), whose second character starts nothing.
-fn next_command(text: &str, in_name: fn(char) -> bool) -> Option<(usize, &str)> {
+pub(super) fn next_command(text: &str, in_name: fn(char) -> bool) -> Option<(usize, &str)> {
     let mut at = 0;
     loop {
         at += text[at..].find(['\\', '%'])?;
@@ -130,20 +156,20 @@ fn next_command(text: &str, in_name: fn(char) -> bool) -> Option<(usize, &str)> 
 }
 
 /// What a control word is made of in a document, as TeX reads it.
-fn tex_letter(c: char) -> bool {
+pub(super) fn tex_letter(c: char) -> bool {
     c.is_ascii_alphabetic()
 }
 
 /// What the parser takes a command's name to be made of: `@` too, as in
 /// `\@ifstar`.
-fn parser_letter(c: char) -> bool {
+pub(super) fn parser_letter(c: char) -> bool {
     c.is_ascii_alphabetic() || c == '@'
 }
 
 /// How much of `text`, after `\iffalse`, the parser skips, as it does: to
 /// the `\fi` that ends it, past those of the conditionals it holds, or to
 /// the end, its commands named as it names them.
-fn skipped(text: &str) -> usize {
+pub(super) fn skipped(text: &str) -> usize {
     let mut nested = 0;
     let mut at = 0;
     while let Some((start, command)) = next_command(&text[at..], parser_letter) {
@@ -161,7 +187,7 @@ fn skipped(text: &str) -> usize {
 }
 
 /// The conditionals the parser nests when it skips (see [`skipped`]).
-const CONDITIONALS: [&str; 18] = [
+pub(super) const CONDITIONALS: [&str; 18] = [
     "\\@ifstar",
     "\\if",
     "\\iftypst",
@@ -185,7 +211,7 @@ const CONDITIONALS: [&str; 18] = [
 /// `\verb`'s text, from what's after its name: a star, then a delimiter
 /// (no letter or space), the text, and the delimiter again on its line;
 /// and how long all that is.
-fn inline(after: &str) -> Option<(Verbatim, usize)> {
+pub(super) fn inline(after: &str) -> Option<(Verbatim, usize)> {
     let star = usize::from(after.starts_with('*'));
     let delimiter = after[star..]
         .chars()
@@ -213,7 +239,7 @@ thread_local! {
 /// sets it; and how long all that is. `unclosed` holds the environments
 /// found with no `\end`, which aren't looked for again: there's none past
 /// a later `\begin` either.
-fn block(after: &str, unclosed: &mut Vec<&'static str>) -> Option<(Verbatim, usize)> {
+pub(super) fn block(after: &str, unclosed: &mut Vec<&'static str>) -> Option<(Verbatim, usize)> {
     let skipped = before_argument(after);
     let after_name = &after[skipped..];
     let name = ["{verbatim}", "{verbatim*}"]
