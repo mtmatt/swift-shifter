@@ -122,7 +122,3 @@ Releases are cut from a long-lived `release` branch, not automatically from ever
 6. `release` is then merged back into `main` (`Merge branch 'release'`) so `main` picks up the version bump.
 
 Every push to `main` or `release`, and every pull request, also runs `.github/workflows/build.yml`: a compile-only matrix (macOS, Windows, Ubuntu, Fedora, Arch) running `tsc --noEmit`, `npm run build`, `cargo clippy --all-targets -- -D warnings` (per OS, since cfg-gated code differs), and `tauri build --no-bundle`, plus `cargo fmt --check` and `scripts/check-version.sh` on Ubuntu — a build-health gate producing no artifacts, distinct from the signed release build.
-
-## Rules
-
-Don't add claude as a coauthor.
