@@ -18,6 +18,9 @@ use super::verbatim::{self, CONDITIONALS, next_command, parser_letter, tex_lette
 pub struct Named {
     /// As written, without its star: `\input`, `\subimport`, ….
     pub command: &'static str,
+    /// Where it is in the source, from its name to its last argument's
+    /// `}`.
+    pub range: Range<usize>,
     /// Each file or folder it names: where its text is in the source,
     /// between its braces, in order (an `\import`'s folder, then its file).
     pub args: Vec<Range<usize>>,
@@ -93,7 +96,12 @@ pub fn named(source: &str) -> Vec<Named> {
                 .into_iter()
                 .map(|arg| cut.in_source(at + arg.start)..cut.in_source(at + arg.end))
                 .collect();
-            named.push(Named { command, args });
+            let range = cut.in_source(at - name.len())..cut.in_source(at + len);
+            named.push(Named {
+                command,
+                range,
+                args,
+            });
             at += len;
         }
     }
@@ -239,6 +247,21 @@ mod tests {
                 (named.command, args)
             })
             .collect()
+    }
+
+    /// A command is where it is in the source, past verbatim text, from
+    /// its name to its last `}`, a star and options in it.
+    #[test]
+    fn a_command_is_found_whole() {
+        let source = "\\verb|x| a \\subimport* {ch/}%c\n{b} \\includegraphics[w=1]{f} c";
+        let whole: Vec<_> = named(source)
+            .into_iter()
+            .map(|named| &source[named.range])
+            .collect();
+        assert_eq!(
+            whole,
+            ["\\subimport* {ch/}%c\n{b}", "\\includegraphics[w=1]{f}"]
+        );
     }
 
     #[test]
