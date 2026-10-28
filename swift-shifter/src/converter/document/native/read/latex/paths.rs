@@ -14,7 +14,7 @@
 
 /// The folders a file being read looks for files in, relative to the
 /// document's, each ending in `/`.
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
 pub struct Scope {
     /// The package's current folder (`\import@path`), which a
     /// `\subimport`'s is relative to; empty in the document itself.
@@ -137,8 +137,15 @@ fn searched(scope: &Scope, name: &str, is: impl Fn(&str) -> bool) -> Option<Stri
 /// LaTeX file: `\include` names a `.tex` file, with its extension or
 /// without; `\input` that, or a file of another name.
 fn is_tex(command: &str, path: &str, exists: impl Fn(&str) -> bool) -> bool {
-    let stem = path.strip_suffix(".tex").unwrap_or(path);
-    exists(&format!("{stem}.tex")) || (command == "\\input" && exists(path))
+    let read = tex_file(path, &exists);
+    exists(&read) && (command == "\\input" || read.ends_with(".tex"))
+}
+
+/// The file `\input` or `\include` reads where it names `path`, found
+/// (see [`find`]): `path` with `.tex`, where that is a file, else `path`.
+pub fn tex_file(path: &str, exists: impl Fn(&str) -> bool) -> String {
+    let tex = format!("{}.tex", path.strip_suffix(".tex").unwrap_or(path));
+    if exists(&tex) { tex } else { path.to_string() }
 }
 
 #[cfg(test)]

@@ -8,6 +8,7 @@
 
 pub mod files;
 pub mod paths;
+pub mod stage;
 mod verbatim;
 
 use mitex_parser::CommandSpec;
