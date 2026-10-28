@@ -41,8 +41,6 @@ const COMMANDS: [(&str, usize); 9] = [
 ];
 
 /// The commands in `source` that name files, in order.
-// Read by the conversions of `.tex` in a later PR (#170).
-#[allow(dead_code)]
 pub fn named(source: &str) -> Vec<Named> {
     let cut = verbatim::cut(source);
     let text = cut.source.as_str();
