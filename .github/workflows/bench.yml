@@ -12,6 +12,7 @@ on:
       - swift-shifter/tests/bench_*.rs
       - swift-shifter/tests/bench/**
       - .github/workflows/bench.yml
+      - .github/apt-packages/**
   schedule:
     - cron: "0 3 * * 1" # Mondays, 03:00 UTC
   workflow_dispatch:
@@ -23,59 +24,6 @@ jobs:
     # TeX Live is most of it, and three tries at downloading it take up to
     # 24 minutes.
     timeout-minutes: 60
-    env:
-      # The app's build dependencies, as the test binary links it, and the
-      # TeX Live the documents compile with, beyond the Tests job's: REVTeX
-      # (publishers), physics, mhchem and tensor (science), tikz-cd and xy
-      # (pictures), fontawesome5, bbm and mathalfa (fonts-extra), ctex
-      # (lang-chinese), and mathtext with Cyrillic fonts (lang-cyrillic).
-      # The LaTeX to Typst scores convert with the app's CLI, which takes
-      # `.tex` through pandoc, and whose app needs a display: xvfb's. Both
-      # are the Tests job's too, so its cache has them.
-      APT_PACKAGES: >-
-        libwebkit2gtk-4.1-dev
-        libgtk-3-dev
-        libayatana-appindicator3-dev
-        librsvg2-dev
-        nasm
-        texlive-latex-recommended
-        texlive-latex-extra
-        texlive-fonts-recommended
-        texlive-fonts-extra
-        texlive-plain-generic
-        texlive-xetex
-        texlive-publishers
-        texlive-science
-        texlive-pictures
-        texlive-lang-cjk
-        texlive-lang-chinese
-        texlive-lang-cyrillic
-        fonts-noto-cjk
-        lmodern
-        poppler-utils
-        pandoc
-        xvfb
-      # The Build workflow's Tests job's packages, exactly as listed there:
-      # its apt cache is keyed by them (see below).
-      TESTS_APT_PACKAGES: >-
-        libwebkit2gtk-4.1-dev
-        libgtk-3-dev
-        libayatana-appindicator3-dev
-        librsvg2-dev
-        nasm
-        texlive-latex-recommended
-        texlive-latex-extra
-        texlive-plain-generic
-        texlive-xetex
-        texlive-luatex
-        texlive-lang-cjk
-        texlive-lang-japanese
-        fonts-noto-cjk
-        lmodern
-        epubcheck
-        pandoc
-        poppler-utils
-        xvfb
 
     # Installed as the Build workflow installs its own (see there), but
     # with the Tests job's cache, which main's runs keep in use, and none
@@ -83,6 +31,21 @@ jobs:
     # and while kept, would push out the caches main uses daily. The
     # packages the Tests job has are restored; the others are downloaded.
     steps:
+      - uses: actions/checkout@v4
+
+      # The Tests job's packages, read from the file it reads them from, and
+      # the TeX Live the documents compile with beyond them: REVTeX
+      # (publishers), physics, mhchem and tensor (science), tikz-cd and xy
+      # (pictures), fontawesome5, bbm and mathalfa (fonts-extra), ctex
+      # (lang-chinese), and mathtext with Cyrillic fonts (lang-cyrillic).
+      # The Tests job's have the app's build dependencies, as the test
+      # binary links it, pandoc, which the CLI takes `.tex` through, and
+      # xvfb, the display its app needs.
+      - name: List the packages
+        run: |
+          echo "TESTS_APT_PACKAGES=$(xargs < .github/apt-packages/tests.txt)" >> "$GITHUB_ENV"
+          echo "APT_PACKAGES=$(cat .github/apt-packages/tests.txt .github/apt-packages/bench.txt | xargs)" >> "$GITHUB_ENV"
+
       - name: Key the Tests job's cache of apt's downloads
         id: apt-key
         run: |
@@ -101,7 +64,7 @@ jobs:
       # Missing it only makes the downloads longer.
       - name: Say if it wasn't there
         if: steps.apt-cache.outputs.cache-matched-key == ''
-        run: echo "::warning::no apt cache of the Tests job's; is TESTS_APT_PACKAGES its list in build.yml?"
+        run: echo "::warning::no apt cache of the Tests job's; has main's Tests job run since .github/apt-packages/tests.txt changed?"
 
       # A mirror can be slow rather than down, which apt's own retries don't
       # catch: past 8 minutes, downloading is given up on, and the next try
@@ -141,8 +104,6 @@ jobs:
       # it, where the app looks for it first, at the version tested.
       - name: Install pymupdf4llm
         run: pipx install --include-deps pymupdf4llm==1.27.2.3
-
-      - uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
