@@ -145,16 +145,16 @@ jobs:
             openssl \
             nasm
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: ${{ matrix.container == '' && 'npm' || '' }}
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
         with:
           components: clippy, rustfmt
 
@@ -162,7 +162,7 @@ jobs:
       # use to that PR alone and pushes main's out of the repository's
       # 10 GB. A PR's run restores main's.
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: swift-shifter
           save-if: ${{ github.ref == 'refs/heads/main' }}
@@ -213,7 +213,7 @@ jobs:
     timeout-minutes: 40
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # Listed in a file of their own, which the Benchmark workflow reads
       # too: its packages are these and more, and it uses their cache.
@@ -253,17 +253,17 @@ jobs:
         run: pipx install --include-deps pymupdf4llm==1.27.2.3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: npm
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
       # Saved from main's runs only, as the build's is (see there).
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: swift-shifter
           save-if: ${{ github.ref == 'refs/heads/main' }}

@@ -31,7 +31,7 @@ jobs:
     # and while kept, would push out the caches main uses daily. The
     # packages the Tests job has are restored; the others are downloaded.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # The Tests job's packages, read from the file it reads them from, and
       # the TeX Live the documents compile with beyond them: REVTeX
@@ -106,20 +106,20 @@ jobs:
         run: pipx install --include-deps pymupdf4llm==1.27.2.3
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: 24
           cache: npm
 
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
 
       # The Tests job's cache, restored and not saved, for the reason its
       # apt cache is (see above): the benchmark builds the same tests'
       # dependencies, and its key is the Tests job's with its name in
       # place of the job's.
       - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: swift-shifter
           shared-key: test
