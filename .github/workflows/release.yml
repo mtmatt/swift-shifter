@@ -105,10 +105,16 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # The Build job's cache from main, restored and not saved: a tag's
+      # cache is of use to that tag alone (see build.yml). That job builds
+      # the app with `tauri build` too, and its key is the Build job's
+      # with its name in place of the job's.
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: swift-shifter
+          shared-key: build
+          save-if: false
 
       - name: Install npm dependencies
         run: npm ci

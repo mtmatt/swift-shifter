@@ -99,8 +99,10 @@ jobs:
       # Only the downloads, not apt's lock or partial/, and as the runner's,
       # which the cache saves as; not those of versions the index no longer
       # lists, which a cache from an earlier month may hold.
+      # Saved from main's runs only, as the Rust cache is (see there): a
+      # new month's key would otherwise have each PR save its own.
       - name: Keep apt's downloads
-        if: matrix.name == 'Ubuntu' && steps.apt-cache.outputs.cache-hit != 'true'
+        if: matrix.name == 'Ubuntu' && github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-hit != 'true'
         run: &apt-keep |
           sudo apt-get autoclean
           mkdir -p ~/apt-archives
@@ -108,7 +110,7 @@ jobs:
           du -sh ~/apt-archives
 
       - name: Save apt's downloads
-        if: matrix.name == 'Ubuntu' && steps.apt-cache.outputs.cache-hit != 'true'
+        if: matrix.name == 'Ubuntu' && github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/apt-archives
@@ -156,10 +158,14 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      # Saved from main's runs only: a PR's cache, about 1.5 GB a job, is of
+      # use to that PR alone and pushes main's out of the repository's
+      # 10 GB. A PR's run restores main's.
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: swift-shifter
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check version files agree
         if: matrix.name == 'Ubuntu'
@@ -243,12 +249,13 @@ jobs:
         timeout-minutes: 26
         run: *apt-install
 
+      # Saved from main's runs only, as the build's is (see there).
       - name: Keep apt's downloads
-        if: steps.apt-cache.outputs.cache-hit != 'true'
+        if: github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-hit != 'true'
         run: *apt-keep
 
       - name: Save apt's downloads
-        if: steps.apt-cache.outputs.cache-hit != 'true'
+        if: github.ref == 'refs/heads/main' && steps.apt-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/apt-archives
@@ -269,10 +276,12 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # Saved from main's runs only, as the build's is (see there).
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: swift-shifter
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # tauri's generate_context! embeds ui/dist.
       - name: Build frontend
