@@ -156,10 +156,14 @@ jobs:
         with:
           components: clippy, rustfmt
 
+      # Saved from main's runs only: a PR's cache, about 1.5 GB a job, is of
+      # use to that PR alone and pushes main's out of the repository's
+      # 10 GB. A PR's run restores main's.
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: swift-shifter
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Check version files agree
         if: matrix.name == 'Ubuntu'
@@ -269,10 +273,12 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # Saved from main's runs only, as the build's is (see there).
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: swift-shifter
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       # tauri's generate_context! embeds ui/dist.
       - name: Build frontend

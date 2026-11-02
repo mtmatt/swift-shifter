@@ -153,10 +153,16 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
 
+      # The Tests job's cache, restored and not saved, for the reason its
+      # apt cache is (see above): the benchmark builds the same tests'
+      # dependencies, and its key is the Tests job's with its name in
+      # place of the job's.
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: swift-shifter
+          shared-key: test
+          save-if: false
 
       # tauri's generate_context! embeds ui/dist.
       - name: Build frontend
