@@ -211,28 +211,15 @@ jobs:
     name: Tests
     runs-on: ubuntu-24.04
     timeout-minutes: 40
-    env:
-      APT_PACKAGES: >-
-        libwebkit2gtk-4.1-dev
-        libgtk-3-dev
-        libayatana-appindicator3-dev
-        librsvg2-dev
-        nasm
-        texlive-latex-recommended
-        texlive-latex-extra
-        texlive-plain-generic
-        texlive-xetex
-        texlive-luatex
-        texlive-lang-cjk
-        texlive-lang-japanese
-        fonts-noto-cjk
-        lmodern
-        epubcheck
-        pandoc
-        poppler-utils
-        xvfb
 
     steps:
+      - uses: actions/checkout@v4
+
+      # Listed in a file of their own, which the Benchmark workflow reads
+      # too: its packages are these and more, and it uses their cache.
+      - name: List the packages
+        run: echo "APT_PACKAGES=$(xargs < .github/apt-packages/tests.txt)" >> "$GITHUB_ENV"
+
       - name: Key the cache of apt's downloads
         id: apt-key
         run: *apt-key
@@ -264,8 +251,6 @@ jobs:
       # Where the app looks for it first; pinned to the version tested.
       - name: Install pymupdf4llm
         run: pipx install --include-deps pymupdf4llm==1.27.2.3
-
-      - uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4

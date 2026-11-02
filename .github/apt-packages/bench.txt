@@ -1,0 +1,7 @@
+texlive-fonts-recommended
+texlive-fonts-extra
+texlive-publishers
+texlive-science
+texlive-pictures
+texlive-lang-chinese
+texlive-lang-cyrillic
