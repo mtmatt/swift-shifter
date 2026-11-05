@@ -528,10 +528,14 @@ impl Writer {
             out.push_str("\\tightlist\n");
         }
         for item in &list.items {
-            let marker = match item.task {
-                Some(true) => "\\item[$\\boxtimes$] ",
-                Some(false) => "\\item[$\\square$] ",
-                None => "\\item ",
+            // A label takes the place of an item's number, and the next item
+            // takes that number, so a numbered task keeps its box in its text.
+            let marker = match (item.task, list.start) {
+                (Some(true), Some(_)) => "\\item $\\boxtimes$ ",
+                (Some(false), Some(_)) => "\\item $\\square$ ",
+                (Some(true), None) => "\\item[$\\boxtimes$] ",
+                (Some(false), None) => "\\item[$\\square$] ",
+                (None, _) => "\\item ",
             };
             let sep = if list.tight { "\n" } else { "\n\n" };
             out.push_str(marker);
@@ -1484,6 +1488,17 @@ mod tests {
             "\\begin{enumerate}\n\\setcounter{enumi}{2}\n\\tightlist\n\\item a\n\\item b\n\\end{enumerate}\n\n\
              \\begin{itemize}\n\\tightlist\n\\item[$\\boxtimes$] done\n\\item[$\\square$] todo\n\\end{itemize}\n\n\
              \\begin{quote}\nq\n\\end{quote}\n\n\\begin{center}\\rule{0.5\\linewidth}{0.5pt}\\end{center}"
+        );
+    }
+
+    /// Regression for #160: labelled, `todo` took no number, so `next` was
+    /// numbered 1 where the source says 2.
+    #[test]
+    fn numbered_tasks_keep_their_numbers() {
+        assert_eq!(
+            body("1. [ ] todo\n2. [x] done\n3. next\n"),
+            "\\begin{enumerate}\n\\tightlist\n\\item $\\square$ todo\n\
+             \\item $\\boxtimes$ done\n\\item next\n\\end{enumerate}"
         );
     }
 
