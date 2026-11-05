@@ -114,10 +114,14 @@ async fn run_single_hop(
     Ok(Converted::whole(output))
 }
 
-/// Refuses converting from `ext` or to `target`, a format the app dropped,
-/// saying why (see `graph::dropped`), as the CLI asking for MOBI does.
+/// Refuses converting from `ext`, a format the app dropped or only writes,
+/// or to `target`, one it dropped, saying why (see `graph::dropped` and
+/// `graph::write_only`), as the CLI asking for MOBI does.
 pub(crate) fn refuse_dropped(ext: &str, target: &str) -> Result<(), String> {
-    match graph::dropped(ext).or_else(|| graph::dropped(target)) {
+    let why = graph::dropped(ext)
+        .or_else(|| graph::write_only(ext))
+        .or_else(|| graph::dropped(target));
+    match why {
         Some(why) => Err(why.to_string()),
         None => Ok(()),
     }
