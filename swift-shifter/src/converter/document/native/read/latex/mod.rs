@@ -117,17 +117,26 @@ struct Gathered {
     tight: bool,
     /// What's before the first `\item`; with none, all it holds.
     before: Vec<Piece>,
-    /// Each `\item`'s task mark (see [`task`]), and what's up to the next.
-    items: Vec<(Option<bool>, Vec<Piece>)>,
+    items: Vec<Item>,
 }
 
-/// The `\item`s of `items`, an `itemize` environment's, each what's up to
-/// the next. Only those of the environment's own: one in a group or
-/// another environment (`{\item a}`, `samepage`) is in its item's text, the
-/// group or environment left whole, so nothing in it is lost and a command
-/// keeps its argument. `\item[$\boxtimes$]` and `\item[$\square$]` make
-/// tasks, done or not; any other label leads its item's text. `\tightlist`
-/// before the first item makes it tight, as the LaTeX writer writes it.
+/// An `\item` of a list's own (see [`gather`]).
+struct Item {
+    /// Its task mark (see [`task`]).
+    task: Option<bool>,
+    /// Whether a label takes the place of its number.
+    labelled: bool,
+    /// What's up to the next.
+    content: Vec<Piece>,
+}
+
+/// The `\item`s of `items`, a list's environment's, each what's up to the
+/// next. Only those of the environment's own: one in a group or another
+/// environment (`{\item a}`, `samepage`) is in its item's text, the group
+/// or environment left whole, so nothing in it is lost and a command keeps
+/// its argument. `\item[$\boxtimes$]` and `\item[$\square$]` make tasks,
+/// done or not; any other label leads its item's text. `\tightlist` before
+/// the first item makes it tight, as the LaTeX writer writes it.
 fn gather(mut items: Vec<Piece>) -> Gathered {
     let mut gathered = Gathered::default();
     let (mut at, mut unbracketed) = (0, 0);
@@ -140,22 +149,43 @@ fn gather(mut items: Vec<Piece>) -> Gathered {
         match name.as_str() {
             "\\item" => {
                 let label = take_arguments(&mut items, &mut at, &mut unbracketed, ITEM).optional;
+                let labelled = label.is_some();
                 let task = label.as_deref().and_then(task);
                 let mut content = Vec::new();
                 if let Some(label) = label.filter(|_| task.is_none()) {
                     content.extend(label);
                     content.push(Piece::Token(SyntaxKind::TokenWhiteSpace, " ".into()));
                 }
-                gathered.items.push((task, content));
+                gathered.items.push(Item {
+                    task,
+                    labelled,
+                    content,
+                });
             }
             "\\tightlist" if gathered.items.is_empty() => gathered.tight = true,
             _ => match gathered.items.last_mut() {
-                Some((_, content)) => content.push(piece),
+                Some(item) => item.content.push(piece),
                 None => gathered.before.push(piece),
             },
         }
     }
     gathered
+}
+
+/// Takes the box leading `content`, a numbered item's, as the LaTeX writer
+/// writes a numbered task, and gives whether it's done.
+fn leading_box(content: &mut Vec<Piece>) -> Option<bool> {
+    let done = match content.first()? {
+        Piece::Node(node) if node.kind() == SyntaxKind::ItemFormula => task(&content[..1])?,
+        _ => return None,
+    };
+    let text = content
+        .iter()
+        .skip(1)
+        .position(|piece| !matches!(piece, Piece::Token(SyntaxKind::TokenWhiteSpace, _)))
+        .map_or(content.len(), |spaces| spaces + 1);
+    content.drain(..text);
+    Some(done)
 }
 
 /// Whether `label`, an `\item`'s, marks a task done or not: as the LaTeX
@@ -174,16 +204,30 @@ fn task(label: &[Piece]) -> Option<bool> {
 }
 
 /// The source `pieces` were parsed from, without the braces of the group
-/// they're an argument's (see [`take_arguments`]).
+/// they're an argument's (see [`take_arguments`]), or comments, with the
+/// line's end and the next line's spaces each one takes.
 fn source_text(pieces: &[Piece]) -> String {
-    pieces
-        .iter()
-        .map(|piece| match piece {
-            Piece::Token(SyntaxKind::TokenLBrace | SyntaxKind::TokenRBrace, _) => String::new(),
-            Piece::Token(_, text) => text.clone(),
-            Piece::Node(node) => node.text().to_string(),
-        })
-        .collect()
+    let mut text = String::new();
+    let mut after_comment = false;
+    for piece in pieces {
+        match piece {
+            Piece::Token(SyntaxKind::TokenComment, _) => after_comment = true,
+            Piece::Token(SyntaxKind::TokenLineBreak | SyntaxKind::TokenWhiteSpace, _)
+                if after_comment => {}
+            Piece::Token(SyntaxKind::TokenLBrace | SyntaxKind::TokenRBrace, _) => {
+                after_comment = false;
+            }
+            Piece::Token(_, token) => {
+                after_comment = false;
+                text.push_str(token);
+            }
+            Piece::Node(node) => {
+                after_comment = false;
+                text.push_str(&node.text().to_string());
+            }
+        }
+    }
+    text
 }
 
 /// Takes from `items[*at..]` what the definition command `name` defines:
@@ -301,6 +345,10 @@ struct Reader {
     verbatim_mark: String,
     /// How many lists the text being read is in.
     lists: usize,
+    /// The counters of the `enumerate`s the text being read is in, the
+    /// outermost's first: their last item's number. One `\setcounter` sets
+    /// them wherever it's read, as LaTeX sets them for the whole document.
+    enumerations: Vec<i64>,
     /// The lists past [`MAX_LIST_NESTING`], read as their text.
     unlisted: usize,
 }
@@ -372,10 +420,11 @@ impl Reader {
                         self.non_space();
                         self.skip_spaces = true;
                     }
-                    // An `enumerate` is read as its text, as yet (#160).
-                    SyntaxKind::ItemEnv if environment_name(&node) == "itemize" => {
-                        self.list(&node);
-                    }
+                    SyntaxKind::ItemEnv => match environment_name(&node).as_str() {
+                        "itemize" => self.list(&node, false),
+                        "enumerate" => self.list(&node, true),
+                        _ => self.flow(pieces(&node)),
+                    },
                     _ => self.flow(pieces(&node)),
                 },
             }
@@ -443,6 +492,7 @@ impl Reader {
             // What a list starts with (see `Reader::list`): elsewhere, it
             // shows nothing.
             "\\tightlist" => {}
+            "\\setcounter" => self.set_counter(args),
             // An item that isn't a list's own (see `gather`) is a space in
             // its text, and its groups' text follows.
             "\\item" => {
@@ -468,46 +518,93 @@ impl Reader {
         }
     }
 
-    /// An `itemize` environment: a list of its `\item`s (see [`gather`]),
-    /// tight where `\tightlist` makes it so and none of its items' blocks
-    /// would run together written that way (see [`loosens`]). Past
-    /// [`MAX_LIST_NESTING`], it's read as its items' text.
-    fn list(&mut self, env: &SyntaxNode) {
+    /// Sets the counter of an `enumerate` the text is in to `args`' value.
+    /// That of one it isn't in does nothing: the next one starts over.
+    fn set_counter(&mut self, args: Vec<Vec<Piece>>) {
+        let [name, value] = &args[..] else {
+            return;
+        };
+        let depth = ENUMERATION_COUNTERS
+            .iter()
+            .position(|counter| *counter == source_text(name).trim());
+        let value = source_text(value).trim().parse();
+        if let (Some(counter), Ok(value)) =
+            (depth.and_then(|d| self.enumerations.get_mut(d)), value)
+        {
+            *counter = value;
+        }
+    }
+
+    /// An `itemize` or, `numbered`, `enumerate` environment: a list of its
+    /// `\item`s (see [`gather`]), tight where `\tightlist` makes it so and
+    /// none of its items' blocks would run together written that way (see
+    /// [`loosens`]). An `enumerate` splits into lists where its numbers
+    /// don't follow on: at a `\setcounter`, and around an item a label
+    /// takes the number of, or numbered below 0, which no list writes.
+    /// Past [`MAX_LIST_NESTING`], it's read as its items' text.
+    fn list(&mut self, env: &SyntaxNode, numbered: bool) {
         self.end_paragraph();
         let pieces = pieces(env);
         if self.lists >= MAX_LIST_NESTING {
             self.unlisted += 1;
             return self.flow(pieces);
         }
-        let mut gathered = gather(pieces);
-        // With no item of its own, it's its text; what's before its first
-        // item is that item's, so nothing is lost.
-        let Some((_, first)) = gathered.items.first_mut() else {
+        let gathered = gather(pieces);
+        // With no item of its own, it's its text.
+        if gathered.items.is_empty() {
             return self.flow(gathered.before);
-        };
-        first.splice(0..0, gathered.before);
+        }
         self.lists += 1;
+        if numbered {
+            self.enumerations.push(0);
+        }
         let outer = std::mem::take(&mut self.blocks);
-        let items: Vec<ListItem> = gathered
-            .items
-            .into_iter()
-            .map(|(task, content)| {
-                self.flow(content);
-                self.end_paragraph();
-                ListItem {
-                    task,
-                    content: std::mem::take(&mut self.blocks),
-                }
-            })
-            .collect();
+        // What's before its first item is that item's, so nothing is lost,
+        // and read before it's numbered, as it may set its number.
+        self.flow(gathered.before);
+        let mut lists: Vec<List> = Vec::new();
+        for mut item in gathered.items {
+            let start = self
+                .enumerations
+                .last_mut()
+                .filter(|_| numbered && !item.labelled)
+                .and_then(|counter| {
+                    *counter = counter.saturating_add(1);
+                    u64::try_from(*counter).ok()
+                });
+            let boxed = if numbered && !item.labelled {
+                leading_box(&mut item.content)
+            } else {
+                None
+            };
+            self.flow(item.content);
+            self.end_paragraph();
+            let follows_on = lists.last().is_some_and(|list| match (list.start, start) {
+                (Some(first), Some(number)) => first + list.items.len() as u64 == number,
+                (None, None) => true,
+                _ => false,
+            });
+            if !follows_on {
+                lists.push(List {
+                    start,
+                    tight: gathered.tight,
+                    items: Vec::new(),
+                });
+            }
+            lists.last_mut().unwrap().items.push(ListItem {
+                task: item.task.or(boxed),
+                content: std::mem::take(&mut self.blocks),
+            });
+        }
         self.blocks = outer;
+        if numbered {
+            self.enumerations.pop();
+        }
         self.lists -= 1;
-        let tight = gathered.tight && !items.iter().any(|item| loosens(&item.content));
-        self.blocks.push(Block::List(List {
-            start: None,
-            tight,
-            items,
-        }));
+        for mut list in lists {
+            list.tight &= !list.items.iter().any(|item| loosens(&item.content));
+            self.blocks.push(Block::List(list));
+        }
     }
 
     /// A sectioning command's heading, at `level` in [`SECTIONS`] (see
@@ -673,6 +770,17 @@ const ITEM: Signature = Signature {
     required: 0,
 };
 
+/// `\setcounter{counter}{value}`'s.
+const SET_COUNTER: Signature = Signature {
+    star: false,
+    optional: false,
+    unstarred_optional: false,
+    required: 2,
+};
+
+/// The counters of `enumerate`s, from the outermost in.
+const ENUMERATION_COUNTERS: [&str; 4] = ["enumi", "enumii", "enumiii", "enumiv"];
+
 /// The commands that define others (see [`skip_definition`]).
 const DEFINITIONS: [&str; 7] = [
     "\\newcommand",
@@ -707,6 +815,7 @@ fn signature(name: &str) -> Option<Signature> {
             ..Signature::default()
         }),
         "\\par" | "\\" | "\\tightlist" => Some(Signature::default()),
+        "\\setcounter" => Some(SET_COUNTER),
         _ if ESCAPED.contains(&name) => Some(Signature::default()),
         _ if SECTIONS.contains(&name) => Some(Signature {
             star: true,
@@ -1417,11 +1526,6 @@ mod tests {
                     &[(None, &[para(&[text("a")]), list(false, &[(None, &b)])])],
                 )],
             ),
-            // An `enumerate` is its text, in a list too (#160).
-            (
-                "\\begin{itemize}\\item a\\begin{enumerate}\\item b\\item c\\end{enumerate}\\end{itemize}",
-                &[list(false, &[(None, &[para(&[text("a b c")])])])],
-            ),
             // Only its own items split it: one in a group or another
             // environment is a space in its item's text, the group or
             // environment whole, and nothing is lost. With none of its own,
@@ -1453,12 +1557,201 @@ mod tests {
         }
     }
 
-    /// The bulleted lists the LaTeX writer writes, tasks among them, read
+    fn numbered(start: u64, tight: bool, items: &[(Option<bool>, &[Block])]) -> Block {
+        let Block::List(list) = list(tight, items) else {
+            unreachable!()
+        };
+        Block::List(List {
+            start: Some(start),
+            ..list
+        })
+    }
+
+    /// Where an `enumerate` split, its lists stay apart in Markdown, with
+    /// their numbers.
+    #[test]
+    fn split_enumerates_keep_their_numbers_in_markdown() {
+        use crate::converter::document::native::write;
+        let doc = read(
+            "\\begin{enumerate}\\item a\\setcounter{enumi}{6}\\item b\\item c\
+             \\item[(x)] d\\item e\\end{enumerate}",
+        )
+        .0;
+        assert_eq!(
+            write::markdown::write(&doc),
+            "1. a\n\n7) b\n\n8) c\n\n- (x) d\n\n9. e\n"
+        );
+    }
+
+    /// Each row: the blocks the source reads as, numbered as LaTeX numbers
+    /// them (#160).
+    #[test]
+    fn enumerate_is_numbered_as_latex_numbers_it() {
+        let a = [para(&[text("a")])];
+        let b = [para(&[text("b")])];
+        let c = [para(&[text("c")])];
+        let cases: &[(&str, &[Block])] = &[
+            (
+                "\\begin{enumerate}\\item a\\item b\\end{enumerate}",
+                &[numbered(1, false, &[(None, &a), (None, &b)])],
+            ),
+            // What's before the first item sets its number and spacing, and
+            // its text is the first item's.
+            (
+                "\\begin{enumerate}\\setcounter{enumi}{2}\\tightlist kept \\item a\\item b\\end{enumerate}",
+                &[numbered(
+                    3,
+                    true,
+                    &[(None, &[para(&[text("kept a")])]), (None, &b)],
+                )],
+            ),
+            // A label takes the place of an item's number, which the next
+            // takes: a list without numbers, between those with them.
+            (
+                "\\begin{enumerate}\\item a\\item[(x)] b\\item c\\end{enumerate}",
+                &[
+                    numbered(1, false, &[(None, &a)]),
+                    list(false, &[(None, &[para(&[text("(x) b")])])]),
+                    numbered(2, false, &[(None, &c)]),
+                ],
+            ),
+            // So does a task's label; a box in the text keeps its number,
+            // as the LaTeX writer writes a numbered task.
+            (
+                "\\begin{enumerate}\\item[$\\square$] a\\item b\\end{enumerate}",
+                &[
+                    list(false, &[(Some(false), &a)]),
+                    numbered(1, false, &[(None, &b)]),
+                ],
+            ),
+            (
+                "\\begin{enumerate}\\item $\\square$ a\\item $\\boxtimes$ b\\item c\\end{enumerate}",
+                &[numbered(
+                    1,
+                    false,
+                    &[(Some(false), &a), (Some(true), &b), (None, &c)],
+                )],
+            ),
+            // `\setcounter` numbers the items after it, wherever it's read:
+            // in a group, in another environment, in a list inside.
+            (
+                "\\begin{enumerate}\\item a{\\setcounter{enumi}{6}}\\item b\
+                 \\setcounter{enumi}{2}\\item c\\end{enumerate}",
+                &[
+                    numbered(1, false, &[(None, &a)]),
+                    numbered(7, false, &[(None, &b)]),
+                    numbered(3, false, &[(None, &c)]),
+                ],
+            ),
+            (
+                "\\begin{enumerate}\\item a\\begin{samepage}\\setcounter{enumi}{5}\\end{samepage}\
+                 \\item b\\end{enumerate}",
+                &[
+                    numbered(1, false, &[(None, &a)]),
+                    numbered(6, false, &[(None, &b)]),
+                ],
+            ),
+            (
+                "\\begin{enumerate}\\item a\\begin{itemize}\\item b\\setcounter{enumi}{5}\\end{itemize}\
+                 \\item c\\end{enumerate}",
+                &[
+                    numbered(
+                        1,
+                        false,
+                        &[(None, &[para(&[text("a")]), list(false, &[(None, &b)])])],
+                    ),
+                    numbered(6, false, &[(None, &c)]),
+                ],
+            ),
+            // Back to the start, it's a list of its own, or the two would
+            // read as one going on.
+            (
+                "\\begin{enumerate}\\item a\\setcounter{enumi}{0}\\item b\\end{enumerate}",
+                &[
+                    numbered(1, false, &[(None, &a)]),
+                    numbered(1, false, &[(None, &b)]),
+                ],
+            ),
+            // Each `enumerate` has its counter, by how deep it is, and an
+            // outer one's can be set from inside; one that isn't running
+            // does nothing, as the next starts over.
+            (
+                "\\begin{enumerate}\\item a\\begin{enumerate}\\setcounter{enumii}{3}\\item b\
+                 \\setcounter{enumi}{7}\\end{enumerate}\\item c\\end{enumerate}",
+                &[
+                    numbered(
+                        1,
+                        false,
+                        &[(
+                            None,
+                            &[para(&[text("a")]), numbered(4, false, &[(None, &b)])],
+                        )],
+                    ),
+                    numbered(8, false, &[(None, &c)]),
+                ],
+            ),
+            (
+                "\\setcounter{enumi}{4}\\begin{enumerate}\\setcounter{enumii}{4}\\item a\\end{enumerate}",
+                &[numbered(1, false, &[(None, &a)])],
+            ),
+            // Comments in its arguments are none of them.
+            (
+                "\\begin{enumerate}\\setcounter{enu% name\n  mi}{2% value\n}\\item a\\end{enumerate}",
+                &[numbered(3, false, &[(None, &a)])],
+            ),
+            // Other counters, and values that aren't numbers, set nothing.
+            (
+                "\\begin{enumerate}\\setcounter{page}{4}\\setcounter{enumi}{\\value{x}}\\item a\\end{enumerate}",
+                &[numbered(1, false, &[(None, &a)])],
+            ),
+            // At 0 too; below it, no list can say so.
+            (
+                "\\begin{enumerate}\\setcounter{enumi}{-1}\\item a\\end{enumerate}",
+                &[numbered(0, false, &[(None, &a)])],
+            ),
+            (
+                "\\begin{enumerate}\\setcounter{enumi}{-5}\\item a\\end{enumerate}",
+                &[list(false, &[(None, &a)])],
+            ),
+            // Elsewhere, it shows nothing.
+            ("x\\setcounter{enumi}{2}y", &[para(&[text("xy")])]),
+        ];
+        for &(source, expected) in cases {
+            assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
+    }
+
+    /// A definition only runs where it's called.
+    #[test]
+    fn definitions_set_no_counters() {
+        let a = [para(&[text("a")])];
+        let b = [para(&[text("b")])];
+        for definition in [
+            "\\newcommand{\\f}{\\setcounter{enumi}{7}}",
+            "\\newcommand*{\\f}[1][x]{\\setcounter{enumi}{7}}",
+            "\\renewcommand\\f[2]{\\setcounter{enumi}{7}}",
+            "\\providecommand{\\f}{\\setcounter{enumi}{7}}",
+            "\\def\\f{\\setcounter{enumi}{7}}",
+            "\\def\\f#1.{\\setcounter{enumi}{7}}",
+            "\\gdef\\f{\\setcounter{enumi}{7}}",
+        ] {
+            let source =
+                format!("\\begin{{enumerate}}\\item a{definition}\\item b\\end{{enumerate}}");
+            assert_eq!(
+                read(&source).0.blocks,
+                [numbered(1, false, &[(None, &a), (None, &b)])],
+                "{source}"
+            );
+        }
+    }
+
+    /// The lists the LaTeX writer writes, tasks and starts among them, read
     /// back as they were.
     #[test]
     fn our_latex_lists_read_back() {
         use crate::converter::document::native::{read::markdown, write};
-        let source = "- [x] done\n- [ ] todo\n\n* one\n\n  more\n* two\n  - in\n";
+        let source = "- [x] done\n- [ ] todo\n\n* one\n\n  more\n* two\n  - in\n\n\
+                      3. a\n4. b\n   1. in\n\n1) [ ] todo\n2) [x] done\n3) next\n";
         let doc = markdown::read(source);
         let tex = write::latex::write(&doc);
         assert_eq!(read(&tex).0.blocks, doc.blocks, "{tex}");
