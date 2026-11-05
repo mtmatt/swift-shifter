@@ -7,6 +7,7 @@
 //! does (see `graph::route_hop`).
 
 pub mod files;
+mod formulas;
 pub mod paths;
 pub mod stage;
 mod verbatim;
@@ -82,7 +83,8 @@ fn read_parsed(source: &str) -> (Document, Option<Warning>) {
     let cut = verbatim::cut(source);
     // Expanding macros, which may never end, would also parse more than
     // `source` holds, past `nesting_bound`.
-    let root = mitex_parser::parse_without_macro(&cut.source, CommandSpec::new(Default::default()));
+    let separated = formulas::separate_formulas(&cut.source);
+    let root = mitex_parser::parse_without_macro(&separated, CommandSpec::new(Default::default()));
     let mut reader = Reader {
         verbatims: cut.verbatims,
         verbatim_mark: cut.mark,
