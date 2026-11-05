@@ -43,7 +43,7 @@ Bump the version with `./scripts/bump-version.sh 0.5.0` — it syncs the three v
 
 ### Backend ↔ frontend boundary
 
-The frontend never imports Rust; it calls `#[tauri::command]` functions over Tauri's IPC. The full command surface is the `invoke_handler!` list in `swift-shifter/src/main.rs` — that list is the contract. Adding a backend capability means writing a command there and `invoke`-ing it from `ui/src/`. The backend pushes progress and status to the UI via `app.emit(...)` events (e.g. `convert:progress`, `update:available`, `ffmpeg:failed`); the frontend listens for these.
+The frontend never imports Rust; it calls `#[tauri::command]` functions over Tauri's IPC. The full command surface is the `invoke_handler!` list in `swift-shifter/src/main.rs` — that list is the contract. Adding a backend capability means writing a command there and `invoke`-ing it from `ui/src/`. The backend pushes progress and status to the UI via `app.emit(...)` events (e.g. `convert:progress`, `update:progress`, `ffmpeg:failed`); the frontend listens for these.
 
 ### The conversion graph (`swift-shifter/src/converter/graph.rs`) — single source of truth
 

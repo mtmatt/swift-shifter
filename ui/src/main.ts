@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { type ConversionWarning, warningLine, warningTooltip } from "./warnings";
 import { followAppearance } from "./appearance";
+import { actOnUpdate, offerUpdate, type UpdateActions, type UpdateInfo } from "./update";
 
 followAppearance();
 
@@ -150,6 +151,39 @@ listen("config:updated", async () => {
     clipboardOutputMode = cfg.clipboard_output_mode;
   } catch { /* non-fatal */ }
 }).catch(console.error);
+
+// ─── New version ──────────────────────────────────────────────────────────
+
+const updateBar = document.getElementById("update-bar") as HTMLDivElement;
+const updateText = document.getElementById("update-text") as HTMLSpanElement;
+const btnUpdate = document.getElementById("btn-update") as HTMLButtonElement;
+
+function showUpdate(text: string, action: string | null): void {
+  updateText.textContent = text;
+  updateText.title = text;
+  btnUpdate.hidden = action === null;
+  btnUpdate.textContent = action ?? "";
+  updateBar.hidden = false;
+}
+
+const updateActions: UpdateActions = {
+  install: () => invoke("install_update"),
+  open: (url) => invoke("plugin:shell|open", { path: url }),
+  onProgress: (progress) =>
+    listen<number>("update:progress", (ev) => progress(ev.payload)),
+};
+
+// Asked here, once this window can show the answer. Failing to ask, offline
+// say, shows nothing: the app works as it is.
+invoke<UpdateInfo | null>("check_update")
+  .then((info) => {
+    if (!info) return;
+    offerUpdate(info, showUpdate);
+    btnUpdate.addEventListener("click", () => {
+      void actOnUpdate(info, showUpdate, updateActions);
+    });
+  })
+  .catch(() => {});
 
 function renumberMergeItems(): void {
     const items = Array.from(fileList.querySelectorAll<HTMLElement>(".file-item"));
