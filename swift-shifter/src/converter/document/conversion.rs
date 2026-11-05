@@ -6,14 +6,13 @@ use crate::converter::graph::normalize_ext;
 use std::path::{Path, PathBuf};
 use tauri::Emitter;
 
-fn unique_tmp_suffix() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let ms = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis();
-    let tid = std::thread::current().id();
-    format!("{ms}_{tid:?}").replace(['(', ')', ' '], "_")
+/// A new folder for a `kind` of conversion's working files, its own however
+/// many others run, in this process or another (#190), removed when dropped.
+fn work_dir(kind: &str) -> Result<tempfile::TempDir, String> {
+    tempfile::Builder::new()
+        .prefix(&format!("swift_shifter_{kind}_"))
+        .tempdir()
+        .map_err(|e| format!("Failed to create temp dir: {e}"))
 }
 
 /// Convert a PDF to EPUB using the marker-pdf ML pipeline:
@@ -38,10 +37,9 @@ pub async fn convert_pdf_with_marker(
     )
     .ok();
 
-    let tmp_base =
-        std::env::temp_dir().join(format!("swift_shifter_marker_{}", unique_tmp_suffix()));
-    let input_dir = tmp_base.join("input");
-    let output_dir = tmp_base.join("output");
+    let tmp_base = work_dir("marker")?;
+    let input_dir = tmp_base.path().join("input");
+    let output_dir = tmp_base.path().join("output");
 
     std::fs::create_dir_all(&input_dir)
         .map_err(|e| format!("Failed to create input temp directory: {e}"))?;
@@ -202,7 +200,7 @@ pub async fn convert_pdf_with_marker(
     let _ = progress_task.await;
 
     if !status.success() || find_md_file(&output_dir).is_none() {
-        let _ = std::fs::remove_dir_all(&tmp_base);
+        drop(tmp_base);
         return convert_pdf_to_epub(app, path, user_output_dir).await;
     }
 
@@ -229,9 +227,7 @@ pub async fn convert_pdf_with_marker(
         super::native::markdown_to_epub(&content, &title, &md_dir)
     })
     .await
-    .map_err(|e| format!("task panicked: {e}"));
-    let _ = std::fs::remove_dir_all(&tmp_base);
-    let epub = epub??;
+    .map_err(|e| format!("task panicked: {e}"))??;
     tokio::fs::write(&out, epub)
         .await
         .map_err(|e| format!("Failed to write {}: {e}", out.display()))?;
@@ -654,9 +650,8 @@ pub async fn convert_pdf_to_epub(
     )
     .ok();
 
-    let tmp_dir = std::env::temp_dir().join(format!("swift_shifter_epub_{}", unique_tmp_suffix()));
-    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
-    let tmp_md = tmp_dir.join("output.md");
+    let tmp_dir = work_dir("epub")?;
+    let tmp_md = tmp_dir.path().join("output.md");
 
     let tmp_md_str = tmp_md
         .to_str()
@@ -677,7 +672,6 @@ pub async fn convert_pdf_to_epub(
         .map_err(|e| format!("Failed to spawn pymupdf4llm: {e}"))?;
 
     if !result.status.success() {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
         let stderr = String::from_utf8_lossy(&result.stderr);
         return Err(if stderr.trim().is_empty() {
             format!(
@@ -690,7 +684,6 @@ pub async fn convert_pdf_to_epub(
     }
 
     if !tmp_md.exists() {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
         return Err("pymupdf4llm succeeded but produced no output file".to_string());
     }
 
@@ -703,14 +696,9 @@ pub async fn convert_pdf_to_epub(
     )
     .ok();
 
-    let read = tokio::fs::read_to_string(&tmp_md).await;
-    let content = match read {
-        Ok(content) => content,
-        Err(e) => {
-            let _ = std::fs::remove_dir_all(&tmp_dir);
-            return Err(format!("Failed to read pymupdf4llm's output: {e}"));
-        }
-    };
+    let content = tokio::fs::read_to_string(&tmp_md)
+        .await
+        .map_err(|e| format!("Failed to read pymupdf4llm's output: {e}"))?;
 
     app.emit(
         "convert:progress",
@@ -723,14 +711,13 @@ pub async fn convert_pdf_to_epub(
 
     // Step 2: Markdown → EPUB with the native writer
     let title = file_stem(path);
-    let base_dir = tmp_dir.clone();
+    let base_dir = tmp_dir.path().to_path_buf();
     let epub = tokio::task::spawn_blocking(move || {
         super::native::markdown_to_epub(&content, &title, &base_dir)
     })
     .await
-    .map_err(|e| format!("task panicked: {e}"));
-    let _ = std::fs::remove_dir_all(&tmp_dir);
-    tokio::fs::write(&out, epub??)
+    .map_err(|e| format!("task panicked: {e}"))??;
+    tokio::fs::write(&out, epub)
         .await
         .map_err(|e| format!("Failed to write {}: {e}", out.display()))?;
 
@@ -762,9 +749,8 @@ pub async fn convert_pdf_to_html(
     )
     .ok();
 
-    let tmp_dir = std::env::temp_dir().join(format!("swift_shifter_html_{}", unique_tmp_suffix()));
-    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
-    let tmp_md = tmp_dir.join("output.md");
+    let tmp_dir = work_dir("html")?;
+    let tmp_md = tmp_dir.path().join("output.md");
 
     let tmp_md_str = tmp_md
         .to_str()
@@ -785,7 +771,6 @@ pub async fn convert_pdf_to_html(
         .map_err(|e| format!("Failed to spawn pymupdf4llm: {e}"))?;
 
     if !result.status.success() {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
         let stderr = String::from_utf8_lossy(&result.stderr);
         return Err(if stderr.trim().is_empty() {
             format!(
@@ -798,16 +783,12 @@ pub async fn convert_pdf_to_html(
     }
 
     if !tmp_md.exists() {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
         return Err("pymupdf4llm succeeded but produced no output file".to_string());
     }
 
-    // Clean up the temp dir before propagating a read error.
     let markdown = tokio::fs::read_to_string(&tmp_md)
         .await
-        .map_err(|e| format!("Failed to read extracted markdown: {e}"));
-    let _ = std::fs::remove_dir_all(&tmp_dir);
-    let markdown = markdown?;
+        .map_err(|e| format!("Failed to read extracted markdown: {e}"))?;
 
     app.emit(
         "convert:progress",
@@ -856,10 +837,8 @@ async fn convert_pdf_to_md_via_pymupdf4llm(
     )
     .ok();
 
-    let tmp_dir =
-        std::env::temp_dir().join(format!("swift_shifter_pdf_md_{}", unique_tmp_suffix()));
-    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
-    let tmp_md = tmp_dir.join("output.md");
+    let tmp_dir = work_dir("pdf_md")?;
+    let tmp_md = tmp_dir.path().join("output.md");
 
     let tmp_md_str = tmp_md
         .to_str()
@@ -879,7 +858,6 @@ async fn convert_pdf_to_md_via_pymupdf4llm(
         .map_err(|e| format!("Failed to spawn pymupdf4llm: {e}"))?;
 
     if !result.status.success() {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
         let stderr = String::from_utf8_lossy(&result.stderr);
         return Err(if stderr.trim().is_empty() {
             format!(
@@ -892,7 +870,6 @@ async fn convert_pdf_to_md_via_pymupdf4llm(
     }
 
     if !tmp_md.exists() {
-        let _ = std::fs::remove_dir_all(&tmp_dir);
         return Err("pymupdf4llm succeeded but produced no output file".to_string());
     }
 
@@ -905,9 +882,7 @@ async fn convert_pdf_to_md_via_pymupdf4llm(
     )
     .ok();
 
-    let copy_result = std::fs::copy(&tmp_md, &out);
-    let _ = std::fs::remove_dir_all(&tmp_dir);
-    copy_result.map_err(|e| format!("Failed to copy output: {e}"))?;
+    std::fs::copy(&tmp_md, &out).map_err(|e| format!("Failed to copy output: {e}"))?;
 
     app.emit(
         "convert:progress",
@@ -949,10 +924,9 @@ pub(crate) async fn convert_pdf_with_marker_to_md(
     )
     .ok();
 
-    let tmp_base =
-        std::env::temp_dir().join(format!("swift_shifter_marker_md_{}", unique_tmp_suffix()));
-    let input_dir = tmp_base.join("input");
-    let output_dir_tmp = tmp_base.join("output");
+    let tmp_base = work_dir("marker_md")?;
+    let input_dir = tmp_base.path().join("input");
+    let output_dir_tmp = tmp_base.path().join("output");
 
     std::fs::create_dir_all(&input_dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
     std::fs::create_dir_all(&output_dir_tmp)
@@ -988,7 +962,7 @@ pub(crate) async fn convert_pdf_with_marker_to_md(
         .map_err(|e| format!("Failed to spawn marker: {e}"))?;
 
     if !status.success() || find_md_file(&output_dir_tmp).is_none() {
-        let _ = std::fs::remove_dir_all(&tmp_base);
+        drop(tmp_base);
         return convert_pdf_to_md_via_pymupdf4llm(app, path, output_dir).await;
     }
 
@@ -1011,8 +985,6 @@ pub(crate) async fn convert_pdf_with_marker_to_md(
         copy_dir_contents_except(md_parent, out_dir, &md_file);
     }
 
-    let _ = std::fs::remove_dir_all(&tmp_base);
-
     app.emit(
         "convert:progress",
         ProgressPayload {
@@ -1028,6 +1000,31 @@ pub(crate) async fn convert_pdf_with_marker_to_md(
 mod tests {
     use super::*;
     use crate::test_tools::installed;
+
+    /// Regression for #190: names made of the time and a thread's id
+    /// collided, and one conversion removed another's output.
+    #[test]
+    fn work_dirs_started_together_are_each_their_own_until_dropped() {
+        const CONVERSIONS: usize = 16;
+        let start = std::sync::Barrier::new(CONVERSIONS);
+        let dirs: Vec<_> = std::thread::scope(|scope| {
+            let started: Vec<_> = (0..CONVERSIONS)
+                .map(|_| {
+                    scope.spawn(|| {
+                        start.wait();
+                        work_dir("epub").unwrap()
+                    })
+                })
+                .collect();
+            started.into_iter().map(|t| t.join().unwrap()).collect()
+        });
+        let paths: std::collections::HashSet<PathBuf> =
+            dirs.iter().map(|dir| dir.path().to_path_buf()).collect();
+        assert_eq!(paths.len(), CONVERSIONS);
+        assert!(paths.iter().all(|path| path.is_dir()));
+        drop(dirs);
+        assert!(paths.iter().all(|path| !path.exists()));
+    }
 
     /// The text of `pdf`, as pdftotext reads it. `None` where pdftotext
     /// isn't installed (see [`installed`]).
