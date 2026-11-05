@@ -12,37 +12,14 @@ mod recent;
 #[cfg(test)]
 mod test_tools;
 mod tray;
+mod update;
 
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter, Manager, WindowEvent};
-use tauri_plugin_updater::UpdaterExt;
 
 use config::AppState;
-
-#[derive(Serialize, Clone)]
-struct UpdateInfo {
-    version: String,
-    body: Option<String>,
-}
-
-async fn check_for_update_and_emit(app: &tauri::AppHandle) {
-    let Ok(updater) = app.updater_builder().build() else {
-        return;
-    };
-    let Ok(Some(update)) = updater.check().await else {
-        return;
-    };
-    app.emit(
-        "update:available",
-        UpdateInfo {
-            version: update.version.clone(),
-            body: update.body.clone(),
-        },
-    )
-    .ok();
-}
 
 #[derive(Deserialize)]
 struct BatchItem {
@@ -82,6 +59,14 @@ impl BatchResult {
             warnings,
         }
     }
+}
+
+/// A batch none of which ran, each of `paths` failing with `why`, as the UI
+/// shows a failure per file.
+fn refused(paths: impl Iterator<Item = String>, why: String) -> Vec<BatchResult> {
+    paths
+        .map(|path| BatchResult::new(path, Err(why.clone())))
+        .collect()
 }
 
 fn main() {
@@ -144,12 +129,6 @@ fn main() {
             // PDFs are typeset in-process; scan fonts now so the first
             // conversion doesn't wait for it.
             converter::document::native::typst::warm_up();
-
-            // Check for app updates in the background
-            let handle = app.handle().clone();
-            tauri::async_runtime::spawn(async move {
-                check_for_update_and_emit(&handle).await;
-            });
             Ok(())
         })
         .on_window_event(|window, event| match event {
@@ -186,8 +165,8 @@ fn main() {
             check_marker,
             marker_install_hint,
             open_output_folder,
-            check_update,
-            install_update,
+            update::check_update,
+            update::install_update,
             quit,
         ])
         .build(context)
@@ -205,38 +184,6 @@ fn main() {
 #[tauri::command]
 fn quit(app: tauri::AppHandle) {
     app.exit(0);
-}
-
-#[tauri::command]
-async fn check_update(app: tauri::AppHandle) -> Result<Option<UpdateInfo>, String> {
-    let updater = app.updater_builder().build().map_err(|e| e.to_string())?;
-    let update = updater.check().await.map_err(|e| e.to_string())?;
-    Ok(update.map(|u| UpdateInfo {
-        version: u.version.clone(),
-        body: u.body.clone(),
-    }))
-}
-
-#[tauri::command]
-async fn install_update(app: tauri::AppHandle) -> Result<(), String> {
-    let updater = app.updater_builder().build().map_err(|e| e.to_string())?;
-    let Some(update) = updater.check().await.map_err(|e| e.to_string())? else {
-        return Ok(());
-    };
-    let handle = app.clone();
-    update
-        .download_and_install(
-            move |downloaded, total| {
-                let percent = total
-                    .map(|t| downloaded as f32 / t as f32 * 100.0)
-                    .unwrap_or(0.0);
-                handle.emit("update:progress", percent).ok();
-            },
-            || {},
-        )
-        .await
-        .map_err(|e| e.to_string())?;
-    app.restart();
 }
 
 #[tauri::command]
@@ -284,6 +231,7 @@ async fn convert(
     path: String,
     target_format: String,
 ) -> Result<converter::Converted, String> {
+    let _working = update::Working::start()?;
     // Clone releases the lock before the await — never hold std::sync::Mutex across await
     let cfg = state.config.lock().unwrap().clone();
     converter::convert_file(&app_handle, &path, &target_format, &cfg).await
@@ -299,6 +247,10 @@ async fn convert_batch(
 ) -> Result<Vec<BatchResult>, String> {
     use tokio::sync::Semaphore;
 
+    let _working = match update::Working::start() {
+        Ok(working) => working,
+        Err(why) => return Ok(refused(items.into_iter().map(|item| item.path), why)),
+    };
     let cfg = Arc::new(state.config.lock().unwrap().clone());
     let sem = Arc::new(Semaphore::new(cfg.max_concurrent));
 
@@ -343,6 +295,7 @@ async fn trim_media(
     start: String,
     end: String,
 ) -> Result<String, String> {
+    let _working = update::Working::start()?;
     let cfg = state.config.lock().unwrap().clone();
     converter::media::trim_media(&app_handle, &path, &start, &end, cfg.output_dir.as_deref()).await
 }
@@ -355,6 +308,10 @@ async fn trim_batch(
 ) -> Result<Vec<BatchResult>, String> {
     use tokio::sync::Semaphore;
 
+    let _working = match update::Working::start() {
+        Ok(working) => working,
+        Err(why) => return Ok(refused(items.into_iter().map(|item| item.path), why)),
+    };
     let cfg = Arc::new(state.config.lock().unwrap().clone());
     let sem = Arc::new(Semaphore::new(cfg.max_concurrent));
 
@@ -482,6 +439,7 @@ async fn merge_pdfs(
     state: tauri::State<'_, AppState>,
     paths: Vec<String>,
 ) -> Result<String, String> {
+    let _working = update::Working::start()?;
     let cfg = state.config.lock().unwrap().clone();
     tokio::task::spawn_blocking(move || converter::merge_pdfs(&paths, cfg.output_dir.as_deref()))
         .await

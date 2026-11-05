@@ -486,6 +486,53 @@ body {
     margin-right: 2px;
 }
 
+/* ─── Update bar ──────────────────────────────────────────────────────── */
+#update-bar {
+    flex-shrink: 0;
+    height: var(--bar-h);
+    padding: 0 8px 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    border-top: 0.5px solid var(--border);
+}
+
+#update-bar[hidden] {
+    display: none;
+}
+
+#update-text {
+    flex: 1;
+    font-size: 10px;
+    color: var(--text-2);
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#btn-update {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: var(--text);
+    padding: 3px 7px;
+    border-radius: 3px;
+    flex-shrink: 0;
+    transition: background 0.1s;
+}
+
+#btn-update[hidden] {
+    display: none;
+}
+
+#btn-update:hover {
+    background: var(--surface-hi);
+}
+
 /* ─── Bottom bar ──────────────────────────────────────────────────────── */
 #bottom-bar {
     flex-shrink: 0;

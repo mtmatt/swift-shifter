@@ -12,7 +12,7 @@ Press Ctrl + Shift + Space anywhere and a search bar suggests the files you chan
 
 Your files never leave your computer. The app goes online only for these two things:
 
-- **Checking for updates:** at launch, it asks GitHub whether there is a newer version. Updates are signature-checked before they install.
+- **Checking for updates:** at launch, it asks GitHub whether there is a newer version and shows it in the main window. On macOS and Windows you can install it from there, signature-checked; on Linux, or running a plain binary, the button opens the release page to download it.
 - **Typst packages:** when a Typst document has `#import "@preview/…"`, the package is downloaded from the official Typst package registry. Only the package's name is sent, not your document.
 
 The [tools you install yourself](#tools-you-install-yourself) run as you have them, and a LaTeX engine may go online on its own: `.tex → PDF` uses one where it's installed, and Tectonic downloads the TeX files it's missing.
