@@ -186,6 +186,47 @@ fn source_text(pieces: &[Piece]) -> String {
         .collect()
 }
 
+/// Takes from `items[*at..]` what the definition command `name` defines:
+/// what it holds is only read where it's called, which the reader doesn't
+/// do yet (#73), and its text doesn't show here.
+fn skip_definition(items: &mut [Piece], at: &mut usize, unbracketed: &mut usize, name: &str) {
+    let required = Signature {
+        required: 1,
+        ..Signature::default()
+    };
+    let name_of_it = Signature {
+        star: true,
+        ..required
+    };
+    take_arguments(items, at, unbracketed, name_of_it);
+    if name.ends_with("command") {
+        // Its count of arguments, and the default of the first.
+        for _ in 0..2 {
+            let optional = Signature {
+                optional: true,
+                ..Signature::default()
+            };
+            take_arguments(items, at, unbracketed, optional);
+        }
+    } else {
+        // `\def`'s arguments, up to its group, as TeX takes them. With none
+        // in sight, past a `$` that opened math in the parser, say, what's
+        // after it is read on, so that nothing is lost.
+        let text = items[*at..]
+            .iter()
+            .take(MAX_DEFINITION_PARAMETERS)
+            .position(|piece| match piece {
+                Piece::Token(..) => false,
+                Piece::Node(node) => node.kind() != SyntaxKind::ItemCmd,
+            });
+        match text.map(|text| (text, &items[*at + text])) {
+            Some((text, Piece::Node(node))) if node.kind() == SyntaxKind::ItemCurly => *at += text,
+            _ => return,
+        }
+    }
+    take_arguments(items, at, unbracketed, required);
+}
+
 /// The name of `env`, an environment: what its `\begin` names.
 fn environment_name(env: &SyntaxNode) -> String {
     env.first_child()
@@ -286,6 +327,11 @@ impl Reader {
                 }
                 Piece::Token(kind, text) => self.token(kind, &text),
                 Piece::Node(node) => match node.kind() {
+                    SyntaxKind::ItemCmd if DEFINITIONS.contains(&command_name(&node).as_str()) => {
+                        let name = command_name(&node);
+                        skip_definition(&mut items, &mut at, &mut unbracketed, &name);
+                        self.non_space();
+                    }
                     SyntaxKind::ItemCmd => {
                         let name = command_name(&node);
                         let signature = if name == self.verbatim_mark {
@@ -626,6 +672,22 @@ const ITEM: Signature = Signature {
     unstarred_optional: false,
     required: 0,
 };
+
+/// The commands that define others (see [`skip_definition`]).
+const DEFINITIONS: [&str; 7] = [
+    "\\newcommand",
+    "\\renewcommand",
+    "\\providecommand",
+    "\\def",
+    "\\gdef",
+    "\\edef",
+    "\\xdef",
+];
+
+/// How many tokens a `\def`'s arguments are looked for its group past: more
+/// than nine arguments and their delimiters take, and few enough that
+/// definitions with no group don't each read the rest of the document.
+const MAX_DEFINITION_PARAMETERS: usize = 64;
 
 /// `\\`'s: `\\*[1em]`.
 const LINE_BREAK: Signature = Signature {
@@ -1513,6 +1575,36 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    /// A definition shows nothing where it's written, in any of its forms.
+    /// A call isn't read yet: it shows only the groups after it.
+    #[test]
+    fn definitions_show_nothing() {
+        for definition in [
+            "\\newcommand{\\f}{hidden}",
+            "\\newcommand*{\\f}[1][x]{hidden}",
+            "\\renewcommand\\f[2]{hidden}",
+            "\\providecommand{\\f}{hidden}",
+            "\\def\\f{hidden}",
+            "\\def\\f#1.{hidden}",
+            "\\gdef\\f{hidden}",
+            "\\edef\\f{hidden}",
+            "\\xdef\\f{hidden}",
+        ] {
+            let source = format!("a{definition}b");
+            assert_eq!(read(&source).0.blocks, [para(&[text("ab")])], "{source}");
+        }
+        assert_eq!(
+            read("\\newcommand{\\f}[1]{hidden}a\\f b \\f{c}").0.blocks,
+            [para(&[text("ab c")])]
+        );
+        // With no group in sight, what's after it isn't lost.
+        let far = format!("a\\def\\f{}{{b}}", "#".repeat(MAX_DEFINITION_PARAMETERS));
+        for source in ["a\\def\\f#1${hidden}b", "a\\def\\f#1 b", &far] {
+            let blocks = format!("{:?}", read(source).0.blocks);
+            assert!(blocks.contains('b'), "{source}: {blocks}");
+        }
     }
 
     /// Macros aren't expanded: one that expands forever doesn't hang it.
