@@ -94,10 +94,10 @@ impl UpdateInfo {
 }
 
 /// Whether an app running as `exe` from `bundle` updates itself safely.
-/// A release has one `latest.json` entry for all of Linux's packages, which
-/// the last job to finish writes, and the updater writes any package over
-/// an AppImage unchecked, so Linux doesn't. A plain binary (`cargo binstall`)
-/// has no bundle to replace; on macOS `bundle_type` says `App` for one too.
+/// Linux doesn't: nothing yet sees that `latest.json` gives an install its
+/// own package, and the updater writes any package over an AppImage
+/// unchecked. A plain binary (`cargo binstall`) has no bundle to replace;
+/// on macOS `bundle_type` says `App` for one too.
 fn installs_in_place(bundle: Option<BundleType>, exe: &Path) -> bool {
     match bundle {
         Some(BundleType::Msi | BundleType::Nsis) => true,
