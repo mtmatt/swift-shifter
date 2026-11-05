@@ -117,6 +117,9 @@ fn document_body(root: &SyntaxNode) -> Option<SyntaxNode> {
 struct Gathered {
     /// Whether `\tightlist` makes it tight.
     tight: bool,
+    /// The number `start=` in its options gives its first item (enumitem's
+    /// `\begin{enumerate}[start=3]`).
+    start: Option<i64>,
     /// What's before the first `\item`; with none, all it holds.
     before: Vec<Piece>,
     items: Vec<Item>,
@@ -148,10 +151,23 @@ enum ListKind {
 /// or environment left whole, so nothing in it is lost and a command keeps
 /// its argument. `\item[$\boxtimes$]` and `\item[$\square$]` make tasks,
 /// done or not; any other label leads its item's text. `\tightlist` before
-/// the first item makes it tight, as the LaTeX writer writes it.
+/// the first item makes it tight, as the LaTeX writer writes it. Options
+/// after `\begin` are enumitem's: of those, only `start=` shows, in a
+/// writer's numbers, as no writer takes a list's label or spacing. Those
+/// that run code are left to be read, so that what they do isn't lost.
 fn gather(mut items: Vec<Piece>) -> Gathered {
     let mut gathered = Gathered::default();
     let (mut at, mut unbracketed) = (0, 0);
+    if matches!(items.first(), Some(Piece::Node(node)) if node.kind() == SyntaxKind::ItemBegin) {
+        at = 1;
+        let options = take_arguments(&mut items, &mut at, &mut unbracketed, ITEM).optional;
+        let text = options.as_deref().map(options_text).unwrap_or_default();
+        if options_run_code(&text) {
+            at = 1;
+        } else {
+            gathered.start = list_start(&text);
+        }
+    }
     while let Some(piece) = items.get(at).cloned() {
         at += 1;
         let name = match &piece {
@@ -178,6 +194,41 @@ fn gather(mut items: Vec<Piece>) -> Gathered {
         }
     }
     gathered
+}
+
+/// The text of `options`, a list's, without what's in a group, which is an
+/// option's value and may hold anything.
+fn options_text(options: &[Piece]) -> String {
+    let outside_groups: Vec<Piece> = options
+        .iter()
+        .filter(|piece| !matches!(piece, Piece::Node(node) if node.kind() == SyntaxKind::ItemCurly))
+        .cloned()
+        .collect();
+    source_text(&outside_groups)
+}
+
+/// Whether `options`, as [`options_text`] gives them, run code when the
+/// list starts or ends: `before`, `first` and `after`, with their `*` and
+/// `!` forms.
+fn options_run_code(options: &str) -> bool {
+    options.split(',').any(|option| {
+        let key = option.split('=').next().unwrap_or_default().trim();
+        ["before", "first", "after"]
+            .iter()
+            .any(|hook| key.starts_with(hook))
+    })
+}
+
+/// The value of the last `start=` in `options`, as [`options_text`] gives
+/// them, which overrides any before it. With no value, it's 1.
+fn list_start(options: &str) -> Option<i64> {
+    let start = options
+        .rsplit(',')
+        .find(|option| option.split('=').next().unwrap_or_default().trim() == "start")?;
+    match start.split_once('=') {
+        Some((_, value)) => value.trim().parse().ok(),
+        None => Some(1),
+    }
 }
 
 /// Whether `pieces`, an environment's, hold a `\rule` and nothing else.
@@ -643,7 +694,8 @@ impl Reader {
         }
         self.lists += 1;
         if numbered {
-            self.enumerations.push(0);
+            let start = gathered.start.unwrap_or(1);
+            self.enumerations.push(start.saturating_sub(1));
         }
         let outer = std::mem::take(&mut self.blocks);
         // What's before its first item is that item's, so nothing is lost,
@@ -1797,6 +1849,59 @@ mod tests {
             (
                 "\\setcounter{enumi}{4}\\begin{enumerate}\\setcounter{enumii}{4}\\item a\\end{enumerate}",
                 &[numbered(1, false, &[(None, &a)])],
+            ),
+            // enumitem's options show as nothing but their start, which
+            // `\setcounter` still sets over; a label is still an item's.
+            (
+                "\\begin{enumerate}[(a)]\\item a\\end{enumerate}",
+                &[numbered(1, false, &[(None, &a)])],
+            ),
+            (
+                "\\begin{enumerate} [label=(\\alph*), start=4 ,leftmargin=*]\n\\item a\\item b\\end{enumerate}",
+                &[numbered(4, false, &[(None, &a), (None, &b)])],
+            ),
+            (
+                "\\begin{enumerate}[start=4]\\setcounter{enumi}{1}\\item a\\end{enumerate}",
+                &[numbered(2, false, &[(None, &a)])],
+            ),
+            (
+                "\\begin{enumerate}[start=x]\\item a\\end{enumerate}",
+                &[numbered(1, false, &[(None, &a)])],
+            ),
+            // Options that run code are read as text, and what they do holds,
+            // where it's read rather than when they'd run.
+            (
+                "\\begin{enumerate}[before={\\setcounter{enumi}{4}}]\\item a\\end{enumerate}",
+                &[numbered(
+                    5,
+                    false,
+                    &[(None, &[para(&[text("[before=]a")])])],
+                )],
+            ),
+            (
+                "\\begin{enumerate}[after={\\setcounter{enumi}{4}}]\\item a\\end{enumerate}",
+                &[numbered(5, false, &[(None, &[para(&[text("[after=]a")])])])],
+            ),
+            // The last one holds, and one in a group is another's value.
+            (
+                "\\begin{enumerate}[start=2,start=5]\\item a\\end{enumerate}",
+                &[numbered(5, false, &[(None, &a)])],
+            ),
+            (
+                "\\begin{enumerate}[start=4,start]\\item a\\end{enumerate}",
+                &[numbered(1, false, &[(None, &a)])],
+            ),
+            (
+                "\\begin{enumerate}[label={x,start=7,y}]\\item a\\end{enumerate}",
+                &[numbered(1, false, &[(None, &a)])],
+            ),
+            (
+                "\\begin{itemize}[noitemsep]\\item a\\item[x] b\\end{itemize}",
+                &[list(false, &[(None, &a), (None, &[para(&[text("x b")])])])],
+            ),
+            (
+                "\\begin{enumerate}\\item [a]\\end{enumerate}",
+                &[list(false, &[(None, &[para(&[text("a")])])])],
             ),
             // Comments in its arguments are none of them.
             (
