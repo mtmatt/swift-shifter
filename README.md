@@ -56,7 +56,7 @@ PDF output is built in: Typst is part of the app, so a PDF needs no LaTeX instal
 
 - **Documents:** Markdown, plain text, HTML, LaTeX, Typst, PDF and EPUB, to one another. LaTeX input needs pandoc, and PDF input needs pymupdf4llm, or marker where it's turned on in Settings. PDF output is typeset by the built-in Typst.
 - **Images:** PNG, JPEG, WebP, GIF, BMP and TIFF, to one another and to AVIF and PDF, and HEIC/HEIF too on macOS. AVIF is written but not read yet. Converting to GIF needs ffmpeg.
-- **Video:** MP4, MOV, MKV, WebM, AVI and GIF, with ffmpeg.
+- **Video:** MP4, MOV, MKV, WebM and AVI, to one another, to GIF and to audio, with ffmpeg. A GIF can't be converted back to video.
 - **Audio:** MP3, AAC, FLAC, OGG, WAV, OPUS and M4A, with ffmpeg.
 - **Data:** JSON, YAML, TOML and CSV.
 
