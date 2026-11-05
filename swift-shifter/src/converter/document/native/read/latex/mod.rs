@@ -92,8 +92,8 @@ fn read_parsed(source: &str) -> (Document, Option<Warning>) {
     reader.end_paragraph();
     level_headings(&mut reader.blocks);
     let warning = (reader.unlisted > 0).then_some(Warning {
-        one: "list nested too deeply was read as its text",
-        many: "lists nested too deeply were read as their text",
+        one: "list or quote nested too deeply was read as its text",
+        many: "lists or quotes nested too deeply were read as their text",
         count: reader.unlisted,
         line: None,
     });
@@ -126,8 +126,18 @@ struct Item {
     task: Option<bool>,
     /// Whether a label takes the place of its number.
     labelled: bool,
+    /// Its label, which isn't a task's: it leads its text.
+    label: Option<Vec<Piece>>,
     /// What's up to the next.
     content: Vec<Piece>,
+}
+
+/// The environments that are lists.
+#[derive(Clone, Copy, PartialEq)]
+enum ListKind {
+    Itemize,
+    Enumerate,
+    Description,
 }
 
 /// The `\item`s of `items`, a list's environment's, each what's up to the
@@ -151,15 +161,11 @@ fn gather(mut items: Vec<Piece>) -> Gathered {
                 let label = take_arguments(&mut items, &mut at, &mut unbracketed, ITEM).optional;
                 let labelled = label.is_some();
                 let task = label.as_deref().and_then(task);
-                let mut content = Vec::new();
-                if let Some(label) = label.filter(|_| task.is_none()) {
-                    content.extend(label);
-                    content.push(Piece::Token(SyntaxKind::TokenWhiteSpace, " ".into()));
-                }
                 gathered.items.push(Item {
                     task,
                     labelled,
-                    content,
+                    label: label.filter(|_| task.is_none()),
+                    content: Vec::new(),
                 });
             }
             "\\tightlist" if gathered.items.is_empty() => gathered.tight = true,
@@ -170,6 +176,30 @@ fn gather(mut items: Vec<Piece>) -> Gathered {
         }
     }
     gathered
+}
+
+/// Whether `pieces`, an environment's, hold a `\rule` and nothing else.
+fn is_a_rule(pieces: &[Piece]) -> bool {
+    let mut content: Vec<Piece> = pieces
+        .iter()
+        .filter(|piece| match piece {
+            Piece::Token(kind, _) => !matches!(
+                kind,
+                SyntaxKind::TokenWhiteSpace | SyntaxKind::TokenLineBreak | SyntaxKind::TokenComment
+            ),
+            Piece::Node(node) => {
+                !matches!(node.kind(), SyntaxKind::ItemBegin | SyntaxKind::ItemEnd)
+            }
+        })
+        .cloned()
+        .collect();
+    let is_rule = matches!(content.first(), Some(Piece::Node(node))
+        if node.kind() == SyntaxKind::ItemCmd && command_name(node) == "\\rule");
+    let (mut at, mut unbracketed) = (1, 0);
+    is_rule && {
+        take_arguments(&mut content, &mut at, &mut unbracketed, RULE);
+        at == content.len()
+    }
 }
 
 /// Takes the box leading `content`, a numbered item's, as the LaTeX writer
@@ -421,8 +451,11 @@ impl Reader {
                         self.skip_spaces = true;
                     }
                     SyntaxKind::ItemEnv => match environment_name(&node).as_str() {
-                        "itemize" => self.list(&node, false),
-                        "enumerate" => self.list(&node, true),
+                        "itemize" => self.list(&node, ListKind::Itemize),
+                        "enumerate" => self.list(&node, ListKind::Enumerate),
+                        "description" => self.list(&node, ListKind::Description),
+                        "quote" | "quotation" | "verse" => self.quote(&node),
+                        "center" | "flushleft" | "flushright" => self.aligned(&node),
                         _ => self.flow(pieces(&node)),
                     },
                     _ => self.flow(pieces(&node)),
@@ -491,7 +524,9 @@ impl Reader {
             "\\par" => self.end_paragraph(),
             // What a list starts with (see `Reader::list`): elsewhere, it
             // shows nothing.
-            "\\tightlist" => {}
+            // A line, which no writer's text can hold, outside of a block
+            // of its own (see `Reader::aligned`).
+            "\\tightlist" | "\\rule" => {}
             "\\setcounter" => self.set_counter(args),
             // An item that isn't a list's own (see `gather`) is a space in
             // its text, and its groups' text follows.
@@ -535,14 +570,64 @@ impl Reader {
         }
     }
 
-    /// An `itemize` or, `numbered`, `enumerate` environment: a list of its
-    /// `\item`s (see [`gather`]), tight where `\tightlist` makes it so and
-    /// none of its items' blocks would run together written that way (see
-    /// [`loosens`]). An `enumerate` splits into lists where its numbers
-    /// don't follow on: at a `\setcounter`, and around an item a label
-    /// takes the number of, or numbered below 0, which no list writes.
-    /// Past [`MAX_LIST_NESTING`], it's read as its items' text.
-    fn list(&mut self, env: &SyntaxNode, numbered: bool) {
+    /// A `quote`-like environment: a quote of its blocks, if it has any.
+    /// Past [`MAX_LIST_NESTING`], it's read as its text.
+    fn quote(&mut self, env: &SyntaxNode) {
+        self.end_paragraph();
+        let pieces = pieces(env);
+        if self.lists >= MAX_LIST_NESTING {
+            self.unlisted += 1;
+            return self.flow(pieces);
+        }
+        self.lists += 1;
+        let outer = std::mem::take(&mut self.blocks);
+        self.flow(pieces);
+        self.end_paragraph();
+        let content = std::mem::replace(&mut self.blocks, outer);
+        self.lists -= 1;
+        if !content.is_empty() {
+            self.blocks.push(Block::Quote(content));
+        }
+    }
+
+    /// A `center`-like environment: blocks of their own, its alignment
+    /// shown by no writer, or, with only a `\rule` in it, as the LaTeX
+    /// writer writes one, a thematic break.
+    fn aligned(&mut self, env: &SyntaxNode) {
+        self.end_paragraph();
+        let pieces = pieces(env);
+        if is_a_rule(&pieces) {
+            self.blocks.push(Block::ThematicBreak);
+        } else {
+            self.flow(pieces);
+            self.end_paragraph();
+        }
+    }
+
+    /// `label`, set in bold.
+    fn strong(&mut self, label: Vec<Piece>) {
+        let outer = std::mem::take(&mut self.inlines);
+        let in_argument = std::mem::replace(&mut self.in_argument, true);
+        let emphasized = std::mem::take(&mut self.emphasized);
+        self.flow(label);
+        self.emphasized = emphasized;
+        self.in_argument = in_argument;
+        let content = trimmed(std::mem::replace(&mut self.inlines, outer));
+        if !content.is_empty() {
+            self.inline(Inline::Strong(content));
+        }
+    }
+
+    /// An `itemize`, `enumerate` or `description` environment: a list of
+    /// its `\item`s (see [`gather`]), tight where `\tightlist` makes it so
+    /// and none of its items' blocks would run together written that way
+    /// (see [`loosens`]). An `enumerate` splits into lists where its
+    /// numbers don't follow on: at a `\setcounter`, and around an item a
+    /// label takes the number of, or numbered below 0, which no list
+    /// writes. A `description`'s labels are its terms, in bold. Past
+    /// [`MAX_LIST_NESTING`], it's read as its items' text.
+    fn list(&mut self, env: &SyntaxNode, kind: ListKind) {
+        let numbered = kind == ListKind::Enumerate;
         self.end_paragraph();
         let pieces = pieces(env);
         if self.lists >= MAX_LIST_NESTING {
@@ -577,6 +662,14 @@ impl Reader {
             } else {
                 None
             };
+            if let Some(label) = item.label {
+                if kind == ListKind::Description {
+                    self.strong(label);
+                } else {
+                    self.flow(label);
+                }
+                self.token(SyntaxKind::TokenWhiteSpace, " ");
+            }
             self.flow(item.content);
             self.end_paragraph();
             let follows_on = lists.last().is_some_and(|list| match (list.start, start) {
@@ -770,6 +863,14 @@ const ITEM: Signature = Signature {
     required: 0,
 };
 
+/// `\rule[raise]{width}{height}`'s.
+const RULE: Signature = Signature {
+    star: false,
+    optional: true,
+    unstarred_optional: false,
+    required: 2,
+};
+
 /// `\setcounter{counter}{value}`'s.
 const SET_COUNTER: Signature = Signature {
     star: false,
@@ -816,6 +917,7 @@ fn signature(name: &str) -> Option<Signature> {
         }),
         "\\par" | "\\" | "\\tightlist" => Some(Signature::default()),
         "\\setcounter" => Some(SET_COUNTER),
+        "\\rule" => Some(RULE),
         _ if ESCAPED.contains(&name) => Some(Signature::default()),
         _ if SECTIONS.contains(&name) => Some(Signature {
             star: true,
@@ -1791,6 +1893,132 @@ mod tests {
         }
     }
 
+    /// A `description`'s terms are bold; there's no list of terms to put
+    /// them in.
+    #[test]
+    fn description_lists_have_their_terms_in_bold() {
+        let strong = |inlines: &[Inline]| Inline::Strong(inlines.to_vec());
+        assert_eq!(
+            read("\\begin{description}\\item[Term] means\\item[\\emph{Other}] else\\item plain\\end{description}")
+                .0
+                .blocks,
+            [list(
+                false,
+                &[
+                    (None, &[para(&[strong(&[text("Term")]), text(" means")])]),
+                    (
+                        None,
+                        &[para(&[strong(&[emph(&[text("Other")])]), text(" else")])]
+                    ),
+                    (None, &[para(&[text("plain")])]),
+                ],
+            )]
+        );
+        // An empty one is no term.
+        assert_eq!(
+            read("\\begin{description}\\item[] a\\end{description}")
+                .0
+                .blocks,
+            [list(false, &[(None, &[para(&[text("a")])])])]
+        );
+    }
+
+    /// Each row: the blocks the source reads as.
+    #[test]
+    fn quotes_and_alignments_are_blocks_of_their_own() {
+        let a = para(&[text("a")]);
+        let b = para(&[text("b")]);
+        let c = para(&[text("c")]);
+        let cases: Vec<(&str, Vec<Block>)> = vec![
+            (
+                "a\\begin{quote}b\\end{quote}c",
+                vec![a.clone(), Block::Quote(vec![b.clone()]), c.clone()],
+            ),
+            (
+                "\\begin{quotation}a\n\nb\\end{quotation}",
+                vec![Block::Quote(vec![a.clone(), b.clone()])],
+            ),
+            (
+                "\\begin{verse}a\\end{verse}",
+                vec![Block::Quote(vec![a.clone()])],
+            ),
+            // Nested, and with blocks in it.
+            (
+                "\\begin{quote}\\begin{quote}a\\end{quote}\\section{b}\\end{quote}",
+                vec![Block::Quote(vec![
+                    Block::Quote(vec![a.clone()]),
+                    heading(1, &[text("b")]),
+                ])],
+            ),
+            // Empty, it's none.
+            ("\\begin{quote}  \\end{quote}", vec![]),
+            // Alignment shows in no writer: the blocks stay apart.
+            (
+                "a\\begin{center}b\\end{center}c",
+                vec![a.clone(), b.clone(), c.clone()],
+            ),
+            (
+                "a\\begin{flushleft}b\\end{flushleft}\\begin{flushright}c\\end{flushright}",
+                vec![a.clone(), b.clone(), c.clone()],
+            ),
+            // A rule on its own is a break.
+            (
+                "a\\begin{center}\n\\rule{0.5\\linewidth}{0.5pt}\n\\end{center}b",
+                vec![a.clone(), Block::ThematicBreak, b.clone()],
+            ),
+            (
+                "\\begin{center}\\rule[1pt]{1cm}{2pt}\\end{center}",
+                vec![Block::ThematicBreak],
+            ),
+            // Among text, it shows nothing, its arguments none of the text.
+            (
+                "\\begin{center}a\\rule{1cm}{2pt}\\end{center}",
+                vec![a.clone()],
+            ),
+            ("a\\rule{1cm}{2pt}", vec![a.clone()]),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
+    }
+
+    /// The quotes and rules the LaTeX writer writes read back as they were.
+    #[test]
+    fn our_latex_quotes_and_rules_read_back() {
+        use crate::converter::document::native::{read::markdown, write};
+        let doc = markdown::read("> a\n>\n> > b\n\n---\n\n> c\n");
+        let tex = write::latex::write(&doc);
+        assert_eq!(read(&tex).0.blocks, doc.blocks, "{tex}");
+    }
+
+    /// Past `MAX_LIST_NESTING`, quotes keep their text, as lists do.
+    #[test]
+    fn deep_quotes_are_read_as_text_past_the_nesting_bound() {
+        const DEPTH: usize = 20_000;
+        let source = format!(
+            "{}x{}",
+            "\\begin{quote}".repeat(DEPTH),
+            "\\end{quote}".repeat(DEPTH)
+        );
+        let warning = std::thread::Builder::new()
+            .stack_size(2 << 20)
+            .spawn(move || {
+                let (doc, warning) = read(&source);
+                assert!(format!("{:?}", doc.blocks).contains('x'));
+                warning
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        assert_eq!(
+            warning.unwrap().message(),
+            format!(
+                "{} lists or quotes nested too deeply were read as their text",
+                DEPTH - MAX_LIST_NESTING
+            )
+        );
+    }
+
     /// Lists nested 20,000 deep keep their text, nested no deeper than
     /// `MAX_LIST_NESTING`, so the document drops on the stack conversions
     /// run on.
@@ -1823,7 +2051,7 @@ mod tests {
         assert_eq!(
             warning.unwrap().message(),
             format!(
-                "{} lists nested too deeply were read as their text",
+                "{} lists or quotes nested too deeply were read as their text",
                 DEPTH - MAX_LIST_NESTING
             )
         );
