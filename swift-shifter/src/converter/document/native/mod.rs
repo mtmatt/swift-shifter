@@ -3038,6 +3038,23 @@ mod tests {
         assert_latex_compiles(&tex);
     }
 
+    /// typst takes `+` items in a row for one list, and goes on counting,
+    /// whatever `#[…]` they're in, unless a `#set` sets them apart.
+    #[test]
+    fn numbered_lists_in_a_row_count_from_their_own_starts_in_a_pdf() {
+        let dir = tempfile::tempdir().unwrap();
+        let md = dir.path().join("lists.md");
+        std::fs::write(&md, "1. a\n\n1) b\n\n1. c\n").unwrap();
+        let pdf = dir.path().join("lists.pdf");
+        convert(&md, "pdf", &pdf).unwrap();
+        let Some(text) = pdf_text(&pdf) else {
+            return;
+        };
+        // The page's number comes after them.
+        let words: Vec<&str> = text.split_whitespace().take(6).collect();
+        assert_eq!(words, ["1.", "a", "1.", "b", "1.", "c"], "{text}");
+    }
+
     /// The text of `pdf`, as pdftotext reads it. `None` where pdftotext
     /// isn't installed (see [`installed`]), or there's no PDF (tectonic
     /// wasn't run).

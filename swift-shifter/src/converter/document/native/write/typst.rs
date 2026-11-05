@@ -266,6 +266,28 @@ impl BlockWriter for Writer<'_> {
             }
         })
     }
+
+    /// As the trait's, but a numbered list starting at 1 right after another
+    /// says so: typst reads `+` items in a row as one list, blank lines or
+    /// a `#[…]` between them or not, unless a `#set` sets them apart.
+    fn blocks_joined(&self, blocks: &[Block], sep: &str) -> String {
+        let numbered = |block: &Block| matches!(block, Block::List(list) if list.start.is_some());
+        let from_one = |block: &Block| matches!(block, Block::List(list) if list.start == Some(1));
+        let mut parts = Vec::new();
+        let mut previous = None;
+        for block in blocks {
+            let Some(text) = self.block(block) else {
+                continue;
+            };
+            parts.push(if previous.is_some_and(numbered) && from_one(block) {
+                format!("#[\n#set enum(start: 1)\n{text}\n]")
+            } else {
+                text
+            });
+            previous = Some(block);
+        }
+        parts.join(sep)
+    }
 }
 
 /// Where inline content is written: headings must stay on one line.
@@ -668,6 +690,21 @@ mod tests {
         assert!(body("| a | b |\n|:-|-:|\n| 1 | 2 |\n").contains(
             "columns: 2,\n  align: (left, right,),\n  table.header([a], [b]),\n  [1], [2],"
         ));
+    }
+
+    /// Two lists in a row each count from their own start; a lone one stays
+    /// bare.
+    #[test]
+    fn numbered_lists_in_a_row_stay_apart() {
+        assert_eq!(
+            body("1. a\n\n1) b\n"),
+            "+ a\n\n#[\n#set enum(start: 1)\n+ b\n]"
+        );
+        assert_eq!(
+            body("1. a\n\n7) b\n"),
+            "+ a\n\n#[\n#set enum(start: 7)\n+ b\n]"
+        );
+        assert_eq!(body("1. a\n\n- b\n\n1. c\n"), "+ a\n\n- b\n\n+ c");
     }
 
     #[test]
