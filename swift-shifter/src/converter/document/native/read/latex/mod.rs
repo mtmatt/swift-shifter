@@ -237,29 +237,67 @@ fn task(label: &[Piece]) -> Option<bool> {
 
 /// The source `pieces` were parsed from, without the braces of the group
 /// they're an argument's (see [`take_arguments`]), or comments, with the
-/// line's end and the next line's spaces each one takes.
+/// line's end and the next line's spaces each one takes: the letters after
+/// a comment stay apart from a control word before it.
 fn source_text(pieces: &[Piece]) -> String {
-    let mut text = String::new();
-    let mut after_comment = false;
+    let mut tokens = Vec::new();
     for piece in pieces {
         match piece {
-            Piece::Token(SyntaxKind::TokenComment, _) => after_comment = true,
-            Piece::Token(SyntaxKind::TokenLineBreak | SyntaxKind::TokenWhiteSpace, _)
-                if after_comment => {}
-            Piece::Token(SyntaxKind::TokenLBrace | SyntaxKind::TokenRBrace, _) => {
-                after_comment = false;
-            }
-            Piece::Token(_, token) => {
-                after_comment = false;
-                text.push_str(token);
-            }
-            Piece::Node(node) => {
-                after_comment = false;
-                text.push_str(&node.text().to_string());
+            Piece::Token(SyntaxKind::TokenLBrace | SyntaxKind::TokenRBrace, _) => {}
+            Piece::Token(kind, token) => tokens.push((*kind, token.clone())),
+            Piece::Node(node) => push_source_tokens(node, &mut tokens),
+        }
+    }
+    let mut text = String::new();
+    let mut after_comment = false;
+    let mut after_control_word = false;
+    for (kind, token) in tokens {
+        match kind {
+            SyntaxKind::TokenComment => after_comment = true,
+            SyntaxKind::TokenLineBreak | SyntaxKind::TokenWhiteSpace if after_comment => {}
+            _ => {
+                let letter = token.starts_with(|c: char| c.is_ascii_alphabetic());
+                if std::mem::take(&mut after_comment) && letter && after_control_word {
+                    text.push(' ');
+                }
+                // `\langle` after `\left` is a symbol to the parser.
+                after_control_word = matches!(
+                    kind,
+                    SyntaxKind::ClauseCommandName | SyntaxKind::TokenCommandSym
+                ) && token.ends_with(|c: char| c.is_ascii_alphabetic());
+                text.push_str(&token);
             }
         }
     }
     text
+}
+
+/// Appends the tokens of `node`'s source to `tokens`. The tree keeps only
+/// the name of an environment's `\begin` and `\end`. What `\iffalse` hides
+/// shows nothing, and takes the spaces after its `\fi`, as a comment does.
+fn push_source_tokens(node: &SyntaxNode, tokens: &mut Vec<(SyntaxKind, String)>) {
+    let delimiter = match node.kind() {
+        SyntaxKind::ItemBegin => Some("begin"),
+        SyntaxKind::ItemEnd => Some("end"),
+        SyntaxKind::ItemBlockComment | SyntaxKind::ItemTypstCode => {
+            tokens.push((SyntaxKind::TokenComment, String::new()));
+            return;
+        }
+        _ => None,
+    };
+    if let Some(delimiter) = delimiter {
+        let name = node.text();
+        tokens.push((SyntaxKind::TokenWord, format!("\\{delimiter}{{{name}}}")));
+        return;
+    }
+    for element in node.children_with_tokens() {
+        match element {
+            SyntaxElement::Node(node) => push_source_tokens(&node, tokens),
+            SyntaxElement::Token(token) => {
+                tokens.push((token.kind(), token.text().to_string()));
+            }
+        }
+    }
 }
 
 /// Takes from `items[*at..]` what the definition command `name` defines:
@@ -458,8 +496,20 @@ impl Reader {
                         "description" => self.list(&node, ListKind::Description),
                         "quote" | "quotation" | "verse" => self.quote(&node),
                         "center" | "flushleft" | "flushright" => self.aligned(&node),
+                        name @ ("math" | "displaymath") => {
+                            let mut inside = pieces(&node);
+                            inside.retain(|piece| {
+                                !matches!(piece, Piece::Node(node)
+                                    if matches!(node.kind(), SyntaxKind::ItemBegin | SyntaxKind::ItemEnd))
+                            });
+                            self.math(&source_text(&inside), name == "displaymath");
+                        }
+                        name if MATH_ENVIRONMENTS.contains(&name.trim_end_matches('*')) => {
+                            self.math(&source_text(&[Piece::Node(node.clone())]), true);
+                        }
                         _ => self.flow(pieces(&node)),
                     },
+                    SyntaxKind::ItemFormula => self.formula(&node),
                     _ => self.flow(pieces(&node)),
                 },
             }
@@ -529,6 +579,11 @@ impl Reader {
             // A line, which no writer's text can hold, outside of a block
             // of its own (see `Reader::aligned`).
             "\\tightlist" | "\\rule" => {}
+            "\\ensuremath" => {
+                if let Some(arg) = args.first() {
+                    self.math(&source_text(arg), false);
+                }
+            }
             "\\setcounter" => self.set_counter(args),
             // An item that isn't a list's own (see `gather`) is a space in
             // its text, and its groups' text follows.
@@ -570,6 +625,85 @@ impl Reader {
         {
             *counter = value;
         }
+    }
+
+    /// `$…$`, `\(…\)`, `$$…$$` or `\[…\]`: its TeX, as it's written. One
+    /// that doesn't end takes the rest of what it's in, as the parser reads
+    /// it, so nothing is lost.
+    fn formula(&mut self, formula: &SyntaxNode) {
+        let mut pieces = pieces(formula);
+        let display = matches!(pieces.first(),
+            Some(Piece::Token(_, open)) if open == "$$" || open == "\\[");
+        if !pieces.is_empty() {
+            pieces.remove(0);
+        }
+        if matches!(
+            pieces.last(),
+            Some(Piece::Token(
+                SyntaxKind::TokenDollar | SyntaxKind::TokenEndMath,
+                _
+            ))
+        ) {
+            pieces.pop();
+        }
+        self.math(&source_text(&pieces), display);
+    }
+
+    /// Math, as TeX: a block of its own if it's `display`, but in an
+    /// argument, which no block goes in. Empty, it shows nothing.
+    fn math(&mut self, tex: &str, display: bool) {
+        self.non_space();
+        let trimmed = tex.trim_end();
+        // A space that a backslash makes a control space is the formula's.
+        let backslashes = trimmed.len() - trimmed.trim_end_matches('\\').len();
+        let space = tex[trimmed.len()..].chars().next();
+        let tex = match space {
+            Some(space) if backslashes % 2 == 1 => &tex[..trimmed.len() + space.len_utf8()],
+            _ => trimmed,
+        };
+        let tex = self.with_verbatims(tex.trim_start());
+        if tex.is_empty() {
+            return;
+        }
+        if display && !self.in_argument {
+            self.end_paragraph();
+            self.blocks.push(Block::Math(tex));
+        } else {
+            self.inline(Inline::Math(tex));
+        }
+    }
+
+    /// `tex` with the verbatim text its placeholders stand for (see
+    /// [`verbatim::cut`]) back in it, each a `\verb`.
+    fn with_verbatims(&self, tex: &str) -> String {
+        let mut out = String::new();
+        let mut rest = tex;
+        while let Some(at) = rest.find(&self.verbatim_mark) {
+            let after = &rest[at + self.verbatim_mark.len()..];
+            let placeholder = after.strip_prefix('{').and_then(|inside| {
+                let (number, _) = inside.split_once('}')?;
+                let index: usize = number.trim_end().parse().ok()?;
+                let code = self.verbatims.get(index)?;
+                Some((code, number.len() + 2))
+            });
+            out.push_str(&rest[..at]);
+            let Some((code, length)) = placeholder else {
+                // A command of the source's, whose name only starts as the
+                // mark does.
+                out.push_str(&self.verbatim_mark);
+                rest = after;
+                continue;
+            };
+            let (Verbatim::Inline(code) | Verbatim::Block(code)) = code;
+            match ('!'..='~').find(|c| !c.is_alphanumeric() && *c != '*' && !code.contains(*c)) {
+                Some(delimiter) => out.push_str(&format!("\\verb{delimiter}{code}{delimiter}")),
+                // No `\verb` can hold it.
+                None => out.push_str(code),
+            }
+            rest = &after[length..];
+        }
+        out.push_str(rest);
+        out
     }
 
     /// A `quote`-like environment: a quote of its blocks, if it has any.
@@ -884,6 +1018,12 @@ const SET_COUNTER: Signature = Signature {
 /// The counters of `enumerate`s, from the outermost in.
 const ENUMERATION_COUNTERS: [&str; 4] = ["enumi", "enumii", "enumiii", "enumiv"];
 
+/// The environments that are a formula, with their `\begin` and `\end`, as
+/// writers take them; each has a starred form too.
+const MATH_ENVIRONMENTS: [&str; 7] = [
+    "equation", "align", "alignat", "flalign", "gather", "multline", "eqnarray",
+];
+
 /// The commands that define others (see [`skip_definition`]).
 const DEFINITIONS: [&str; 7] = [
     "\\newcommand",
@@ -913,7 +1053,7 @@ const LINE_BREAK: Signature = Signature {
 /// Those that take nothing leave the groups after them to be read on.
 fn signature(name: &str) -> Option<Signature> {
     match name {
-        "\\emph" => Some(Signature {
+        "\\emph" | "\\ensuremath" => Some(Signature {
             required: 1,
             ..Signature::default()
         }),
@@ -1893,6 +2033,142 @@ mod tests {
             let written = write::markdown::write(&doc);
             assert_eq!(markdown::read(&written).blocks, doc.blocks, "{written}");
         }
+    }
+
+    /// Each row: the blocks the source reads as.
+    #[test]
+    fn math_is_kept_as_tex() {
+        let inline = |tex: &str| Inline::Math(tex.to_string());
+        let display = |tex: &str| Block::Math(tex.to_string());
+        let a = para(&[text("a")]);
+        let b = para(&[text("b")]);
+        let cases: Vec<(&str, Vec<Block>)> = vec![
+            (
+                "a $x_1$ b \\(y\\) c",
+                vec![para(&[
+                    text("a "),
+                    inline("x_1"),
+                    text(" b "),
+                    inline("y"),
+                    text(" c"),
+                ])],
+            ),
+            // Display math is a block of its own, the text around it two.
+            ("a\\[x\\]b", vec![a.clone(), display("x"), b.clone()]),
+            ("a$$ x $$b", vec![a.clone(), display("x"), b.clone()]),
+            ("\\[\nx % why\n  y\n\\]", vec![display("x y")]),
+            // Environments keep their `\begin` and `\end`, inside formulas
+            // too, which the tree doesn't hold.
+            (
+                "a\\begin{align*}\nx &= y \\\\\nz\n\\end{align*}b",
+                vec![
+                    a.clone(),
+                    display("\\begin{align*}\nx &= y \\\\\nz\n\\end{align*}"),
+                    b.clone(),
+                ],
+            ),
+            (
+                "\\begin{equation}\\begin{split}x\\end{split}\\end{equation}",
+                vec![display(
+                    "\\begin{equation}\\begin{split}x\\end{split}\\end{equation}",
+                )],
+            ),
+            (
+                "$\\begin{aligned}[t]x\\end{aligned}$",
+                vec![para(&[inline("\\begin{aligned}[t]x\\end{aligned}")])],
+            ),
+            (
+                "\\begin{gather}x\\end{gather}",
+                vec![display("\\begin{gather}x\\end{gather}")],
+            ),
+            (
+                "\\begin{multline*}x\\end{multline*}",
+                vec![display("\\begin{multline*}x\\end{multline*}")],
+            ),
+            // These two say no more than their delimiters do.
+            (
+                "\\begin{displaymath}x\\end{displaymath}",
+                vec![display("x")],
+            ),
+            ("\\begin{math}x\\end{math}", vec![para(&[inline("x")])]),
+            ("\\ensuremath{x^2}", vec![para(&[inline("x^2")])]),
+            // What's hidden stays so, verbatim text is what it was, and a
+            // comment doesn't join what's around it.
+            ("$a\\iffalse hidden\\fi b$", vec![para(&[inline("ab")])]),
+            (
+                "$\\text{a\\iffalse hidden\\fi b}$",
+                vec![para(&[inline("\\text{ab}")])],
+            ),
+            (
+                "$\\alpha\\iffalse x\\fi b$",
+                vec![para(&[inline("\\alpha b")])],
+            ),
+            // A control space at the end is the formula's.
+            ("$x\\ $", vec![para(&[inline("x\\ ")])]),
+            ("$x\\\\ $", vec![para(&[inline("x\\\\")])]),
+            // Of however many bytes.
+            ("$x\\\u{3000}$", vec![para(&[inline("x\\\u{3000}")])]),
+            ("$x\\\u{a0} $", vec![para(&[inline("x\\\u{a0}")])]),
+            // Side by side, each is a formula, and text after a display
+            // formula starts a paragraph of its own.
+            ("$x$$y$", vec![para(&[inline("x"), inline("y")])]),
+            ("$x$$$y$$", vec![para(&[inline("x")]), display("y")]),
+            ("\\[x\\] b", vec![display("x"), b.clone()]),
+            ("$\\verb|x%y|$", vec![para(&[inline("\\verb!x%y!")])]),
+            ("$\\verb!x|y!z$", vec![para(&[inline("\\verb!x|y!z")])]),
+            ("$\\verb;x|!y;$", vec![para(&[inline("\\verb\"x|!y\"")])]),
+            (
+                "$\\SwiftShifterVerbatimOther{x}$",
+                vec![para(&[inline("\\SwiftShifterVerbatimOther{x}")])],
+            ),
+            (
+                "\\begin{equation}\\verb|x|\\end{equation}",
+                vec![display("\\begin{equation}\\verb!x!\\end{equation}")],
+            ),
+            ("$\\alpha% why\n b$", vec![para(&[inline("\\alpha b")])]),
+            (
+                "$\\left\\langle% why\n b\\right\\rangle$",
+                vec![para(&[inline("\\left\\langle b\\right\\rangle")])],
+            ),
+            ("$x% why\n b$", vec![para(&[inline("xb")])]),
+            ("$\\\\a% why\n b$", vec![para(&[inline("\\\\ab")])]),
+            // A formula in text in a formula is of it.
+            ("$\\text{a $b$}$", vec![para(&[inline("\\text{a $b$}")])]),
+            // In an argument, no block goes.
+            (
+                "\\section{a \\[x\\]}",
+                vec![heading(1, &[text("a "), inline("x")])],
+            ),
+            ("\\emph{$x$}", vec![para(&[emph(&[inline("x")])])]),
+            // Empty, it's none; unended, it takes what's left, kept.
+            ("a$$$$b", vec![para(&[text("ab")])]),
+            ("a$x", vec![para(&[text("a"), inline("x")])]),
+            // Escaped, it's a dollar.
+            ("\\$5", vec![para(&[text("$5")])]),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
+    }
+
+    /// The formulas the LaTeX writer writes read back as they were.
+    #[test]
+    fn our_latex_math_reads_back() {
+        use crate::converter::document::native::{read::markdown, write};
+        let doc = markdown::read(
+            "An $x^2$ here.\n\n$$\ny = 1\n$$\n\n$$\n\\begin{align}\na &= b\n\\end{align}\n$$\n",
+        );
+        let tex = write::latex::write(&doc);
+        // Markdown keeps a display formula's line ends; LaTeX has none.
+        let expected: Vec<Block> = doc
+            .blocks
+            .into_iter()
+            .map(|block| match block {
+                Block::Math(tex) => Block::Math(tex.trim().to_string()),
+                other => other,
+            })
+            .collect();
+        assert_eq!(read(&tex).0.blocks, expected, "{tex}");
     }
 
     /// A `description`'s terms are bold; there's no list of terms to put
