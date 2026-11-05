@@ -65,17 +65,14 @@ pub fn edges() -> Vec<Edge> {
         })
     };
 
-    // ---- Raster image inputs (incl. avif) ----
-    let img_inputs: &[&str] = &["png", "jpg", "webp", "bmp", "tiff", "gif", "avif"];
-    for &from in img_inputs {
+    // ---- Raster image inputs; AVIF is written only (see `write_only`) ----
+    for &from in IMG_RASTER {
         for &to in IMG_RASTER {
             if to != from {
                 push(from, to, if to == "jpg" { 4 } else { 2 }, Always);
             }
         }
-        if from != "avif" {
-            push(from, "avif", 4, Always);
-        }
+        push(from, "avif", 4, Always);
         push(from, "heic", 4, MacOnly);
         push(from, "pdf", 6, Always);
     }
@@ -202,13 +199,6 @@ pub fn route_hop(from: &str, to: &str) -> Option<Hop> {
             "png" | "jpg" | "webp" | "bmp" | "tiff" => Some(ImageGeneric),
             _ => None,
         },
-        "avif" => match to {
-            "pdf" => Some(ImageRaster),
-            "heic" => Some(ImageToHeic),
-            "gif" => Some(ImageToGif),
-            "png" | "jpg" | "webp" | "bmp" | "tiff" => Some(ImageGeneric),
-            _ => None,
-        },
         "heic" => match to {
             "pdf" => Some(ImageRaster),
             "jpg" | "png" | "tiff" | "gif" | "bmp" => Some(HeicInput),
@@ -330,10 +320,18 @@ pub fn dropped(format: &str) -> Option<&'static str> {
     )
 }
 
+/// Why a file of `format` can't be read, for a format the app writes but
+/// doesn't read: `image` is built with no AVIF decoder, as the one it has
+/// needs dav1d, a C library (#195).
+pub fn write_only(format: &str) -> Option<&'static str> {
+    (normalize_ext(format) == "avif")
+        .then_some("AVIF files can't be read yet: Swift Shifter only writes them")
+}
+
 /// What a file of `ext` gets when nothing converts it: why, for a format
-/// the app dropped (see [`dropped`]).
+/// the app dropped or only writes (see [`dropped`], [`write_only`]).
 pub fn unsupported_file(ext: &str) -> String {
-    match dropped(ext) {
+    match dropped(ext).or_else(|| write_only(ext)) {
         Some(why) => why.to_string(),
         None => format!("Unsupported file type: .{ext}"),
     }

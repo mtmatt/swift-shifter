@@ -103,10 +103,6 @@ fn test_detect_output_formats_snapshot() {
             "/x.tif",
             &["png", "jpg", "webp", "avif", "gif", "bmp", "heic", "pdf"],
         ),
-        (
-            "/x.avif",
-            &["png", "jpg", "webp", "gif", "bmp", "tiff", "heic", "pdf"],
-        ),
         ("/x.heic", &["jpg", "png", "tiff", "gif", "bmp", "pdf"]),
         ("/x.heif", &["jpg", "png", "tiff", "gif", "bmp", "pdf"]),
         (
@@ -210,6 +206,28 @@ fn test_find_path_multi_hop_png_to_epub() {
             w[1]
         );
     }
+}
+
+/// Regression for #195: AVIF is written but can't be decoded. A `.avif`
+/// file says so and nothing routes from it, and images still convert to it.
+#[test]
+fn test_avif_is_an_output_only() {
+    use crate::converter::graph::{detect_with_chains, edges, find_path};
+    let why = "AVIF files can't be read yet";
+    for err in [
+        crate::converter::detect_output_formats("/x.avif").unwrap_err(),
+        detect_with_chains("/x.AVIF").unwrap_err(),
+        crate::converter::refuse_dropped("avif", "png").unwrap_err(),
+    ] {
+        assert!(err.starts_with(why), "{err}");
+    }
+    assert!(crate::converter::refuse_dropped("png", "avif").is_ok());
+    assert!(find_path("avif", "png").is_none());
+    assert!(edges().iter().all(|e| e.from != "avif"));
+    assert_eq!(
+        find_path("png", "avif").unwrap(),
+        ["png".to_string(), "avif".to_string()]
+    );
 }
 
 /// Regression for #133: MOBI went with Calibre. A `.mobi` file, or asking
