@@ -21,13 +21,13 @@ The [tools you install yourself](#tools-you-install-yourself) run as you have th
 
 Get the latest version from [Releases](https://github.com/mtmatt/swift-shifter/releases):
 
-| Platform | File                                     |
-| -------- | ---------------------------------------- |
-| macOS    | `.dmg` (Apple silicon)                   |
-| Windows  | `.msi`                                   |
-| Linux    | `.deb` (Debian, Ubuntu), `.rpm` (Fedora) |
+| Platform | File                                                           |
+| -------- | -------------------------------------------------------------- |
+| macOS    | `.dmg` (Apple silicon)                                         |
+| Windows  | `.msi`, or the `-setup.exe` installer                          |
+| Linux    | `.deb` (Debian, Ubuntu), `.rpm` (Fedora), `.AppImage` (others) |
 
-Each release also has the bare `swift-shifter` binary for each platform, as a `.tar.gz` or `.zip`.
+Each release also has the bare `swift-shifter` binary for each platform, as a `.tar.gz` or `.zip`. The `.app.tar.gz`, `.sig` and `latest.json` files are for the app's own updates.
 
 If your system warns about the app the first time you open it:
 
