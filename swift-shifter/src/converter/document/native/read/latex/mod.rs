@@ -478,6 +478,16 @@ impl Macro {
     /// `\newcommand{\be}{\begin{equation}}` would need what's after its
     /// call, which the parser has read without it.
     fn new(pieces: Vec<Piece>) -> Option<Macro> {
+        // The braces of its definition's argument are no part of it: after
+        // a last `\\`, the `}` would be a table's next row.
+        let pieces = match pieces.as_slice() {
+            [
+                Piece::Token(SyntaxKind::TokenLBrace, _),
+                inside @ ..,
+                Piece::Token(SyntaxKind::TokenRBrace, _),
+            ] => inside.to_vec(),
+            _ => pieces,
+        };
         let source = source_text(&pieces);
         // A `\\` ends a line, and what's after it isn't escaped.
         let unescaped = source.replace("\\\\", "");
@@ -507,6 +517,16 @@ impl Macro {
             nesting: nesting_bound(&source),
         })
     }
+}
+
+/// Whether `piece` is a definition, or holds one.
+fn holds_definition(piece: &Piece) -> bool {
+    let Piece::Node(node) = piece else {
+        return false;
+    };
+    node.descendants().any(|node| {
+        node.kind() == SyntaxKind::ItemCmd && DEFINITIONS.contains(&command_name(&node).as_str())
+    })
 }
 
 /// Takes from `items[*at..]` what the definition command `name` defines,
@@ -1205,6 +1225,75 @@ impl Reader {
         }
     }
 
+    /// `items`, an environment's, with the macros called among them spliced
+    /// in, and whether any was. A table's and a list's rows, cells and items
+    /// are found before what's in them is read, and a macro can hold those.
+    /// What's read inside them doesn't splice again, as it's macros' text at
+    /// any depth, which [`Reader::expand`] bounds as it reads.
+    fn spliced(&mut self, items: Vec<Piece>) -> (Vec<Piece>, bool) {
+        if self.expansion_depth > 0 || self.definitions.is_empty() {
+            return (items, false);
+        }
+        let left = self.expansion_left;
+        let mut spliced = Vec::with_capacity(items.len());
+        self.splice(&items, &mut spliced, 0);
+        let any = self.expansion_left != left;
+        (spliced, any)
+    }
+
+    /// Appends `items` to `spliced`, with macros' pieces for their calls, as
+    /// [`Reader::expand`] would read them, and the spaces after each gone.
+    /// A call that's a command's argument stays, for the command to take
+    /// whole. A definition among them, in a group too, may change what's
+    /// called after it, so from one on they're left to be read in order, and
+    /// this says so with `false`.
+    fn splice(&mut self, items: &[Piece], spliced: &mut Vec<Piece>, depth: usize) -> bool {
+        let mut at = 0;
+        // How many of what's next are a command's arguments.
+        let mut arguments = 0;
+        while let Some(piece) = items.get(at) {
+            at += 1;
+            if holds_definition(piece) {
+                spliced.extend_from_slice(&items[at - 1..]);
+                return false;
+            }
+            if arguments > 0 {
+                let space = matches!(
+                    piece,
+                    Piece::Token(SyntaxKind::TokenWhiteSpace | SyntaxKind::TokenLineBreak, _)
+                );
+                arguments -= usize::from(!space);
+                spliced.push(piece.clone());
+                continue;
+            }
+            let name = match piece {
+                Piece::Node(node) if node.kind() == SyntaxKind::ItemCmd => command_name(node),
+                _ => String::new(),
+            };
+            arguments = signature(&name).map_or(0, |signature| signature.required);
+            let body = self.definitions.get(&name).cloned().flatten();
+            let Some(body) = body.filter(|body| self.can_expand(body, depth)) else {
+                spliced.push(piece.clone());
+                continue;
+            };
+            self.expansion_left -= body.length + 1;
+            if !self.splice(&body.pieces, spliced, depth + 1) {
+                spliced.extend_from_slice(&items[at..]);
+                return false;
+            }
+            at = past_spaces(items, at);
+        }
+        true
+    }
+
+    /// Whether `body` may be read `depth` macros deep (see
+    /// [`Reader::expand`]).
+    fn can_expand(&self, body: &Macro, depth: usize) -> bool {
+        depth < MAX_EXPANSION_DEPTH
+            && body.length < self.expansion_left
+            && body.nesting <= self.nesting_left
+    }
+
     /// Reads what `name` stands for, if it's a macro, and says whether it
     /// did. It doesn't past [`MAX_EXPANSION_DEPTH`], what the stack was
     /// sized for, or what's left of what the document may expand to, so
@@ -1214,10 +1303,7 @@ impl Reader {
         let Some(Some(body)) = self.definitions.get(name).cloned() else {
             return false;
         };
-        if self.expansion_depth >= MAX_EXPANSION_DEPTH
-            || body.length >= self.expansion_left
-            || body.nesting > self.nesting_left
-        {
+        if !self.can_expand(&body, self.expansion_depth) {
             self.unexpanded += 1;
             return false;
         }
@@ -1649,7 +1735,14 @@ impl Reader {
     /// if a rule ends it, as no writer sets a table without a header apart.
     fn tabular(&mut self, env: &SyntaxNode, has_width: bool) {
         self.end_paragraph();
-        let mut items = pieces(env);
+        let (items, spliced) = self.spliced(pieces(env));
+        self.expansion_depth += usize::from(spliced);
+        self.table(items, has_width);
+        self.expansion_depth -= usize::from(spliced);
+    }
+
+    /// The table `items`, a `tabular`'s, make (see [`Reader::tabular`]).
+    fn table(&mut self, mut items: Vec<Piece>, has_width: bool) {
         let (mut at, mut unbracketed) = (1, 0);
         if has_width {
             let width = Signature {
@@ -1949,9 +2042,16 @@ impl Reader {
     /// writes. A `description`'s labels are its terms, in bold. Past
     /// [`MAX_LIST_NESTING`], it's read as its items' text.
     fn list(&mut self, env: &SyntaxNode, kind: ListKind) {
+        let (items, spliced) = self.spliced(pieces(env));
+        self.expansion_depth += usize::from(spliced);
+        self.list_of(items, kind);
+        self.expansion_depth -= usize::from(spliced);
+    }
+
+    /// The list `pieces`, a list environment's, make (see [`Reader::list`]).
+    fn list_of(&mut self, pieces: Vec<Piece>, kind: ListKind) {
         let numbered = kind == ListKind::Enumerate;
         self.end_paragraph();
-        let pieces = pieces(env);
         if self.lists >= MAX_LIST_NESTING {
             self.unlisted += 1;
             return self.flow(pieces);
@@ -6186,6 +6286,76 @@ mod tests {
         }
     }
 
+    /// Each row: a source, and what it reads as with its macros written out.
+    /// Tables and lists find their rows, cells and items in macros too.
+    #[test]
+    fn macros_hold_rows_and_items() {
+        let cases = [
+            (
+                "\\def\\myrow{a&b\\\\}\\begin{tabular}{ll}\\myrow c&d\\\\\\end{tabular}",
+                "\\begin{tabular}{ll}a&b\\\\c&d\\\\\\end{tabular}",
+            ),
+            (
+                "\\def\\mycell{b}\\def\\myrow{a&\\mycell\\\\}\\begin{tabular}{ll}\\myrow\\end{tabular}",
+                "\\begin{tabular}{ll}a&b\\\\\\end{tabular}",
+            ),
+            (
+                "\\def\\myrule{\\hline}\\begin{tabular}{l}a\\\\\\myrule b\\\\\\end{tabular}",
+                "\\begin{tabular}{l}a\\\\\\hline b\\\\\\end{tabular}",
+            ),
+            (
+                "\\def\\myend{\\\\}\\begin{tabular}{l}a\\myend b\\myend\\end{tabular}",
+                "\\begin{tabular}{l}a\\\\b\\\\\\end{tabular}",
+            ),
+            (
+                "\\def\\myitem{\\item a}\\begin{itemize}\\myitem\\item b\\end{itemize}",
+                "\\begin{itemize}\\item a\\item b\\end{itemize}",
+            ),
+            (
+                "\\def\\myitem{\\item a}\\begin{itemize}\\item\\begin{itemize}\\myitem\\end{itemize}\\end{itemize}",
+                "\\begin{itemize}\\item\\begin{itemize}\\item a\\end{itemize}\\end{itemize}",
+            ),
+            // The spaces after a call go, as they do anywhere.
+            (
+                "\\def\\x{a}\\begin{itemize}\\item\\x b\\end{itemize}",
+                "\\begin{itemize}\\item ab\\end{itemize}",
+            ),
+            // A call that's an argument is taken whole.
+            (
+                "\\def\\x{ab}\\begin{itemize}\\item T\\footnote\\x\\end{itemize}",
+                "\\begin{itemize}\\item T\\footnote{ab}\\end{itemize}",
+            ),
+            (
+                "\\def\\x{ab}\\begin{tabular}{l}\\textbf\\x\\\\\\end{tabular}",
+                "\\begin{tabular}{l}\\textbf{ab}\\\\\\end{tabular}",
+            ),
+            // What's defined there holds from there, in a group too.
+            (
+                "\\def\\x{a}\\begin{itemize}\\item{\\gdef\\x{b}}\\x\\end{itemize}",
+                "\\begin{itemize}\\item b\\end{itemize}",
+            ),
+            (
+                "\\def\\x{a}\\begin{tabular}{l}{\\gdef\\x{b}}\\x\\\\\\end{tabular}",
+                "\\begin{tabular}{l}b\\\\\\end{tabular}",
+            ),
+            (
+                "\\def\\x{a}\\begin{itemize}\\item\\def\\x{b}\\x\\end{itemize}",
+                "\\begin{itemize}\\item b\\end{itemize}",
+            ),
+            (
+                "\\def\\x{a}\\def\\y{\\def\\x{b}}\\begin{itemize}\\item\\y\\x\\end{itemize}",
+                "\\begin{itemize}\\item b\\end{itemize}",
+            ),
+        ];
+        for (source, written_out) in cases {
+            assert_eq!(
+                read(source).0.blocks,
+                read(written_out).0.blocks,
+                "{source}"
+            );
+        }
+    }
+
     /// What each call reads is counted, comments too, so that a long one
     /// calling itself is cut short after a few calls, not after millions.
     #[test]
@@ -6222,16 +6392,21 @@ mod tests {
             "\\def\\a{\\a\\a}\\a done".to_string(),
             "\\def\\a{x\\a\\a\\a}\\a done".to_string(),
             "\\def\\a{\\b\\b}\\def\\b{\\a\\a}\\a done".to_string(),
+            "\\def\\a{\\a\\a}\\begin{itemize}\\item x\\a\\end{itemize} done".to_string(),
+            "\\def\\tb{\\begin{tabular}{l}\\tb\\\\\\end{tabular}}\
+             \\begin{tabular}{l}\\tb\\\\\\end{tabular} done"
+                .to_string(),
             doubling,
             nesting,
         ];
+        let count = sources.len();
         let (sent, received) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             for source in sources {
                 sent.send((source.clone(), read(&source))).unwrap();
             }
         });
-        for _ in 0..6 {
+        for _ in 0..count {
             let (source, (doc, warnings)) = received
                 .recv_timeout(std::time::Duration::from_secs(60))
                 .expect("reading never ended");
