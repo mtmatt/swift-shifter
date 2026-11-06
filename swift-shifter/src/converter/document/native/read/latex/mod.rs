@@ -465,6 +465,8 @@ struct Reader {
     /// Whether the last thing read is a `'` a next one joins (see
     /// [`Reader::apostrophe`]).
     after_apostrophe: bool,
+    /// Whether what's read is a link's text (see [`Reader::href`]).
+    in_link: bool,
     /// Whether what's read is an unknown command's: nothing in it is joined.
     literal: bool,
     /// Whether it's bold: it goes in a run of [`Inline::Strong`], which
@@ -521,8 +523,19 @@ impl Reader {
                         };
                         let args = match signature {
                             Some(signature) => {
-                                take_arguments(&mut items, &mut at, &mut unbracketed, signature)
-                                    .required
+                                let taken = take_arguments(
+                                    &mut items,
+                                    &mut at,
+                                    &mut unbracketed,
+                                    signature,
+                                );
+                                let mut args = taken.required;
+                                // `\\cite`'s note is the one optional argument
+                                // that shows.
+                                if name == "\\cite" {
+                                    args.extend(taken.optional);
+                                }
+                                args
                             }
                             // Unknown: the groups right after it.
                             None => {
@@ -655,6 +668,18 @@ impl Reader {
                 self.skip_spaces = true;
             }
             "\\par" => self.end_paragraph(),
+            "\\url" => {
+                if let Some(arg) = args.first() {
+                    let url = literal_text(arg);
+                    self.url(url);
+                }
+            }
+            "\\href" => {
+                if let [url, content] = &args[..] {
+                    self.href(literal_text(url), content.clone());
+                }
+            }
+            "\\cite" => self.cite(args),
             "\\newline" => {
                 self.inline(Inline::LineBreak);
                 self.skip_spaces = true;
@@ -669,7 +694,7 @@ impl Reader {
             // shows nothing.
             // A line, which no writer's text can hold, outside of a block
             // of its own (see `Reader::aligned`).
-            "\\tightlist" | "\\rule" => {}
+            "\\tightlist" | "\\rule" | "\\nocite" => {}
             "\\ensuremath" => {
                 if let Some(arg) = args.first() {
                     self.math(&source_text(arg), false);
@@ -834,6 +859,84 @@ impl Reader {
             self.flow(pieces);
             self.end_paragraph();
         }
+    }
+
+    /// `\href`'s link to `url`, its text `content`, in the font around it,
+    /// which goes in the link: it's outside any run, so that what's in it can
+    /// leave that font. Spaces at its edges move out of it, as they do out of
+    /// a run. One in another's text is that text, so links don't nest: no
+    /// writer can show that, and dropping a document recurses as deep as they
+    /// would go. Blocks in its text leave no link, only what it holds in
+    /// order.
+    fn href(&mut self, url: String, content: Vec<Piece>) {
+        if self.in_link {
+            return self.flow(content);
+        }
+        let outer = (
+            std::mem::take(&mut self.blocks),
+            std::mem::take(&mut self.inlines),
+        );
+        self.in_link = true;
+        self.in_font(content, self.bold, self.emphasized);
+        self.in_link = false;
+        let blocks = std::mem::replace(&mut self.blocks, outer.0);
+        let inlines = std::mem::replace(&mut self.inlines, outer.1);
+        if !blocks.is_empty() {
+            self.end_paragraph();
+            self.blocks.extend(blocks);
+            self.inlines = inlines;
+            return;
+        }
+        let inlines = hoisted(inlines);
+        let space_before =
+            matches!(inlines.first(), Some(Inline::Text(text)) if text.starts_with(' '));
+        let space_after = matches!(inlines.last(), Some(Inline::Text(text)) if text.ends_with(' '));
+        let content = trimmed(inlines);
+        if space_before {
+            self.space();
+        }
+        if !content.is_empty() {
+            self.non_space();
+            self.inlines.push(Inline::Link {
+                url,
+                title: None,
+                content,
+            });
+        }
+        if space_after {
+            self.space();
+        }
+    }
+
+    /// `\url`'s link to `url`, in a link's text only its address.
+    fn url(&mut self, url: String) {
+        let text = Inline::Text(url.clone());
+        if self.in_link {
+            self.inline(text);
+        } else if !url.is_empty() {
+            self.inline(Inline::Link {
+                url,
+                title: None,
+                content: vec![text],
+            });
+        }
+    }
+
+    /// `\\cite`'s keys, and its note if it has one, in brackets: no writer
+    /// has citations, and without the bibliography there's nothing else to
+    /// show.
+    fn cite(&mut self, args: Vec<Vec<Piece>>) {
+        let mut args = args.into_iter();
+        let keys = args.next().unwrap_or_default();
+        let keys = literal_text(&keys);
+        let keys: Vec<&str> = keys.split(',').map(str::trim).collect();
+        let note = args.next().filter(|note| !note.is_empty());
+        self.text(&format!("[{}", keys.join(", ")));
+        if let Some(note) = note {
+            self.text(", ");
+            self.in_font(note, self.bold, self.emphasized);
+        }
+        self.text("]");
     }
 
     /// `arg`, an argument, in the font `bold` and `emphasized` say.
@@ -1172,6 +1275,25 @@ fn font(name: &str, bold: bool, emphasized: bool) -> Option<(bool, bool)> {
     })
 }
 
+/// What `pieces`, an argument that's no text, such as an address or a key,
+/// say: as written, without the group [`formulas::close_scripts`] puts after
+/// a script, and with what's escaped as itself.
+fn literal_text(pieces: &[Piece]) -> String {
+    let source = source_text(pieces).replace("^{}", "^").replace("_{}", "_");
+    let mut text = String::with_capacity(source.len());
+    let mut chars = source.trim().chars().peekable();
+    while let Some(c) = chars.next() {
+        match chars.peek() {
+            Some(&escaped) if c == '\\' && "%#&_$~^{}".contains(escaped) => {
+                text.push(escaped);
+                chars.next();
+            }
+            _ => text.push(c),
+        }
+    }
+    text
+}
+
 /// `word`, a word of text, with what TeX's fonts join in it joined.
 fn ligatures(word: &str) -> String {
     word.replace("---", "—")
@@ -1249,6 +1371,21 @@ fn signature(name: &str) -> Option<Signature> {
         "\\par" | "\\" | "\\tightlist" | "\\newline" => Some(Signature::default()),
         "\\texorpdfstring" => Some(Signature {
             required: 2,
+            ..Signature::default()
+        }),
+        "\\href" => Some(Signature {
+            optional: true,
+            required: 2,
+            ..Signature::default()
+        }),
+        "\\url" | "\\nocite" => Some(Signature {
+            required: 1,
+            ..Signature::default()
+        }),
+        "\\cite" => Some(Signature {
+            star: true,
+            optional: true,
+            required: 1,
             ..Signature::default()
         }),
         _ if symbol(name).is_some() => Some(Signature::default()),
@@ -2119,6 +2256,110 @@ mod tests {
         );
     }
 
+    /// Each row: the inlines the source reads as, in a paragraph.
+    #[test]
+    fn links_and_citations_are_read() {
+        let link = |url: &str, content: &[Inline]| Inline::Link {
+            url: url.to_string(),
+            title: None,
+            content: content.to_vec(),
+        };
+        let bare = |url: &str| link(url, &[text(url)]);
+        let strong = |inlines: &[Inline]| Inline::Strong(inlines.to_vec());
+        let cases: Vec<(&str, Vec<Inline>)> = vec![
+            ("\\url{https://a.org}", vec![bare("https://a.org")]),
+            (
+                "a \\url{https://a.org} b",
+                vec![text("a "), bare("https://a.org"), text(" b")],
+            ),
+            // As they're written, with what's escaped as itself.
+            (
+                "\\url{https://a.org/b_c^d~e--f}",
+                vec![bare("https://a.org/b_c^d~e--f")],
+            ),
+            ("\\url{a\\%20b\\#c\\_d\\&e}", vec![bare("a%20b#c_d&e")]),
+            // What's closed before it's parsed isn't part of it.
+            ("\\url{a_}b", vec![bare("a_"), text("b")]),
+            (
+                "\\href{https://a.org}{b}",
+                vec![link("https://a.org", &[text("b")])],
+            ),
+            ("\\href[pdfnewwindow]{u}{b}", vec![link("u", &[text("b")])]),
+            ("\\href{u_v}{a--b}", vec![link("u_v", &[text("a–b")])]),
+            (
+                "\\href{u}{\\emph{a} b}",
+                vec![link("u", &[emph(&[text("a")]), text(" b")])],
+            ),
+            // The font around it goes in it, so it can be left there.
+            (
+                "\\textbf{\\href{u}{a}}",
+                vec![link("u", &[strong(&[text("a")])])],
+            ),
+            (
+                "\\textbf{x\\href{u}{\\textmd{a}}y}",
+                vec![
+                    strong(&[text("x")]),
+                    link("u", &[text("a")]),
+                    strong(&[text("y")]),
+                ],
+            ),
+            ("\\textbf{\\url{u}}", vec![strong(&[bare("u")])]),
+            // Spaces at its ends go out of it.
+            (
+                "x\\href{u}{ a }y",
+                vec![text("x "), link("u", &[text("a")]), text(" y")],
+            ),
+            ("x\\href{u}{ }y", vec![text("x y")]),
+            ("\\emph{x\\url{u}}", vec![emph(&[text("x"), bare("u")])]),
+            ("\\href{u}{ a }", vec![link("u", &[text("a")])]),
+            // With no text, it's none, and links don't nest.
+            ("a\\href{u}{}b", vec![text("ab")]),
+            ("\\href{u}{a\\href{v}{b}c}", vec![link("u", &[text("abc")])]),
+            ("\\href{u}{a\\url{v}}", vec![link("u", &[text("av")])]),
+            // Citations show their keys.
+            ("\\cite{a}", vec![text("[a]")]),
+            ("x\\cite{a_b, c}y", vec![text("x[a_b, c]y")]),
+            ("\\cite*{a}", vec![text("[a]")]),
+            ("\\cite[p.~1]{a} b", vec![text("[a, p.\u{a0}1] b")]),
+            ("\\cite[]{a}", vec![text("[a]")]),
+            ("\\textbf{\\cite{a}}", vec![strong(&[text("[a]")])]),
+            ("a\\nocite{b}c", vec![text("ac")]),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(read(source).0.blocks, [para(&expected)], "{source}");
+        }
+        // Blocks in a link's text keep their order, and no link.
+        assert_eq!(
+            read("x \\href{u}{a\\begin{center}b\\end{center}c} y")
+                .0
+                .blocks,
+            [
+                para(&[text("x")]),
+                para(&[text("a")]),
+                para(&[text("b")]),
+                para(&[text("c y")]),
+            ]
+        );
+        // Deep ones read flat.
+        let source = format!("{}x{}", "\\href{u}{".repeat(5_000), "}".repeat(5_000));
+        assert_eq!(read(&source).0.blocks, [para(&[link("u", &[text("x")])])]);
+    }
+
+    /// Links our LaTeX writer writes read back.
+    #[test]
+    fn our_latex_links_read_back() {
+        use crate::converter::document::native::{read::markdown, write};
+        for source in [
+            "<https://e.org>\n",
+            "[site](https://e.org/a_b?x=1%20#top) and [**b**](u)\n",
+            "[*a* b](https://e.org/~c)\n",
+        ] {
+            let doc = markdown::read(source);
+            let tex = write::latex::write(&doc);
+            assert_eq!(read(&tex).0.blocks, doc.blocks, "{tex}");
+        }
+    }
+
     /// Each row: the text the source reads as.
     #[test]
     fn punctuation_is_set_as_tex_sets_it() {
@@ -2137,7 +2378,7 @@ mod tests {
             // Unknown commands' text is as written: fonts like `\texttt` join
             // nothing, and it may be an address.
             ("\\texttt{a--b ``c'' d'e}--", "a--b ``c'' d'e–"),
-            ("\\url{a--b}", "a--b"),
+            ("\\path{a--b}", "a--b"),
             ("\\texttt{\\mbox{a--b}}c--d", "a--bc–d"),
             ("a'\n'b", "a’ ’b"),
             ("a'%\n'b", "a”b"),
