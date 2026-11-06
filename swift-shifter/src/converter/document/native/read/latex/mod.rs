@@ -679,24 +679,25 @@ impl Reader {
     }
 
     /// `$…$`, `\(…\)`, `$$…$$` or `\[…\]`: its TeX, as it's written. One
-    /// that doesn't end takes the rest of what it's in, as the parser reads
-    /// it, so nothing is lost.
+    /// that doesn't end, a stray `$`, say, isn't one: it's read as text, so
+    /// the sections and lists the parser took into it stay what they are.
     fn formula(&mut self, formula: &SyntaxNode) {
         let mut pieces = pieces(formula);
+        let ended = pieces.len() > 1
+            && matches!(
+                pieces.last(),
+                Some(Piece::Token(
+                    SyntaxKind::TokenDollar | SyntaxKind::TokenEndMath,
+                    _
+                ))
+            );
+        if !ended {
+            return self.flow(pieces);
+        }
         let display = matches!(pieces.first(),
             Some(Piece::Token(_, open)) if open == "$$" || open == "\\[");
-        if !pieces.is_empty() {
-            pieces.remove(0);
-        }
-        if matches!(
-            pieces.last(),
-            Some(Piece::Token(
-                SyntaxKind::TokenDollar | SyntaxKind::TokenEndMath,
-                _
-            ))
-        ) {
-            pieces.pop();
-        }
+        pieces.remove(0);
+        pieces.pop();
         self.math(&source_text(&pieces), display);
     }
 
@@ -2245,9 +2246,24 @@ mod tests {
                 vec![heading(1, &[text("a "), inline("x")])],
             ),
             ("\\emph{$x$}", vec![para(&[emph(&[inline("x")])])]),
-            // Empty, it's none; unended, it takes what's left, kept.
+            // Empty, it's none; unended, it's text, and what's after it is
+            // read as it would be.
             ("a$$$$b", vec![para(&[text("ab")])]),
-            ("a$x", vec![para(&[text("a"), inline("x")])]),
+            ("a$x", vec![para(&[text("a$x")])]),
+            ("$", vec![para(&[text("$")])]),
+            ("\\[x", vec![para(&[text("\\[x")])]),
+            (
+                "\\emph{a $b} c",
+                vec![para(&[emph(&[text("a $b")]), text(" c")])],
+            ),
+            (
+                "Costs $5.\n\n\\section{Next}\n\nEnd",
+                vec![
+                    para(&[text("Costs $5.")]),
+                    heading(1, &[text("Next")]),
+                    para(&[text("End")]),
+                ],
+            ),
             // Escaped, it's a dollar.
             ("\\$5", vec![para(&[text("$5")])]),
         ];
