@@ -21,7 +21,7 @@ use super::lists::loosens;
 use super::walk;
 use crate::converter::document::native::Warning;
 use crate::converter::document::native::ast::{
-    Align, Block, Document, Inline, List, ListItem, Table, inline_text,
+    Align, Block, Document, Inline, List, ListItem, Meta, Table, inline_text,
 };
 use crate::converter::document::native::write;
 
@@ -97,7 +97,11 @@ fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
         verbatim_mark: cut.mark,
         ..Reader::default()
     };
-    reader.flow(pieces(&document_body(&root).unwrap_or(root)));
+    let body = document_body(&root);
+    if body.is_some() {
+        reader.preamble(&root);
+    }
+    reader.flow(pieces(&body.unwrap_or(root)));
     reader.close_notes();
     reader.end_paragraph();
     reader.blocks.append(&mut reader.notes);
@@ -131,8 +135,8 @@ fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
         });
     }
     let mut doc = Document {
+        meta: reader.meta,
         blocks: reader.blocks,
-        ..Document::default()
     };
     resolve_references(&mut doc, &reader.labels, &reader.note_labels);
     (doc, warnings)
@@ -576,6 +580,10 @@ struct Reader {
     in_heading: bool,
     /// The labels in the heading being read.
     heading_labels: Vec<String>,
+    /// Whether the document's class adds each `\\author` to those before.
+    authors_add: bool,
+    /// What the document says of itself (see [`Reader::preamble`]).
+    meta: Meta,
     /// The tables too sparse to keep, read as their text.
     sparse_tables: usize,
     /// How many columns the table cell being read spans.
@@ -864,6 +872,23 @@ impl Reader {
                 }
             }
             "\\cite" => self.cite(args),
+            "\\title" => {
+                if let Some(arg) = args.into_iter().next() {
+                    let title = self.field(arg);
+                    self.meta.title = Some(title).filter(|title| !title.is_empty());
+                }
+            }
+            "\\date" => {
+                if let Some(arg) = args.into_iter().next() {
+                    let date = self.field(arg);
+                    self.meta.date = Some(date).filter(|date| !date.is_empty());
+                }
+            }
+            "\\author" => {
+                if let Some(arg) = args.into_iter().next() {
+                    self.authors(arg);
+                }
+            }
             // The cell it's all of spans its count of columns.
             "\\multicolumn" => {
                 if let [count, _, content] = &args[..] {
@@ -958,7 +983,7 @@ impl Reader {
             // shows nothing.
             // A line, which no writer's text can hold, outside of a block
             // of its own (see `Reader::aligned`).
-            "\\tightlist" | "\\rule" | "\\nocite" | "\\pageref" | "\\centering" => {}
+            "\\tightlist" | "\\rule" | "\\nocite" | "\\pageref" | "\\centering" | "\\thanks" => {}
             "\\ensuremath" => {
                 if let Some(arg) = args.first() {
                     self.math(&source_text(arg), false);
@@ -1606,6 +1631,64 @@ impl Reader {
         flat
     }
 
+    /// What the preamble of `root` says of the document, read as the
+    /// document's own commands would be: past what definitions hold, and up
+    /// to `\\begin{document}`.
+    fn preamble(&mut self, root: &SyntaxNode) {
+        let mut items = pieces(root);
+        let (mut at, mut unbracketed) = (0, 0);
+        while let Some(item) = items.get(at).cloned() {
+            at += 1;
+            let Piece::Node(node) = item else {
+                continue;
+            };
+            if node.kind() == SyntaxKind::ItemEnv && environment_name(&node) == "document" {
+                return;
+            }
+            if node.kind() != SyntaxKind::ItemCmd {
+                continue;
+            }
+            let name = command_name(&node);
+            if DEFINITIONS.contains(&name.as_str()) {
+                skip_definition(&mut items, &mut at, &mut unbracketed, &name);
+            } else if name == "\\documentclass" {
+                let class = take_arguments(&mut items, &mut at, &mut unbracketed, TABULAR).required;
+                let class = class.first().map(|class| literal_text(class));
+                self.authors_add = class.is_some_and(|class| {
+                    AUTHORS_ADD.iter().any(|adding| class.starts_with(adding))
+                });
+            } else if matches!(name.as_str(), "\\title" | "\\author" | "\\date")
+                && let Some(signature) = signature(&name)
+            {
+                let args = take_arguments(&mut items, &mut at, &mut unbracketed, signature);
+                self.command(&name, args.required);
+            }
+        }
+    }
+
+    /// `arg`'s text: a field of the document's, read apart from its text.
+    fn field(&mut self, arg: Vec<Piece>) -> String {
+        inline_text(&self.table_cell(arg)).trim().to_string()
+    }
+
+    /// The authors `arg` names, one for each stretch between its `\\and`s,
+    /// in place of those before it, or after them in a class that adds them.
+    fn authors(&mut self, arg: Vec<Piece>) {
+        if !self.authors_add {
+            self.meta.authors.clear();
+        }
+        let is_and = |piece: &Piece| {
+            matches!(piece, Piece::Node(node)
+                if node.kind() == SyntaxKind::ItemCmd && command_name(node) == "\\and")
+        };
+        for author in arg.split(is_and) {
+            let author = self.field(author.to_vec());
+            if !author.is_empty() {
+                self.meta.authors.push(author);
+            }
+        }
+    }
+
     /// A `figure` or `table`: its blocks, where it's written, as no writer
     /// floats them. An image and a caption alone are one image, with the
     /// caption for its alt text, as writers take a figure.
@@ -2053,6 +2136,17 @@ const RULES: [&str; 6] = [
     "\\midrule",
     "\\bottomrule",
     "\\cmidrule",
+];
+
+/// The start of the names of the classes where each `\\author` adds one:
+/// in the rest, as in `article`, it takes the place of the last.
+const AUTHORS_ADD: [&str; 6] = [
+    "amsart",
+    "amsbook",
+    "revtex",
+    "lipics",
+    "acmart",
+    "elsarticle",
 ];
 
 /// How many columns a table's specification gives at most: more than any
@@ -2516,6 +2610,11 @@ fn signature(name: &str) -> Option<Signature> {
         }),
         "\\footnotemark" => Some(Signature {
             optional: true,
+            ..Signature::default()
+        }),
+        "\\title" | "\\author" | "\\date" | "\\thanks" => Some(Signature {
+            optional: true,
+            required: 1,
             ..Signature::default()
         }),
         "\\url" | "\\nocite" | "\\label" | "\\eqref" | "\\pageref" | "\\nameref" => {
@@ -4492,6 +4591,122 @@ mod tests {
             let tex = write::latex::write(&doc);
             assert_eq!(read(&tex).0.blocks, doc.blocks, "{tex}");
         }
+    }
+
+    /// Each row: what the source says of itself.
+    #[test]
+    fn titles_are_the_document_s() {
+        type Case<'a> = (&'a str, Option<&'a str>, &'a [&'a str], Option<&'a str>);
+        let cases: Vec<Case> = vec![
+            (
+                "\\title{T}\\author{A}\\date{D}\\begin{document}x\\end{document}",
+                Some("T"),
+                &["A"],
+                Some("D"),
+            ),
+            // In the document as well; `\\maketitle` shows nothing.
+            (
+                "\\begin{document}\\title{T}\\author{A}\\maketitle x\\end{document}",
+                Some("T"),
+                &["A"],
+                None,
+            ),
+            // A fragment.
+            ("\\title{T}x", Some("T"), &[], None),
+            // Their text; a short title goes.
+            (
+                "\\title[S]{A \\& \\emph{B}--C}\\begin{document}x\\end{document}",
+                Some("A & B–C"),
+                &[],
+                None,
+            ),
+            // Authors: by `\\and`.
+            (
+                "\\author{A \\and B\\and{} C}\\begin{document}x\\end{document}",
+                None,
+                &["A", "B", "C"],
+                None,
+            ),
+            // Each `\\author` replaces the last, but where the class adds it.
+            (
+                "\\author{A}\\author{B}\\begin{document}x\\end{document}",
+                None,
+                &["B"],
+                None,
+            ),
+            (
+                "\\documentclass[11pt]{article}\\author{A}\\begin{document}\\author{B}x\\end{document}",
+                None,
+                &["B"],
+                None,
+            ),
+            (
+                "\\documentclass[aps]{revtex4-2}\\author{A}\\begin{document}\\author{B \\and C}x\\end{document}",
+                None,
+                &["A", "B", "C"],
+                None,
+            ),
+            (
+                "\\documentclass{amsart}\\author{A}\\author{B}\\begin{document}x\\end{document}",
+                None,
+                &["A", "B"],
+                None,
+            ),
+            // A fragment's are read once.
+            ("\\author{A}x", None, &["A"], None),
+            // Empty, or what we can't work out, is none.
+            (
+                "\\title{}\\author{}\\date{\\today}\\begin{document}x\\end{document}",
+                None,
+                &[],
+                None,
+            ),
+            // `\\thanks` is no part of them.
+            (
+                "\\title{T\\thanks{N}}\\author{A\\thanks{M}}\\begin{document}x\\end{document}",
+                Some("T"),
+                &["A"],
+                None,
+            ),
+            // What a definition holds is none of them.
+            (
+                "\\newcommand{\\x}{\\title{N}}\\renewcommand\\title{N}\\def\\y{\\title{M}}\\begin{document}x\\end{document}",
+                None,
+                &[],
+                None,
+            ),
+            // After the document's end, nothing is read.
+            (
+                "\\begin{document}x\\end{document}\\title{T}",
+                None,
+                &[],
+                None,
+            ),
+        ];
+        for (source, title, authors, date) in cases {
+            let (doc, _) = read(source);
+            assert_eq!(doc.meta.title.as_deref(), title, "{source}");
+            assert_eq!(doc.meta.authors, authors, "{source}");
+            assert_eq!(doc.meta.date.as_deref(), date, "{source}");
+            assert_eq!(doc.blocks, [para(&[text("x")])], "{source}");
+        }
+    }
+
+    /// What our LaTeX writer writes in the preamble reads back.
+    #[test]
+    fn our_latex_titles_read_back() {
+        use crate::converter::document::native::write;
+        let doc = Document {
+            meta: Meta {
+                title: Some("T & U".to_string()),
+                authors: vec!["Ann".to_string(), "Bo".to_string()],
+                date: Some("2024-01-02".to_string()),
+                ..Meta::default()
+            },
+            blocks: vec![para(&[text("x")])],
+        };
+        let (read_back, _) = read(&write::latex::write(&doc));
+        assert_eq!(read_back, doc);
     }
 
     /// Links our LaTeX writer writes read back.
