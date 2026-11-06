@@ -9,6 +9,7 @@
 mod conditionals;
 pub mod files;
 mod formulas;
+mod macros;
 pub mod paths;
 pub mod stage;
 mod verbatim;
@@ -459,8 +460,15 @@ fn push_source_tokens(node: &SyntaxNode, tokens: &mut Vec<(SyntaxKind, String)>)
 struct Definition {
     /// As written: `\x`.
     name: String,
-    /// `None` for a command taking arguments, which isn't read yet.
+    /// `None` for what can't be expanded, as a `\def` with text between its
+    /// parameters.
     body: Option<Vec<Piece>>,
+    /// How many arguments it takes.
+    parameters: usize,
+    /// What its first argument is, if that's optional.
+    default: Option<String>,
+    /// Whether a star followed the definition's command.
+    starred: bool,
 }
 
 /// What a command defined with no arguments stands for.
@@ -471,13 +479,18 @@ struct Macro {
     length: usize,
     /// How deep it might nest (see [`nesting_bound`]).
     nesting: usize,
+    /// What it stands for as TeX, for formulas (see [`macros`]).
+    source: String,
+    /// See [`Definition`].
+    parameters: usize,
+    default: Option<String>,
 }
 
 impl Macro {
     /// `pieces` as a macro, unless they leave open what they open:
     /// `\newcommand{\be}{\begin{equation}}` would need what's after its
     /// call, which the parser has read without it.
-    fn new(pieces: Vec<Piece>) -> Option<Macro> {
+    fn new(pieces: Vec<Piece>, parameters: usize, default: Option<String>) -> Option<Macro> {
         // The braces of its definition's argument are no part of it: after
         // a last `\\`, the `}` would be a table's next row.
         let pieces = match pieces.as_slice() {
@@ -515,6 +528,9 @@ impl Macro {
             pieces,
             length,
             nesting: nesting_bound(&source),
+            source,
+            parameters,
+            default,
         })
     }
 }
@@ -545,21 +561,26 @@ fn take_definition(
         star: true,
         ..required
     };
+    let starred = matches!(
+        items.get(past_spaces(items, *at)),
+        Some(Piece::Token(SyntaxKind::TokenAsterisk, _))
+    );
     let defined = take_arguments(items, at, unbracketed, name_of_it).required;
     let defined = source_text(defined.first()?).trim().to_string();
-    let mut takes_arguments = false;
+    let (mut parameters, mut default) = (Some(0), None);
     if name.ends_with("command") {
         // Its count of arguments, and the default of the first.
-        for _ in 0..2 {
-            let optional = Signature {
-                optional: true,
-                ..Signature::default()
-            };
-            let taken = take_arguments(items, at, unbracketed, optional);
-            takes_arguments |= taken
-                .optional
-                .is_some_and(|given| source_text(&given).trim() != "0");
+        let optional = Signature {
+            optional: true,
+            ..Signature::default()
+        };
+        if let Some(count) = take_arguments(items, at, unbracketed, optional).optional {
+            let count = source_text(&count).trim().parse().ok();
+            parameters = count.filter(|count| *count <= 9);
         }
+        default = take_arguments(items, at, unbracketed, optional)
+            .optional
+            .map(|default| source_text(&default));
     } else {
         // `\def`'s arguments, up to its group, as TeX takes them. With none
         // in sight, past a `$` that opened math in the parser, say, what's
@@ -573,7 +594,7 @@ fn take_definition(
             });
         match text.map(|text| (text, &items[*at + text])) {
             Some((text, Piece::Node(node))) if node.kind() == SyntaxKind::ItemCurly => {
-                takes_arguments = text > 0;
+                parameters = undelimited_parameters(&source_text(&items[*at..*at + text]));
                 *at += text;
             }
             _ => return None,
@@ -585,8 +606,22 @@ fn take_definition(
         .next()?;
     Some(Definition {
         name: defined,
-        body: (!takes_arguments).then_some(body),
+        body: parameters.is_some().then_some(body),
+        parameters: parameters.unwrap_or(0),
+        default,
+        starred,
     })
+}
+
+/// How many parameters `text`, what a `\def` has before its group, makes,
+/// unless there's text among them, which isn't read.
+fn undelimited_parameters(text: &str) -> Option<usize> {
+    // Spaces after it are its parameters' delimiters, but those before them
+    // go with the name before.
+    let text = text.trim_start();
+    let count = text.len() / 2;
+    let written: String = (1..=count).map(|number| format!("#{number}")).collect();
+    (written == text && count <= 9).then_some(count)
 }
 
 /// The name of `env`, an environment: what its `\begin` names.
@@ -1197,10 +1232,16 @@ impl Reader {
         at: &mut usize,
         unbracketed: &mut usize,
     ) {
-        let Some(Definition { name, body }) = take_definition(items, at, unbracketed, command)
-        else {
+        let Some(definition) = take_definition(items, at, unbracketed, command) else {
             return;
         };
+        let Definition {
+            name,
+            body,
+            parameters,
+            default,
+            starred,
+        } = definition;
         let provided_already =
             command == "\\providecommand" && self.definitions.contains_key(&name);
         if provided_already || signature(&name).is_some() {
@@ -1209,8 +1250,14 @@ impl Reader {
         let expanded_here = matches!(command, "\\edef" | "\\xdef");
         let body = body
             .filter(|_| !expanded_here)
-            .and_then(Macro::new)
-            .map(Rc::new);
+            .and_then(|body| Macro::new(body, parameters, default))
+            .map(|mut body| {
+                if command == "\\DeclareMathOperator" {
+                    let star = if starred { "*" } else { "" };
+                    body.source = format!("\\operatorname{star}{{{}}}", body.source);
+                }
+                Rc::new(body)
+            });
         let earlier = self.definitions.insert(name.clone(), body);
         self.definitions_made += 1;
         let made = self.definitions_made;
@@ -1271,7 +1318,7 @@ impl Reader {
                 _ => String::new(),
             };
             arguments = signature(&name).map_or(0, |signature| signature.required);
-            let body = self.definitions.get(&name).cloned().flatten();
+            let body = self.macro_named(&name);
             let Some(body) = body.filter(|body| self.can_expand(body, depth)) else {
                 spliced.push(piece.clone());
                 continue;
@@ -1284,6 +1331,13 @@ impl Reader {
             at = past_spaces(items, at);
         }
         true
+    }
+
+    /// What `name` stands for in text, where a macro taking arguments isn't
+    /// read yet.
+    fn macro_named(&self, name: &str) -> Option<Rc<Macro>> {
+        let body = self.definitions.get(name).cloned().flatten();
+        body.filter(|body| body.parameters == 0)
     }
 
     /// Whether `body` may be read `depth` macros deep (see
@@ -1300,7 +1354,7 @@ impl Reader {
     /// that one that calls itself ends: that call is an unknown command,
     /// counted for a warning.
     fn expand(&mut self, name: &str) -> bool {
-        let Some(Some(body)) = self.definitions.get(name).cloned() else {
+        let Some(body) = self.macro_named(name) else {
             return false;
         };
         if !self.can_expand(&body, self.expansion_depth) {
@@ -1369,7 +1423,8 @@ impl Reader {
     /// argument, which no block goes in. Empty, it shows nothing.
     fn math(&mut self, tex: &str, display: bool) {
         self.non_space();
-        let tex = without_labels(tex);
+        let tex = self.expanded_math(tex);
+        let tex = without_labels(&tex);
         let tex = tex.as_str();
         let trimmed = tex.trim_end();
         // A space that a backslash makes a control space is the formula's.
@@ -2366,7 +2421,8 @@ struct Group {
 }
 
 /// The commands that define others (see [`Reader::define`]).
-const DEFINITIONS: [&str; 7] = [
+const DEFINITIONS: [&str; 8] = [
+    "\\DeclareMathOperator",
     "\\newcommand",
     "\\renewcommand",
     "\\providecommand",
@@ -6275,11 +6331,6 @@ mod tests {
             ),
             ("\\def\\x{$}a\\x b", plain("ab")),
             ("\\def\\x{\\[}a\\x b", plain("ab")),
-            // In math, it stays TeX.
-            (
-                "\\def\\x{a}$\\x$",
-                vec![para(&[Inline::Math("\\x".to_string())])],
-            ),
         ];
         for (source, expected) in cases {
             assert_eq!(read(source).0.blocks, expected, "{source}");
