@@ -467,6 +467,11 @@ struct Reader {
     after_apostrophe: bool,
     /// Whether what's read is an unknown command's: nothing in it is joined.
     literal: bool,
+    /// Whether it's in a typewriter font, which joins nothing either.
+    typewriter: bool,
+    /// The font at each `\\begingroup` or `\\bgroup` still open, which their
+    /// ends set back.
+    groups: Vec<Font>,
     /// Whether it's bold: it goes in a run of [`Inline::Strong`], which
     /// nests none either and holds the runs of emphasis.
     bold: bool,
@@ -552,26 +557,41 @@ impl Reader {
                         self.non_space();
                         self.skip_spaces = true;
                     }
-                    SyntaxKind::ItemEnv => match environment_name(&node).as_str() {
-                        "itemize" => self.list(&node, ListKind::Itemize),
-                        "enumerate" => self.list(&node, ListKind::Enumerate),
-                        "description" => self.list(&node, ListKind::Description),
-                        "quote" | "quotation" | "verse" => self.quote(&node),
-                        "center" | "flushleft" | "flushright" => self.aligned(&node),
-                        name @ ("math" | "displaymath") => {
-                            let mut inside = pieces(&node);
-                            inside.retain(|piece| {
-                                !matches!(piece, Piece::Node(node)
-                                    if matches!(node.kind(), SyntaxKind::ItemBegin | SyntaxKind::ItemEnd))
-                            });
-                            self.math(&source_text(&inside), name == "displaymath");
+                    SyntaxKind::ItemEnv => {
+                        let font = self.font();
+                        match environment_name(&node).as_str() {
+                            "itemize" => self.list(&node, ListKind::Itemize),
+                            "enumerate" => self.list(&node, ListKind::Enumerate),
+                            "description" => self.list(&node, ListKind::Description),
+                            "quote" | "quotation" | "verse" => self.quote(&node),
+                            "center" | "flushleft" | "flushright" => self.aligned(&node),
+                            name @ ("math" | "displaymath") => {
+                                let mut inside = pieces(&node);
+                                inside.retain(|piece| {
+                                    !matches!(piece, Piece::Node(node)
+                                        if matches!(node.kind(), SyntaxKind::ItemBegin | SyntaxKind::ItemEnd))
+                                });
+                                self.math(&source_text(&inside), name == "displaymath");
+                            }
+                            name if MATH_ENVIRONMENTS.contains(&name.trim_end_matches('*')) => {
+                                self.math(&source_text(&[Piece::Node(node.clone())]), true);
+                            }
+                            // `\\begin{bfseries}` is a declaration too.
+                            name => {
+                                if let Some(declared) = declared(&format!("\\{name}"), font) {
+                                    self.set_font(declared);
+                                }
+                                self.flow(pieces(&node));
+                            }
                         }
-                        name if MATH_ENVIRONMENTS.contains(&name.trim_end_matches('*')) => {
-                            self.math(&source_text(&[Piece::Node(node.clone())]), true);
-                        }
-                        _ => self.flow(pieces(&node)),
-                    },
+                        self.set_font(font);
+                    }
                     SyntaxKind::ItemFormula => self.formula(&node),
+                    SyntaxKind::ItemCurly => {
+                        let font = self.font();
+                        self.flow(pieces(&node));
+                        self.set_font(font);
+                    }
                     _ => self.flow(pieces(&node)),
                 },
             }
@@ -602,10 +622,30 @@ impl Reader {
             // A brace shows nothing, but it's no space.
             SyntaxKind::TokenLBrace | SyntaxKind::TokenRBrace => self.non_space(),
             SyntaxKind::TokenTilde => self.text("\u{a0}"),
-            SyntaxKind::TokenWord if !self.literal => self.text(&ligatures(text)),
-            SyntaxKind::TokenApostrophe if !self.literal => self.apostrophe(),
+            SyntaxKind::TokenWord if self.joins() => self.text(&ligatures(text)),
+            SyntaxKind::TokenApostrophe if self.joins() => self.apostrophe(),
             _ => self.text(text),
         }
+    }
+
+    /// Whether what's read is set in a font that joins characters.
+    fn joins(&self) -> bool {
+        !self.literal && !self.typewriter
+    }
+
+    /// The font what's read is set in. A declaration holds to the end of
+    /// its group or environment, which set it back with [`Reader::set_font`].
+    fn font(&self) -> Font {
+        Font {
+            bold: self.bold,
+            emphasized: self.emphasized,
+            typewriter: self.typewriter,
+        }
+    }
+
+    fn set_font(&mut self, font: Font) {
+        (self.bold, self.emphasized, self.typewriter) =
+            (font.bold, font.emphasized, font.typewriter);
     }
 
     /// `'`: a closing quote, and with one right before it, a double one,
@@ -639,11 +679,23 @@ impl Reader {
             self.skip_spaces = name[1..].chars().all(|c| c.is_ascii_alphabetic());
             return;
         }
-        if let Some((bold, emphasized)) = font(name, self.bold, self.emphasized) {
+        if let Some(font) = declared(name, self.font()) {
+            return self.set_font(font);
+        }
+        if matches!(name, "\\begingroup" | "\\bgroup") {
+            return self.groups.push(self.font());
+        }
+        if matches!(name, "\\endgroup" | "\\egroup") {
+            if let Some(font) = self.groups.pop() {
+                self.set_font(font);
+            }
+            return;
+        }
+        if let Some(font) = font(name, self.font()) {
             // What's after it reads on as after its argument: the spaces
             // after a control space there go.
             if let Some(arg) = args.into_iter().next() {
-                self.in_font(arg, bold, emphasized);
+                self.in_font(arg, font);
             }
             return;
         }
@@ -662,7 +714,7 @@ impl Reader {
             // What's for a PDF's bookmarks goes.
             "\\texorpdfstring" => {
                 if let Some(tex) = args.into_iter().next() {
-                    self.in_font(tex, self.bold, self.emphasized);
+                    self.in_font(tex, self.font());
                 }
             }
             // What a list starts with (see `Reader::list`): elsewhere, it
@@ -680,9 +732,7 @@ impl Reader {
             // its text, and its groups' text follows.
             "\\item" => {
                 self.space();
-                for group in args {
-                    self.flow(group);
-                }
+                self.flow_groups(args);
             }
             // A control space (`\ `, or `\` at a line's end) is a space of
             // its own, and the spaces after it go.
@@ -693,15 +743,22 @@ impl Reader {
             // Characters LaTeX gives meanings, escaped.
             _ if ESCAPED.contains(&name) => self.text(&name[1..]),
             // Unknown commands keep their groups' text, as pandoc keeps it,
-            // and as it's written: `\\texttt`'s font and `\\url`'s address
+            // and as it's written: `\texttt`'s font and `\url`'s address
             // join nothing.
             _ => {
                 let outer = std::mem::replace(&mut self.literal, true);
-                for group in args {
-                    self.flow(group);
-                }
+                self.flow_groups(args);
                 self.literal = outer;
             }
+        }
+    }
+
+    /// `groups`, each in a group of its own (see [`Reader::font`]).
+    fn flow_groups(&mut self, groups: Vec<Vec<Piece>>) {
+        let font = self.font();
+        for group in groups {
+            self.flow(group);
+            self.set_font(font);
         }
     }
 
@@ -836,12 +893,14 @@ impl Reader {
         }
     }
 
-    /// `arg`, an argument, in the font `bold` and `emphasized` say.
-    fn in_font(&mut self, arg: Vec<Piece>, bold: bool, emphasized: bool) {
-        let outer = (self.bold, self.emphasized, self.in_argument);
-        (self.bold, self.emphasized, self.in_argument) = (bold, emphasized, true);
+    /// `arg`, an argument, in `font`.
+    fn in_font(&mut self, arg: Vec<Piece>, font: Font) {
+        let outer = self.font();
+        let in_argument = std::mem::replace(&mut self.in_argument, true);
+        self.set_font(font);
         self.flow(arg);
-        (self.bold, self.emphasized, self.in_argument) = outer;
+        self.in_argument = in_argument;
+        self.set_font(outer);
     }
 
     /// An `itemize`, `enumerate` or `description` environment: a list of
@@ -891,9 +950,13 @@ impl Reader {
             };
             if let Some(label) = item.label {
                 if kind == ListKind::Description {
-                    self.in_font(label, true, self.emphasized);
+                    let bold = Font {
+                        bold: true,
+                        ..self.font()
+                    };
+                    self.in_font(label, bold);
                 } else {
-                    self.flow(label);
+                    self.flow_groups(vec![label]);
                 }
                 // A control word ending the label takes no space that's
                 // not in the source.
@@ -941,11 +1004,12 @@ impl Reader {
         };
         // Set in its own font, emphasized or not: the emphasis around it
         // holds again after it.
-        let emphasized = std::mem::take(&mut self.emphasized);
+        let font = self.font();
+        self.emphasized = false;
         let in_argument = std::mem::replace(&mut self.in_argument, true);
         self.flow(arg);
         self.in_argument = in_argument;
-        self.emphasized = emphasized;
+        self.set_font(font);
         let content = trimmed(std::mem::take(&mut self.inlines));
         if !content.is_empty() {
             // Seven of them, so an index fits.
@@ -1153,23 +1217,100 @@ const LINE_BREAK: Signature = Signature {
     required: 0,
 };
 
-/// The font a command sets its argument in, as `(bold, emphasized)`, in text
-/// that's `bold` and `emphasized`; `None` for a command that sets none.
-/// `\emph` switches between italic and upright, so inside another it's
-/// upright: the reader nests no emphasis, which writers can't set apart from
-/// the one around it (#126). No writer shows the other families and shapes,
-/// which leave the font as it is.
-fn font(name: &str, bold: bool, emphasized: bool) -> Option<(bool, bool)> {
+/// The font a command sets its argument in, in text set in `font`; `None`
+/// for a command that sets none. `\\emph` switches between italic and
+/// upright, so inside another it's upright: the reader nests no emphasis,
+/// which writers can't set apart from the one around it (#126). No writer
+/// shows the other families and shapes, which leave the font as it is, but
+/// for leaving typewriter.
+fn font(name: &str, font: Font) -> Option<Font> {
     Some(match name {
-        "\\emph" => (bold, !emphasized),
-        "\\textbf" => (true, emphasized),
-        "\\textmd" => (false, emphasized),
-        "\\textit" | "\\textsl" => (bold, true),
-        "\\textup" => (bold, false),
-        "\\textnormal" => (false, false),
-        "\\textrm" | "\\textsf" | "\\textsc" | "\\underline" | "\\mbox" => (bold, emphasized),
+        "\\emph" => Font {
+            emphasized: !font.emphasized,
+            ..font
+        },
+        "\\textbf" => Font { bold: true, ..font },
+        "\\textmd" => Font {
+            bold: false,
+            ..font
+        },
+        "\\textit" | "\\textsl" => Font {
+            emphasized: true,
+            ..font
+        },
+        "\\textup" => Font {
+            emphasized: false,
+            ..font
+        },
+        "\\textnormal" => Font::default(),
+        "\\textrm" | "\\textsf" => Font {
+            typewriter: false,
+            ..font
+        },
+        "\\textsc" | "\\underline" | "\\mbox" => font,
         _ => return None,
     })
+}
+
+/// What text is set in, of what writers show or what changes how it's read.
+#[derive(Clone, Copy, Default)]
+struct Font {
+    bold: bool,
+    emphasized: bool,
+    typewriter: bool,
+}
+
+/// The font the declaration `name` makes of `font`; `None` for a command
+/// that's none. `\\bf` and those of its age start from the normal font, as
+/// LaTeX defines them, and `\\bfseries` and those of its time change one thing.
+fn declared(name: &str, font: Font) -> Option<Font> {
+    let normal = Font::default();
+    Some(match name {
+        "\\bf" => Font {
+            bold: true,
+            ..normal
+        },
+        "\\it" | "\\sl" => Font {
+            emphasized: true,
+            ..normal
+        },
+        "\\tt" => Font {
+            typewriter: true,
+            ..normal
+        },
+        "\\rm" | "\\sf" | "\\sc" | "\\normalfont" => normal,
+        "\\em" => Font {
+            emphasized: !font.emphasized,
+            ..font
+        },
+        "\\bfseries" => Font { bold: true, ..font },
+        "\\mdseries" => Font {
+            bold: false,
+            ..font
+        },
+        "\\itshape" | "\\slshape" => Font {
+            emphasized: true,
+            ..font
+        },
+        "\\upshape" | "\\scshape" => Font {
+            emphasized: false,
+            ..font
+        },
+        "\\ttfamily" => Font {
+            typewriter: true,
+            ..font
+        },
+        "\\rmfamily" | "\\sffamily" => Font {
+            typewriter: false,
+            ..font
+        },
+        _ => return None,
+    })
+}
+
+/// Whether `name` is a font declaration (see [`declared`]).
+fn is_declaration(name: &str) -> bool {
+    declared(name, Font::default()).is_some()
 }
 
 /// `word`, a word of text, with what TeX's fonts join in it joined.
@@ -1242,7 +1383,7 @@ fn signature(name: &str) -> Option<Signature> {
             required: 1,
             ..Signature::default()
         }),
-        _ if font(name, false, false).is_some() => Some(Signature {
+        _ if font(name, Font::default()).is_some() => Some(Signature {
             required: 1,
             ..Signature::default()
         }),
@@ -1252,6 +1393,8 @@ fn signature(name: &str) -> Option<Signature> {
             ..Signature::default()
         }),
         _ if symbol(name).is_some() => Some(Signature::default()),
+        "\\begingroup" | "\\endgroup" | "\\bgroup" | "\\egroup" => Some(Signature::default()),
+        _ if is_declaration(name) => Some(Signature::default()),
         "\\setcounter" => Some(SET_COUNTER),
         "\\rule" => Some(RULE),
         _ if ESCAPED.contains(&name) => Some(Signature::default()),
@@ -2117,6 +2260,132 @@ mod tests {
             write::markdown::write(&doc),
             "1. a\n\n7) b\n\n8) c\n\n- (x) d\n\n9. e\n"
         );
+    }
+
+    /// Each row: the blocks the source reads as.
+    #[test]
+    fn font_declarations_hold_to_their_group_s_end() {
+        let strong = |text_of: &str| Inline::Strong(vec![text(text_of)]);
+        let italic = |text_of: &str| Inline::Emph(vec![text(text_of)]);
+        let cases: Vec<(&str, Vec<Block>)> = vec![
+            ("{\\bf a} b", vec![para(&[strong("a"), text(" b")])]),
+            (
+                "a {\\bfseries b c} d",
+                vec![para(&[text("a "), strong("b c"), text(" d")])],
+            ),
+            ("{\\it a} b", vec![para(&[italic("a"), text(" b")])]),
+            ("{\\sl a}", vec![para(&[italic("a")])]),
+            ("{\\itshape a}", vec![para(&[italic("a")])]),
+            // `\\em` switches, as `\\emph` does.
+            ("{\\em a \\em b}", vec![para(&[italic("a"), text(" b")])]),
+            // The old ones start over; the new ones add.
+            ("{\\bf\\it a}", vec![para(&[italic("a")])]),
+            (
+                "{\\bfseries\\itshape a}",
+                vec![para(&[Inline::Strong(vec![italic("a")])])],
+            ),
+            ("{\\bf a\\rm b}", vec![para(&[strong("a"), text("b")])]),
+            (
+                "{\\bf a\\normalfont b}",
+                vec![para(&[strong("a"), text("b")])],
+            ),
+            (
+                "{\\bf a\\mdseries b}",
+                vec![para(&[strong("a"), text("b")])],
+            ),
+            ("{\\it a\\upshape b}", vec![para(&[italic("a"), text("b")])]),
+            // No writer shows these.
+            ("{\\sc a}{\\sf b}{\\scshape c}", vec![para(&[text("abc")])]),
+            // With no group, to the end, past a paragraph's and a group after.
+            (
+                "\\bf a\n\nb",
+                vec![para(&[strong("a")]), para(&[strong("b")])],
+            ),
+            ("\\bf{a} b", vec![para(&[strong("a b")])]),
+            // An environment ends it, its items don't.
+            (
+                "\\begin{itemize}\\item\\bf a\\item b\\end{itemize}c",
+                vec![
+                    list(
+                        false,
+                        &[
+                            (None, &[para(&[strong("a")])]),
+                            (None, &[para(&[strong("b")])]),
+                        ],
+                    ),
+                    para(&[text("c")]),
+                ],
+            ),
+            (
+                "\\begin{quote}\\it a\\end{quote}b",
+                vec![Block::Quote(vec![para(&[italic("a")])]), para(&[text("b")])],
+            ),
+            (
+                "\\begin{bfseries}a\\end{bfseries} b",
+                vec![para(&[strong("a"), text(" b")])],
+            ),
+            // So does an argument.
+            ("\\foo{\\bf a}b", vec![para(&[strong("a"), text("b")])]),
+            (
+                "\\textit{\\bfseries a}b",
+                vec![para(&[Inline::Strong(vec![italic("a")]), text("b")])],
+            ),
+            (
+                "\\section{\\bf a}b",
+                vec![heading(1, &[strong("a")]), para(&[text("b")])],
+            ),
+            (
+                "\\begin{itemize}\\item[\\bf a] b\\item c\\end{itemize}",
+                vec![list(
+                    false,
+                    &[
+                        (None, &[para(&[strong("a"), text(" b")])]),
+                        (None, &[para(&[text("c")])]),
+                    ],
+                )],
+            ),
+            // Groups as commands end them too.
+            (
+                "\\begingroup\\bfseries a\\endgroup b",
+                vec![para(&[strong("a"), text("b")])],
+            ),
+            (
+                "\\bgroup\\it a\\egroup b",
+                vec![para(&[italic("a"), text("b")])],
+            ),
+            (
+                "\\begingroup\\it a\\begingroup\\upshape b\\endgroup c\\endgroup d",
+                vec![para(&[italic("a"), text("b"), italic("c"), text("d")])],
+            ),
+            ("\\endgroup a", vec![para(&[text("a")])]),
+            // Typewriter joins nothing, in its group alone.
+            (
+                "{\\ttfamily a--b ``c'' d'e}--",
+                vec![para(&[text("a--b ``c'' d'e–")])],
+            ),
+            ("{\\tt a--b}", vec![para(&[text("a--b")])]),
+            ("{\\ttfamily\\rmfamily a--b}", vec![para(&[text("a–b")])]),
+            ("{\\tt\\rm a--b}", vec![para(&[text("a–b")])]),
+            // Commands for another family leave it, in their argument.
+            (
+                "{\\ttfamily\\textrm{a--b}c--d}",
+                vec![para(&[text("a–bc--d")])],
+            ),
+            ("{\\ttfamily\\textsf{a--b}}", vec![para(&[text("a–b")])]),
+            ("{\\ttfamily\\textnormal{a--b}}", vec![para(&[text("a–b")])]),
+            ("{\\ttfamily\\textsc{a--b}}", vec![para(&[text("a--b")])]),
+            (
+                "\\emph{\\ttfamily a--b}c--d",
+                vec![para(&[italic("a--b"), text("c–d")])],
+            ),
+            (
+                "\\begin{ttfamily}a--b\\end{ttfamily}c--d",
+                vec![para(&[text("a--bc–d")])],
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
     }
 
     /// Each row: the text the source reads as.
