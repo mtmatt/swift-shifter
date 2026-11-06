@@ -20,7 +20,9 @@ use verbatim::Verbatim;
 use super::lists::loosens;
 use super::walk;
 use crate::converter::document::native::Warning;
-use crate::converter::document::native::ast::{Block, Document, Inline, List, ListItem};
+use crate::converter::document::native::ast::{
+    Block, Document, Inline, List, ListItem, inline_text,
+};
 use crate::converter::document::native::write;
 
 /// The stack reading takes per level the parser and the reader recurse
@@ -563,6 +565,8 @@ struct Reader {
     in_heading: bool,
     /// The labels in the heading being read.
     heading_labels: Vec<String>,
+    /// The float's last caption, if it has one.
+    caption: Option<Vec<Inline>>,
     /// Whether what's read is a link's text (see [`Reader::href`]).
     in_link: bool,
     /// Whether what's read is an unknown command's: nothing in it is joined.
@@ -682,6 +686,7 @@ impl Reader {
                             "description" => self.list(&node, ListKind::Description),
                             "quote" | "quotation" | "verse" => self.quote(&node),
                             "center" | "flushleft" | "flushright" => self.aligned(&node),
+                            "figure" | "figure*" | "table" | "table*" => self.float(&node),
                             name @ ("math" | "displaymath") => {
                                 let mut inside = pieces(&node);
                                 inside.retain(|piece| {
@@ -842,6 +847,20 @@ impl Reader {
                 }
             }
             "\\cite" => self.cite(args),
+            "\\includegraphics" => {
+                if let Some(arg) = args.first() {
+                    self.inline(Inline::Image {
+                        url: literal_text(arg),
+                        title: None,
+                        alt: String::new(),
+                    });
+                }
+            }
+            "\\caption" => {
+                if let Some(arg) = args.into_iter().next() {
+                    self.caption(arg);
+                }
+            }
             // A number given is no count.
             "\\footnote" => {
                 if args.len() == 1 {
@@ -910,7 +929,7 @@ impl Reader {
             // shows nothing.
             // A line, which no writer's text can hold, outside of a block
             // of its own (see `Reader::aligned`).
-            "\\tightlist" | "\\rule" | "\\nocite" | "\\pageref" => {}
+            "\\tightlist" | "\\rule" | "\\nocite" | "\\pageref" | "\\centering" => {}
             "\\ensuremath" => {
                 if let Some(arg) = args.first() {
                     self.math(&source_text(arg), false);
@@ -1362,6 +1381,38 @@ impl Reader {
         self.text("]");
     }
 
+    /// A `figure` or `table`: its blocks, where it's written, as no writer
+    /// floats them. An image and a caption alone are one image, with the
+    /// caption for its alt text, as writers take a figure.
+    fn float(&mut self, env: &SyntaxNode) {
+        self.end_paragraph();
+        let mut items = pieces(env);
+        let (mut at, mut unbracketed) = (0, 0);
+        if matches!(items.first(), Some(Piece::Node(node)) if node.kind() == SyntaxKind::ItemBegin)
+        {
+            at = 1;
+            take_arguments(&mut items, &mut at, &mut unbracketed, ITEM);
+        }
+        let outer = std::mem::take(&mut self.blocks);
+        let caption = self.caption.take();
+        self.flow(items.split_off(at));
+        self.end_paragraph();
+        let blocks = std::mem::replace(&mut self.blocks, outer);
+        let caption = std::mem::replace(&mut self.caption, caption);
+        self.blocks.extend(captioned(blocks, caption));
+    }
+
+    /// A caption: a paragraph of its own, in the font around it.
+    fn caption(&mut self, arg: Vec<Piece>) {
+        self.end_paragraph();
+        self.in_font(arg, self.font());
+        let content = trimmed(std::mem::take(&mut self.inlines));
+        if !content.is_empty() {
+            self.caption = Some(content.clone());
+            self.blocks.push(Block::Paragraph(content));
+        }
+    }
+
     /// `arg`, an argument, in `font`.
     fn in_font(&mut self, arg: Vec<Piece>, font: Font) {
         let outer = self.font();
@@ -1753,10 +1804,43 @@ fn referred_label(arg: &[Piece]) -> Option<String> {
     }
 }
 
-/// Moves the marks of notes in `inlines`, a link's text, to `marks`.
+/// `blocks`, a float's, the two made one if they're an image with no alt
+/// text and its `caption`. Alt text is plain, so a caption holding a note's
+/// mark, which it would lose, stays.
+fn captioned(blocks: Vec<Block>, caption: Option<Vec<Inline>>) -> Vec<Block> {
+    let Some(caption) = caption else {
+        return blocks;
+    };
+    let mut plain = caption.clone();
+    let mut marks = Vec::new();
+    take_note_marks(&mut plain, &mut marks);
+    let image = match &blocks[..] {
+        [Block::Paragraph(first), Block::Paragraph(second)] if *second == caption => first,
+        [Block::Paragraph(first), Block::Paragraph(second)] if *first == caption => second,
+        _ => return blocks,
+    };
+    match &image[..] {
+        [Inline::Image { url, title, alt }] if alt.is_empty() && marks.is_empty() => {
+            vec![Block::Paragraph(vec![Inline::Image {
+                url: url.clone(),
+                title: title.clone(),
+                alt: inline_text(&plain),
+            }])]
+        }
+        _ => blocks,
+    }
+}
+
+/// Moves the marks of notes in `inlines`, a link's text or a caption, to
+/// `marks`.
 fn take_note_marks(inlines: &mut Vec<Inline>, marks: &mut Vec<Inline>) {
     inlines.retain_mut(|inline| match inline {
         Inline::FootnoteRef(_) => {
+            marks.push(inline.clone());
+            false
+        }
+        // One that may turn out to be a mark (see `Reader::bare_reference`).
+        Inline::Link { content, .. } if content.is_empty() => {
             marks.push(inline.clone());
             false
         }
@@ -1984,6 +2068,13 @@ fn signature(name: &str) -> Option<Signature> {
             required: 1,
             ..Signature::default()
         }),
+        "\\includegraphics" | "\\caption" => Some(Signature {
+            star: true,
+            optional: true,
+            required: 1,
+            ..Signature::default()
+        }),
+        "\\centering" => Some(Signature::default()),
         "\\footnotemark" => Some(Signature {
             optional: true,
             ..Signature::default()
@@ -3459,6 +3550,145 @@ mod tests {
             "# Café\n\n[back](#café)\n",
             "[on](#b)\n\n# a\n\n# b\n",
         ] {
+            let doc = markdown::read(source);
+            let tex = write::latex::write(&doc);
+            assert_eq!(read(&tex).0.blocks, doc.blocks, "{tex}");
+        }
+    }
+
+    /// Each row: the blocks the source reads as.
+    #[test]
+    fn images_and_figures_are_read() {
+        let image = |url: &str, alt: &str| Inline::Image {
+            url: url.to_string(),
+            title: None,
+            alt: alt.to_string(),
+        };
+        let cases: Vec<(&str, Vec<Block>)> = vec![
+            (
+                "\\includegraphics{a.png}",
+                vec![para(&[image("a.png", "")])],
+            ),
+            (
+                "x \\includegraphics[width=2cm]{a_b.png} y",
+                vec![para(&[text("x "), image("a_b.png", ""), text(" y")])],
+            ),
+            (
+                "\\includegraphics*{a.png}",
+                vec![para(&[image("a.png", "")])],
+            ),
+            (
+                "\\includegraphics{a\\%b.png}",
+                vec![para(&[image("a%b.png", "")])],
+            ),
+            // A figure: its caption is the image's alt text, above it or
+            // below, its options, `\\centering` and label showing nothing.
+            (
+                "\\begin{figure}[htbp]\n\\centering\n\\includegraphics{a.png}\n\\caption{Cap}\n\\label{f}\n\\end{figure}",
+                vec![para(&[image("a.png", "Cap")])],
+            ),
+            (
+                "\\begin{figure*}\\caption{Cap}\\includegraphics{a.png}\\end{figure*}",
+                vec![para(&[image("a.png", "Cap")])],
+            ),
+            (
+                "\\begin{figure}\\includegraphics{a.png}\\caption[Short]{A \\emph{long} one, $x$}\\end{figure}",
+                vec![para(&[image("a.png", "A long one, x")])],
+            ),
+            (
+                "\\begin{figure}\\includegraphics{a.png}\\end{figure}",
+                vec![para(&[image("a.png", "")])],
+            ),
+            // Text around a figure is apart from it.
+            (
+                "a\\begin{figure}\\includegraphics{b.png}\\caption{c}\\end{figure}d",
+                vec![
+                    para(&[text("a")]),
+                    para(&[image("b.png", "c")]),
+                    para(&[text("d")]),
+                ],
+            ),
+            // More than that keeps all of it, in order.
+            (
+                "\\begin{figure}\\includegraphics{a.png}\\includegraphics{b.png}\\caption{c}\\end{figure}",
+                vec![
+                    para(&[image("a.png", ""), image("b.png", "")]),
+                    para(&[text("c")]),
+                ],
+            ),
+            (
+                "\\begin{figure}\\includegraphics{a.png}\n\n\\includegraphics{b.png}\\caption{c}\\end{figure}",
+                vec![
+                    para(&[image("a.png", "")]),
+                    para(&[image("b.png", "")]),
+                    para(&[text("c")]),
+                ],
+            ),
+            (
+                "\\begin{figure}text\\caption{c}\\end{figure}",
+                vec![para(&[text("text")]), para(&[text("c")])],
+            ),
+            (
+                "\\begin{table}[t]\\caption{c}a\\end{table}",
+                vec![para(&[text("c")]), para(&[text("a")])],
+            ),
+            // A caption elsewhere is its text.
+            (
+                "a\\caption{b}c",
+                vec![para(&[text("a")]), para(&[text("b")]), para(&[text("c")])],
+            ),
+            (
+                "\\begin{figure}\\includegraphics{a.png}\\caption{}\\end{figure}",
+                vec![para(&[image("a.png", "")])],
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
+        // In a block of its own, it's that block's, not the figure's.
+        assert_eq!(
+            read("\\begin{figure}\\begin{quote}\\caption{a}\\end{quote}b\\end{figure}")
+                .0
+                .blocks,
+            [Block::Quote(vec![para(&[text("a")])]), para(&[text("b")])]
+        );
+        assert_eq!(
+            read("\\begin{figure}\\includegraphics{a.png}\\begin{quote}x\n\ny\n\n\\caption{c}\\end{quote}\\end{figure}").0.blocks,
+            [
+                para(&[image("a.png", "")]),
+                Block::Quote(vec![para(&[text("x")]), para(&[text("y")]), para(&[text("c")])]),
+            ]
+        );
+        // A mark to come stays, as a note's does.
+        let (doc, _) = read(
+            "\\footnote{\\label{n}a}\\begin{figure}\\includegraphics{b.png}\\caption{c\\textsuperscript{\\ref{n}}}\\end{figure}",
+        );
+        assert_eq!(
+            doc.blocks[2],
+            para(&[text("c"), Inline::FootnoteRef("1".to_string())])
+        );
+        // A note in a caption keeps its mark, so the caption stays text.
+        let (doc, _) =
+            read("\\begin{figure}\\includegraphics{a.png}\\caption{b\\footnote{c}}\\end{figure}");
+        assert!(
+            matches!(
+                &doc.blocks[..],
+                [
+                    Block::Paragraph(_),
+                    Block::Paragraph(_),
+                    Block::FootnoteDefinition { .. }
+                ]
+            ),
+            "{:?}",
+            doc.blocks
+        );
+    }
+
+    /// Images our LaTeX writer writes read back.
+    #[test]
+    fn our_latex_images_read_back() {
+        use crate::converter::document::native::{read::markdown, write};
+        for source in ["![](a.png)\n", "![A cat](images/1.png)\n"] {
             let doc = markdown::read(source);
             let tex = write::latex::write(&doc);
             assert_eq!(read(&tex).0.blocks, doc.blocks, "{tex}");
