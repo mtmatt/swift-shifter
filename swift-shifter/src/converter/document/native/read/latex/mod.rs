@@ -702,7 +702,7 @@ impl Reader {
                             "quote" | "quotation" | "verse" => self.quote(&node),
                             "center" | "flushleft" | "flushright" => self.aligned(&node),
                             "figure" | "figure*" | "table" | "table*" => self.float(&node),
-                            "tabular" => self.tabular(&node, false),
+                            "tabular" | "longtable" => self.tabular(&node, false),
                             "tabular*" | "tabularx" => self.tabular(&node, true),
                             name @ ("math" | "displaymath") => {
                                 let mut inside = pieces(&node);
@@ -1430,7 +1430,11 @@ impl Reader {
             .map(|columns| columns_of(&source_text(columns)))
             .unwrap_or_default();
         let mut rows: Vec<Vec<Vec<Inline>>> = Vec::new();
+        // A `longtable`'s rows up to where it says its head ends.
+        let mut head = None;
+        let (mut foot, mut foot_is_last) = (Vec::new(), false);
         let mut header_rule = false;
+        let mut after_caption = false;
         let mut row: Vec<Vec<Piece>> = Vec::new();
         let mut cell: Vec<Piece> = Vec::new();
         while let Some(piece) = items.get(at).cloned() {
@@ -1447,24 +1451,78 @@ impl Reader {
                 Piece::Token(SyntaxKind::ItemNewLine, _) => {
                     take_arguments(&mut items, &mut at, &mut unbracketed, LINE_BREAK);
                     row.push(std::mem::take(&mut cell));
-                    rows.push(self.table_row(std::mem::take(&mut row), align.len()));
+                    self.table_row(std::mem::take(&mut row), align.len(), &mut rows);
+                    if std::mem::take(&mut after_caption)
+                        && matches!(rows.last().map(Vec::as_slice), Some([only]) if only.is_empty())
+                    {
+                        rows.pop();
+                    }
                 }
                 _ if name == "\\tabularnewline" => {
                     take_arguments(&mut items, &mut at, &mut unbracketed, LINE_BREAK);
                     row.push(std::mem::take(&mut cell));
-                    rows.push(self.table_row(std::mem::take(&mut row), align.len()));
+                    self.table_row(std::mem::take(&mut row), align.len(), &mut rows);
+                    if std::mem::take(&mut after_caption)
+                        && matches!(rows.last().map(Vec::as_slice), Some([only]) if only.is_empty())
+                    {
+                        rows.pop();
+                    }
                 }
                 _ if RULES.contains(&name.as_str()) && row.is_empty() && is_blank(&cell) => {
                     cell.clear();
                     skip_rule_arguments(&name, &items, &mut at);
                     header_rule |= rows.len() == 1;
                 }
+                // A first page's head, then the head of the rest, the same.
+                _ if name == "\\endfirsthead" && row.is_empty() && is_blank(&cell) => {
+                    cell.clear();
+                    header_rule = false;
+                    head = Some(std::mem::take(&mut rows));
+                }
+                _ if name == "\\endhead" && row.is_empty() && is_blank(&cell) => {
+                    cell.clear();
+                    header_rule = false;
+                    if head.is_none() {
+                        head = Some(std::mem::take(&mut rows));
+                    }
+                    rows.clear();
+                }
+                // The foot of each page but the last is a repeat; the last's
+                // ends the table, whatever order they're written in.
+                _ if matches!(name.as_str(), "\\endfoot" | "\\endlastfoot")
+                    && row.is_empty()
+                    && is_blank(&cell) =>
+                {
+                    cell.clear();
+                    header_rule = false;
+                    let last = name == "\\endlastfoot";
+                    if last || !foot_is_last {
+                        foot = std::mem::take(&mut rows);
+                    }
+                    foot_is_last |= last;
+                    rows.clear();
+                }
+                // A `longtable`'s caption is a row, before the table here.
+                _ if name == "\\caption" && row.is_empty() && is_blank(&cell) => {
+                    cell.clear();
+                    let caption = take_arguments(&mut items, &mut at, &mut unbracketed, CAPTION);
+                    if let Some(caption) = caption.required.into_iter().next() {
+                        self.caption(caption);
+                    }
+                    after_caption = true;
+                }
                 _ => cell.push(piece),
             }
         }
         if !row.is_empty() || !is_blank(&cell) {
             row.push(cell);
-            rows.push(self.table_row(row, align.len()));
+            self.table_row(row, align.len(), &mut rows);
+        }
+        rows.append(&mut foot);
+        if let Some(mut head) = head.filter(|head: &Vec<_>| !head.is_empty()) {
+            header_rule = true;
+            head.append(&mut rows);
+            rows = head;
         }
         if rows.is_empty() {
             return;
@@ -1511,8 +1569,14 @@ impl Reader {
         }
     }
 
-    /// The cells of a row of `row`, at most `columns` for what a cell spans.
-    fn table_row(&mut self, row: Vec<Vec<Piece>>, columns: usize) -> Vec<Vec<Inline>> {
+    /// Adds to `rows` the cells of `row`, at most `columns` for what a cell
+    /// spans.
+    fn table_row(
+        &mut self,
+        row: Vec<Vec<Piece>>,
+        columns: usize,
+        rows: &mut Vec<Vec<Vec<Inline>>>,
+    ) {
         let mut cells = Vec::with_capacity(row.len());
         for cell in row {
             // A table in the cell has spans of its own.
@@ -1525,7 +1589,7 @@ impl Reader {
                 cells.resize(cells.len() + span - 1, Vec::new());
             }
         }
-        cells
+        rows.push(cells);
     }
 
     /// A cell's inlines: a group, so what it declares ends with it. It holds
@@ -1896,6 +1960,14 @@ const DEFINITIONS: [&str; 7] = [
 /// definitions with no group don't each read the rest of the document.
 const MAX_DEFINITION_PARAMETERS: usize = 64;
 
+/// `\\caption`'s.
+const CAPTION: Signature = Signature {
+    star: true,
+    optional: true,
+    unstarred_optional: false,
+    required: 1,
+};
+
 /// `tabular`'s, after a width: its position and columns.
 const TABULAR: Signature = Signature {
     star: false,
@@ -2008,12 +2080,12 @@ fn join_past_columns(row: &mut Vec<Vec<Inline>>) {
     }
 }
 
-/// Adds `more` to `inlines`, a space apart from what's there.
+/// Adds `more` to `inlines`, a space apart from what's there, on its line.
 fn push_apart(inlines: &mut Vec<Inline>, more: Vec<Inline>) {
     if more.is_empty() {
         return;
     }
-    if !inlines.is_empty() {
+    if !matches!(inlines.last(), None | Some(Inline::LineBreak)) {
         push_text(inlines, " ");
     }
     for inline in more {
@@ -2035,11 +2107,18 @@ fn flatten_block(block: &mut Block, inlines: &mut Vec<Inline>) {
             push_apart(inlines, vec![Inline::Code(std::mem::take(code))]);
         }
         Block::Math(tex) => push_apart(inlines, vec![Inline::Math(std::mem::take(tex))]),
+        // A table in a cell sets its lines, as our LaTeX writer writes a
+        // cell of several.
         Block::Table(table) => {
-            for cell in std::mem::take(&mut table.header) {
-                push_apart(inlines, cell);
-            }
-            for row in std::mem::take(&mut table.rows) {
+            let header = std::mem::take(&mut table.header);
+            let rows = std::mem::take(&mut table.rows);
+            let lines = std::iter::once(header)
+                .chain(rows)
+                .filter(|row| !row.is_empty());
+            for (line, row) in lines.enumerate() {
+                if line > 0 {
+                    inlines.push(Inline::LineBreak);
+                }
                 for cell in row {
                     push_apart(inlines, cell);
                 }
@@ -4180,6 +4259,11 @@ mod tests {
                 "\\begin{tabular}{ll}\\multicolumn{99999999}{c}{a}\\end{tabular}",
                 vec![t(&[Left, Left], &[], &[&["a", ""]])],
             ),
+            // A blank row stays.
+            (
+                "\\begin{tabular}{l}a\\\\\\\\b\\end{tabular}",
+                vec![t(&[Left], &[], &[&["a"], &[""], &["b"]])],
+            ),
             // Nothing in it, nothing of it; text around it is apart.
             ("\\begin{tabular}{ll}\\hline\\end{tabular}", vec![]),
             (
@@ -4249,7 +4333,11 @@ mod tests {
             ),
             (
                 "\\begin{tabular}{p{3cm}}\\begin{tabular}{l}\\textbf{a}\\\\b\\end{tabular}\\end{tabular}",
-                vec![Inline::Strong(vec![text("a")]), text(" b")],
+                vec![
+                    Inline::Strong(vec![text("a")]),
+                    Inline::LineBreak,
+                    text("b"),
+                ],
             ),
         ] {
             let (doc, _) = read(source);
@@ -4318,6 +4406,92 @@ mod tests {
             panic!("no table");
         };
         assert_eq!(table.align.len(), MAX_COLUMNS);
+    }
+
+    /// Each row: the table the source reads as.
+    #[test]
+    fn longtable_is_a_table() {
+        use Align::Left;
+        let table = |header: &[&str], rows: &[&[&str]]| {
+            let row = |cells: &[&str]| -> Vec<Vec<Inline>> {
+                cells.iter().map(|cell| vec![text(cell)]).collect()
+            };
+            Block::Table(Table {
+                align: vec![Left, Left],
+                header: row(header),
+                rows: rows.iter().map(|cells| row(cells)).collect(),
+            })
+        };
+        let cases: Vec<(&str, Vec<Block>)> = vec![
+            // As our LaTeX writer writes it.
+            (
+                "\\begin{longtable}{@{}ll@{}}\n\\toprule\na & b \\\\\n\\midrule\n\\endhead\nc & d \\\\\n\\bottomrule\n\\end{longtable}",
+                vec![table(&["a", "b"], &[&["c", "d"]])],
+            ),
+            (
+                "\\begin{longtable}[c]{ll}\na & b \\\\\\endhead\nc & d\\end{longtable}",
+                vec![table(&["a", "b"], &[&["c", "d"]])],
+            ),
+            // With a head of its own for the first page; the second's the same.
+            (
+                "\\begin{longtable}{ll}a&b\\\\\\endfirsthead x&y\\\\\\endhead c&d\\\\\\end{longtable}",
+                vec![table(&["a", "b"], &[&["c", "d"]])],
+            ),
+            // The last page's foot ends it, and the others' go.
+            (
+                "\\begin{longtable}{ll}a&b\\\\\\endhead x&y\\\\\\endfoot z&w\\\\\\endlastfoot c&d\\\\\\end{longtable}",
+                vec![table(&["a", "b"], &[&["c", "d"], &["z", "w"]])],
+            ),
+            (
+                "\\begin{longtable}{ll}a&b\\\\\\endhead z&w\\\\\\endlastfoot x&y\\\\\\endfoot c&d\\\\\\end{longtable}",
+                vec![table(&["a", "b"], &[&["c", "d"], &["z", "w"]])],
+            ),
+            // A rule in a foot says nothing of the rows after it.
+            (
+                "\\begin{longtable}{ll}c&d\\\\\\hline\\endfoot a&b\\\\e&f\\\\\\end{longtable}",
+                vec![Block::Table(Table {
+                    align: vec![Left, Left],
+                    header: Vec::new(),
+                    rows: [["a", "b"], ["e", "f"], ["c", "d"]]
+                        .iter()
+                        .map(|row| row.iter().map(|cell| vec![text(cell)]).collect())
+                        .collect(),
+                })],
+            ),
+            // With one foot, it's the last page's too.
+            (
+                "\\begin{longtable}{ll}a&b\\\\\\endhead z&w\\\\\\endfoot c&d\\\\\\end{longtable}",
+                vec![table(&["a", "b"], &[&["c", "d"], &["z", "w"]])],
+            ),
+            // A head of more rows has its first for the header.
+            (
+                "\\begin{longtable}{ll}a&b\\\\e&f\\\\\\endhead c&d\\end{longtable}",
+                vec![table(&["a", "b"], &[&["e", "f"], &["c", "d"]])],
+            ),
+            // A caption is before the table, what's left of its row gone.
+            (
+                "\\begin{longtable}{ll}\\caption{x}\\label{y}\\\\a&b\\\\\\hline c&d\\end{longtable}",
+                vec![para(&[text("x")]), table(&["a", "b"], &[&["c", "d"]])],
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
+    }
+
+    /// Tables our LaTeX writer writes read back.
+    #[test]
+    fn our_latex_tables_read_back() {
+        use crate::converter::document::native::{read::markdown, write};
+        for source in [
+            "| a | b |\n| :-- | --: |\n| c | d |\n",
+            "| a | b |\n| :-: | :-: |\n| c | d |\n| e | f |\n",
+            "| a |\n| :-- |\n| x<br>y |\n",
+        ] {
+            let doc = markdown::read(source);
+            let tex = write::latex::write(&doc);
+            assert_eq!(read(&tex).0.blocks, doc.blocks, "{tex}");
+        }
     }
 
     /// Links our LaTeX writer writes read back.
