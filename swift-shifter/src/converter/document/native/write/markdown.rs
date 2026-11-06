@@ -291,7 +291,8 @@ impl Writer {
         // the same run of inlines can stop a closing run.
         let before = out.chars().last();
         let after = self.first_char(rest);
-        if left_flanking(before, first) && right_flanking(last, after) {
+        let flanks = left_flanking(before, first) && right_flanking(last, after);
+        if flanks && !touches_a_run(content, rest) {
             wrap(out, delim, &inner);
         } else {
             out.push_str(&format!("<{tag}>{inner}</{tag}>"));
@@ -319,6 +320,17 @@ impl Writer {
             Inline::LineBreak | Inline::SoftBreak => Some(' '),
         })
     }
+}
+
+/// Whether delimiters around `content`, with `rest` after it, would meet
+/// those of another run, in a way CommonMark may pair otherwise: `*a**b*`
+/// and `***a*b*c***` don't read as they were written (#126). The one that's
+/// all of `content`, `***a***`, reads as written.
+fn touches_a_run(content: &[Inline], rest: &[Inline]) -> bool {
+    let is_run = |inline: &Inline| matches!(inline, Inline::Emph(_) | Inline::Strong(_));
+    let at_edge = content.len() > 1
+        && (content.first().is_some_and(is_run) || content.last().is_some_and(is_run));
+    at_edge || rest.first().is_some_and(is_run)
 }
 
 /// Whether a delimiter run between `before` and `next` is left-flanking,
@@ -688,6 +700,111 @@ mod tests {
         ] {
             assert_round_trips(&doc_of(html::read_fragment(html)));
         }
+    }
+
+    /// Each character of `inlines`, with whether it's bold and whether it's
+    /// italic: what a reader sees, whichever way the runs nest.
+    fn styled(inlines: &[Inline], bold: bool, italic: bool, out: &mut Vec<(char, bool, bool)>) {
+        for inline in inlines {
+            match inline {
+                Inline::Text(text) => out.extend(text.chars().map(|c| (c, bold, italic))),
+                Inline::Emph(content) => styled(content, bold, true, out),
+                Inline::Strong(content) => styled(content, true, italic, out),
+                // Tags left unread: never equal to what was written.
+                _ => out.push(('\0', bold, italic)),
+            }
+        }
+    }
+
+    /// Every run of up to `len` of a text, an emphasis and a strong text,
+    /// `depth` deep. Runs don't hold their own kind, as no reader nests it.
+    fn runs(len: usize, depth: usize, outer: Option<bool>) -> Vec<Vec<Inline>> {
+        let mut pieces = vec![Inline::Text("a".to_string())];
+        if depth > 0 {
+            for strong in [false, true] {
+                if outer == Some(strong) {
+                    continue;
+                }
+                for content in runs(len - 1, depth - 1, Some(strong)) {
+                    pieces.push(if strong {
+                        Inline::Strong(content)
+                    } else {
+                        Inline::Emph(content)
+                    });
+                }
+            }
+        }
+        let mut all: Vec<Vec<Inline>> = pieces.iter().map(|piece| vec![piece.clone()]).collect();
+        let mut last = all.clone();
+        for _ in 1..len {
+            last = last
+                .iter()
+                .flat_map(|run| {
+                    pieces.iter().map(|piece| {
+                        let mut run = run.clone();
+                        run.push(piece.clone());
+                        run
+                    })
+                })
+                .collect();
+            all.extend(last.clone());
+        }
+        all
+    }
+
+    #[test]
+    fn emphasis_side_by_side_and_nested_keeps_its_text_and_style() {
+        let mut failed = Vec::new();
+        for run in runs(3, 2, None) {
+            let doc = Document {
+                blocks: vec![Block::Paragraph(run.clone())],
+                ..Document::default()
+            };
+            let written = write(&doc);
+            let read = markdown::read(&written);
+            let [Block::Paragraph(back)] = &read.blocks[..] else {
+                failed.push(written);
+                continue;
+            };
+            let (mut expected, mut got) = (Vec::new(), Vec::new());
+            styled(&run, false, false, &mut expected);
+            styled(back, false, false, &mut got);
+            if expected != got {
+                failed.push(written);
+            }
+        }
+        assert_eq!(failed, Vec::<String>::new());
+    }
+
+    /// What `\textbf{\emph{a}b\emph{c}}` reads as, and emphasis side by side
+    /// (#126), with what they're written as.
+    #[test]
+    fn runs_that_would_meet_are_written_as_html() {
+        let text = |text: &str| Inline::Text(text.to_string());
+        let emph = |text_of: &str| Inline::Emph(vec![text(text_of)]);
+        let strong = |text_of: &str| Inline::Strong(vec![text(text_of)]);
+        for (run, expected) in [
+            (
+                vec![Inline::Strong(vec![emph("a"), text("b"), emph("c")])],
+                "<strong>*a*b*c*</strong>\n",
+            ),
+            (
+                vec![Inline::Emph(vec![strong("a"), text("b"), strong("c")])],
+                "<em>**a**b**c**</em>\n",
+            ),
+            (vec![emph("x"), emph("y")], "<em>x</em>*y*\n"),
+            (vec![strong("x"), strong("y")], "<strong>x</strong>**y**\n"),
+            (vec![strong("x"), emph("y")], "<strong>x</strong>*y*\n"),
+        ] {
+            let doc = doc_of(vec![Block::Paragraph(run)]);
+            assert_eq!(write(&doc), expected);
+            assert_round_trips(&doc);
+        }
+        // Alone in one another, delimiters still do.
+        let doc = doc_of(vec![Block::Paragraph(vec![Inline::Strong(vec![emph(
+            "a",
+        )])])]);
+        assert_eq!(write(&doc), "***a***\n");
     }
 
     #[test]
