@@ -44,7 +44,7 @@ const MAX_STACK: usize = 1 << 30;
 /// `source`, and, where it might nest too deep to parse, a warning that it
 /// was read as plain text instead, or one of what of it was (see
 /// [`read_parsed`]).
-pub fn read(source: &str) -> (Document, Option<Warning>) {
+pub fn read(source: &str) -> (Document, Vec<Warning>) {
     // The parser and the reader recurse into nested groups, environments,
     // math and scripts, as deep as they go, so reading gets a stack of its
     // own, as deep as `source` could need.
@@ -67,7 +67,7 @@ pub fn read(source: &str) -> (Document, Option<Warning>) {
         count: 1,
         line: None,
     };
-    (super::plain::read(source), Some(warning))
+    (super::plain::read(source), vec![warning])
 }
 
 /// How deep the parser and the reader might recurse into `source` at most:
@@ -84,7 +84,7 @@ fn nesting_bound(source: &str) -> usize {
 
 /// `source`, parsed, and a warning of the lists nested too deep to keep
 /// (see [`MAX_LIST_NESTING`]).
-fn read_parsed(source: &str) -> (Document, Option<Warning>) {
+fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
     let source = conditionals::keep_else(source);
     let cut = verbatim::cut(&source);
     // Expanding macros, which may never end, would also parse more than
@@ -113,18 +113,29 @@ fn read_parsed(source: &str) -> (Document, Option<Warning>) {
         });
     }
     level_headings(&mut reader.blocks);
-    let warning = (reader.unlisted > 0).then_some(Warning {
-        one: "list or quote nested too deeply was read as its text",
-        many: "lists or quotes nested too deeply were read as their text",
-        count: reader.unlisted,
-        line: None,
-    });
+    let mut warnings = Vec::new();
+    if reader.unlisted > 0 {
+        warnings.push(Warning {
+            one: "list or quote nested too deeply was read as its text",
+            many: "lists or quotes nested too deeply were read as their text",
+            count: reader.unlisted,
+            line: None,
+        });
+    }
+    if reader.sparse_tables > 0 {
+        warnings.push(Warning {
+            one: "table too sparse to keep was read as its text",
+            many: "tables too sparse to keep were read as their text",
+            count: reader.sparse_tables,
+            line: None,
+        });
+    }
     let mut doc = Document {
         blocks: reader.blocks,
         ..Document::default()
     };
     resolve_references(&mut doc, &reader.labels, &reader.note_labels);
-    (doc, warning)
+    (doc, warnings)
 }
 
 /// Prefix of a reference's link until every label is known (see
@@ -565,6 +576,8 @@ struct Reader {
     in_heading: bool,
     /// The labels in the heading being read.
     heading_labels: Vec<String>,
+    /// The tables too sparse to keep, read as their text.
+    sparse_tables: usize,
     /// How many columns the table cell being read spans.
     cell_span: usize,
     /// The float's last caption, if it has one.
@@ -1456,17 +1469,23 @@ impl Reader {
         if rows.is_empty() {
             return;
         }
-        let cells = rows.iter().map(Vec::len).max().unwrap_or(0);
-        let width = cells.max(align.len()).min(MAX_COLUMNS);
-        align.resize(width, Align::Default);
-        // Short rows are evened out, unless that would make far more of a
-        // table than its source holds: writers take them as they are.
-        if rows.len().saturating_mul(width) <= MAX_EVEN_CELLS {
-            for row in &mut rows {
-                if row.len() < width {
-                    row.resize(width, Vec::new());
-                }
+        for row in &mut rows {
+            join_past_columns(row);
+        }
+        let longest = rows.iter().map(Vec::len).max().unwrap_or(0);
+        let width = longest.max(align.len());
+        let cells: usize = rows.iter().map(Vec::len).sum();
+        let area = rows.len().saturating_mul(width);
+        if area > MAX_SPARSE_AREA && area / MAX_SPARSE_RATIO > cells {
+            self.sparse_tables += 1;
+            for row in rows {
+                self.table_text(row);
             }
+            return;
+        }
+        align.resize(width, Align::Default);
+        for row in &mut rows {
+            row.resize(width, Vec::new());
         }
         let header = if header_rule {
             rows.remove(0)
@@ -1478,6 +1497,18 @@ impl Reader {
             header,
             rows,
         }));
+    }
+
+    /// `row`, a table's that's too sparse to keep, as a paragraph of its
+    /// cells.
+    fn table_text(&mut self, row: Vec<Vec<Inline>>) {
+        let mut content = Vec::new();
+        for cell in row.into_iter().filter(|cell| !cell.is_empty()) {
+            push_apart(&mut content, cell);
+        }
+        if !content.is_empty() {
+            self.blocks.push(Block::Paragraph(content));
+        }
     }
 
     /// The cells of a row of `row`, at most `columns` for what a cell spans.
@@ -1498,23 +1529,17 @@ impl Reader {
     }
 
     /// A cell's inlines: a group, so what it declares ends with it. It holds
-    /// no blocks, so those in it are their text.
+    /// no blocks, so those in it come first, each apart, as inlines.
     fn table_cell(&mut self, cell: Vec<Piece>) -> Vec<Inline> {
         let blocks = std::mem::take(&mut self.blocks);
         let inlines = std::mem::take(&mut self.inlines);
         self.in_font(cell, self.font());
-        let mut content = trimmed(std::mem::replace(&mut self.inlines, inlines));
+        let content = trimmed(std::mem::replace(&mut self.inlines, inlines));
         let mut inner = std::mem::replace(&mut self.blocks, blocks);
-        let mut texts = Vec::new();
-        walk::for_each_block(&mut inner, &mut |block| push_block_text(block, &mut texts));
-        if !texts.is_empty() {
-            let mut text = texts.join(" ");
-            if !content.is_empty() {
-                text.push(' ');
-            }
-            content.insert(0, Inline::Text(text));
-        }
-        content
+        let mut flat = Vec::new();
+        walk::for_each_block(&mut inner, &mut |block| flatten_block(block, &mut flat));
+        push_apart(&mut flat, content);
+        flat
     }
 
     /// A `figure` or `table`: its blocks, where it's written, as no writer
@@ -1962,22 +1987,63 @@ const RULES: [&str; 6] = [
 /// table has, and few enough that a repeat count can't take all the memory.
 const MAX_COLUMNS: usize = 256;
 
-/// How many cells a table may come to by evening out its rows, past which
-/// they stay short: padding must not make a small source a huge document.
-const MAX_EVEN_CELLS: usize = 1 << 20;
+/// How many cells a table may come to by evening out its rows however
+/// empty they are: writers even them out too, so a table this short of
+/// cells could write far more than its source holds.
+const MAX_SPARSE_AREA: usize = 1 << 12;
 
-/// Adds the text `block` itself holds to `texts`, what's nested in it being
-/// walked on its own.
-fn push_block_text(block: &Block, texts: &mut Vec<String>) {
+/// How many times its cells a table's area may be, past [`MAX_SPARSE_AREA`].
+const MAX_SPARSE_RATIO: usize = 16;
+
+/// Joins the cells of `row` past [`MAX_COLUMNS`] to the last it keeps.
+fn join_past_columns(row: &mut Vec<Vec<Inline>>) {
+    if row.len() <= MAX_COLUMNS {
+        return;
+    }
+    let past = row.split_off(MAX_COLUMNS);
+    if let Some(last) = row.last_mut() {
+        for cell in past {
+            push_apart(last, cell);
+        }
+    }
+}
+
+/// Adds `more` to `inlines`, a space apart from what's there.
+fn push_apart(inlines: &mut Vec<Inline>, more: Vec<Inline>) {
+    if more.is_empty() {
+        return;
+    }
+    if !inlines.is_empty() {
+        push_text(inlines, " ");
+    }
+    for inline in more {
+        match inline {
+            Inline::Text(text) => push_text(inlines, &text),
+            other => inlines.push(other),
+        }
+    }
+}
+
+/// Adds what `block` itself holds to `inlines`, what's nested in it being
+/// walked on its own: a cell holds no blocks. Formulas and code go in line.
+fn flatten_block(block: &mut Block, inlines: &mut Vec<Inline>) {
     match block {
         Block::Paragraph(content) | Block::Heading { content, .. } => {
-            texts.push(inline_text(content));
+            push_apart(inlines, std::mem::take(content));
         }
-        Block::Code { code, .. } => texts.push(code.clone()),
-        Block::Math(tex) => texts.push(tex.clone()),
+        Block::Code { code, .. } => {
+            push_apart(inlines, vec![Inline::Code(std::mem::take(code))]);
+        }
+        Block::Math(tex) => push_apart(inlines, vec![Inline::Math(std::mem::take(tex))]),
         Block::Table(table) => {
-            let rows = std::iter::once(&table.header).chain(&table.rows);
-            texts.extend(rows.flatten().map(|cell| inline_text(cell)));
+            for cell in std::mem::take(&mut table.header) {
+                push_apart(inlines, cell);
+            }
+            for row in std::mem::take(&mut table.rows) {
+                for cell in row {
+                    push_apart(inlines, cell);
+                }
+            }
         }
         _ => {}
     }
@@ -2784,7 +2850,7 @@ mod tests {
                 vec![text("Third.")],
             ]
         );
-        assert!(read(source).1.is_none());
+        assert!(read(source).1.is_empty());
     }
 
     /// Each row: what TeX makes of the source, as the reader reads it.
@@ -3021,7 +3087,7 @@ mod tests {
                     // Dropped here, each in turn.
                     let (doc, warning) = read(&source(depth));
                     assert_eq!(doc.blocks, [Block::Paragraph(vec![expected])]);
-                    assert!(warning.is_none());
+                    assert!(warning.is_empty());
                 }
             })
             .unwrap()
@@ -4134,12 +4200,7 @@ mod tests {
                 "\\begin{tabular}{lll}\\multicolumn{2}{c}{\\begin{tabular}{l}a\\end{tabular}}&b\\end{tabular}",
                 vec![t(&[Left, Left, Left], &[], &[&["a", "", "b"]])],
             ),
-            // Code in a cell is text too.
-            (
-                "\\begin{tabular}{p{3cm}}a\\begin{verbatim}b\\end{verbatim}c\\end{tabular}",
-                vec![t(&[Left], &[], &[&["a b c"]])],
-            ),
-            // Blocks in a cell are their text.
+            // Blocks in a cell are their inlines, in order.
             (
                 "\\begin{tabular}{l}\\begin{quote}a\\end{quote}b\\end{tabular}",
                 vec![t(&[Left], &[], &[&["a b"]])],
@@ -4161,17 +4222,94 @@ mod tests {
                 ]],
             })]
         );
-        // Evening out rows doesn't make a small source huge.
-        let wide = "&".repeat(5_000);
-        let source = format!(
-            "\\begin{{tabular}}{{l}}{wide}\\\\{}\\end{{tabular}}",
-            "\\\\".repeat(5_000)
+        // Blocks in a cell keep all they hold, in order, each apart.
+        let code = |code: &str| Inline::Code(code.to_string());
+        let math = |tex: &str| Inline::Math(tex.to_string());
+        let image = Inline::Image {
+            url: "b.png".to_string(),
+            title: None,
+            alt: String::new(),
+        };
+        for (source, cell) in [
+            (
+                "\\begin{tabular}{p{3cm}}a\\begin{verbatim}b\\end{verbatim}c\\end{tabular}",
+                vec![text("a "), code("b"), text(" c")],
+            ),
+            (
+                "\\begin{tabular}{p{3cm}}\\begin{quote}a\\includegraphics{b.png}\\end{quote}\\end{tabular}",
+                vec![text("a"), image.clone()],
+            ),
+            (
+                "\\begin{tabular}{p{3cm}}\\begin{quote}\\[x\\]\\end{quote}c\\end{tabular}",
+                vec![math("x"), text(" c")],
+            ),
+            (
+                "\\begin{tabular}{p{3cm}}\\begin{itemize}\\item a\\item b\\end{itemize}\\end{tabular}",
+                vec![text("a b")],
+            ),
+            (
+                "\\begin{tabular}{p{3cm}}\\begin{tabular}{l}\\textbf{a}\\\\b\\end{tabular}\\end{tabular}",
+                vec![Inline::Strong(vec![text("a")]), text(" b")],
+            ),
+        ] {
+            let (doc, _) = read(source);
+            let [Block::Table(table)] = &doc.blocks[..] else {
+                panic!("{source}: {:?}", doc.blocks);
+            };
+            assert_eq!(table.rows[0][0], cell, "{source}");
+        }
+        // A note's mark too, so the note stays.
+        let (doc, _) =
+            read("\\begin{tabular}{p{3cm}}\\begin{quote}a\\footnote{b}\\end{quote}\\end{tabular}");
+        let [Block::Table(table), Block::FootnoteDefinition { .. }] = &doc.blocks[..] else {
+            panic!("{:?}", doc.blocks);
+        };
+        assert_eq!(
+            table.rows[0][0],
+            [text("a"), Inline::FootnoteRef("1".to_string())]
         );
-        let Block::Table(table) = &read(&source).0.blocks[0] else {
+        // A row past the most columns keeps its cells in the last.
+        let source = format!(
+            "\\begin{{tabular}}{{l}}{}z\\end{{tabular}}",
+            "a&".repeat(MAX_COLUMNS + 3)
+        );
+        let (doc, _) = read(&source);
+        let [Block::Table(table)] = &doc.blocks[..] else {
             panic!("no table");
         };
-        let cells: usize = table.rows.iter().map(Vec::len).sum();
-        assert!(cells < 20_000, "{cells}");
+        assert_eq!(table.rows[0].len(), MAX_COLUMNS);
+        assert_eq!(table.rows[0][MAX_COLUMNS - 1], [text("a a a a z")]);
+        // A dense table of any size stays one.
+        let row = format!("{}a\\\\", "a&".repeat(9));
+        let source = format!(
+            "\\begin{{tabular}}{{l}}{}\\end{{tabular}}",
+            row.repeat(1_000)
+        );
+        let (doc, warning) = read(&source);
+        assert!(matches!(&doc.blocks[..], [Block::Table(_)]));
+        assert_eq!(warning, []);
+        // A small source doesn't write a huge document: a sparse table is
+        // its text, said so.
+        let source = format!(
+            "\\begin{{tabular}}{{l}}{}a\\\\{}\\end{{tabular}}",
+            "&".repeat(5_000),
+            "a\\\\".repeat(5_000)
+        );
+        let (doc, warning) = read(&source);
+        assert_eq!(warning.len(), 1);
+        assert_eq!(warning[0].count, 1);
+        assert!(
+            doc.blocks
+                .iter()
+                .all(|block| matches!(block, Block::Paragraph(_)))
+        );
+        assert_eq!(doc.blocks.len(), 5_001);
+        let written = crate::converter::document::native::write::markdown::write(&doc);
+        assert!(written.len() < 3 * source.len(), "{}", written.len());
+        // Each of what was given up on is said.
+        let nested = "\\begin{quote}".repeat(MAX_LIST_NESTING + 1);
+        let (_, warnings) = read(&format!("{nested}{source}"));
+        assert_eq!(warnings.len(), 2, "{warnings:?}");
         // A repeat of any size is bounded.
         let Block::Table(table) = &read("\\begin{tabular}{*{999999999}{c}}a\\end{tabular}")
             .0
@@ -5153,7 +5291,7 @@ mod tests {
             .join()
             .unwrap();
         assert_eq!(
-            warning.unwrap().message(),
+            warning[0].message(),
             format!(
                 "{} lists or quotes nested too deeply were read as their text",
                 DEPTH - MAX_LIST_NESTING
@@ -5191,7 +5329,7 @@ mod tests {
             .unwrap();
         assert_eq!(depth, MAX_LIST_NESTING);
         assert_eq!(
-            warning.unwrap().message(),
+            warning[0].message(),
             format!(
                 "{} lists or quotes nested too deeply were read as their text",
                 DEPTH - MAX_LIST_NESTING
@@ -5326,7 +5464,7 @@ mod tests {
         let (doc, warning) = read(&source);
         assert!(format!("{:?}", doc.blocks).contains('x'));
         assert_eq!(
-            warning.unwrap().message(),
+            warning[0].message(),
             "1 document nested too deeply to read was read as plain text"
         );
     }
