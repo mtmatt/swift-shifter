@@ -2041,14 +2041,14 @@ impl Reader {
         };
         // Set in its own font, emphasized or not: the emphasis around it
         // holds again after it.
-        let font = self.font();
+        let group = self.open_group();
         self.emphasized = false;
         let in_argument = std::mem::replace(&mut self.in_argument, true);
         let in_heading = std::mem::replace(&mut self.in_heading, true);
         self.flow(arg);
         self.in_heading = in_heading;
         self.in_argument = in_argument;
-        self.set_font(font);
+        self.close_group(group);
         let content = trimmed(std::mem::take(&mut self.inlines));
         let labels = std::mem::take(&mut self.heading_labels);
         if !content.is_empty() {
@@ -6129,6 +6129,14 @@ mod tests {
                     para(&[text("c"), Inline::FootnoteRef("1".to_string()), text("a")]),
                     note("1", "d"),
                 ],
+            ),
+            (
+                "\\def\\x{a}\\section*{\\def\\x{b}c}\\x",
+                vec![heading(1, &[text("c")]), para(&[text("a")])],
+            ),
+            (
+                "\\section*{\\gdef\\x{a}c}\\x",
+                vec![heading(1, &[text("c")]), para(&[text("a")])],
             ),
             ("\\def\\x{a}\\providecommand{\\x}{b}\\x", plain("a")),
             (
