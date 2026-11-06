@@ -97,18 +97,19 @@ fn read_parsed(source: &str) -> (Document, Option<Warning>) {
     };
     reader.flow(pieces(&document_body(&root).unwrap_or(root)));
     reader.end_paragraph();
+    reader.blocks.append(&mut reader.notes);
     level_headings(&mut reader.blocks);
-    resolve_references(&mut reader.blocks, &reader.labels);
     let warning = (reader.unlisted > 0).then_some(Warning {
         one: "list or quote nested too deeply was read as its text",
         many: "lists or quotes nested too deeply were read as their text",
         count: reader.unlisted,
         line: None,
     });
-    let doc = Document {
+    let mut doc = Document {
         blocks: reader.blocks,
         ..Document::default()
     };
+    resolve_references(&mut doc, &reader.labels);
     (doc, warning)
 }
 
@@ -116,13 +117,18 @@ fn read_parsed(source: &str) -> (Document, Option<Warning>) {
 /// [`resolve_references`]). No real URL starts with a control character.
 const REFERENCE_LINK: char = '\u{1}';
 
-/// Points the references in `blocks` at their headings, by the ids writers
-/// will give those, from `labels`, their index among the headings. One to
-/// any other label keeps its text: nothing else in a document has an id.
-fn resolve_references(blocks: &mut [Block], labels: &std::collections::HashMap<String, usize>) {
+/// Points the references in `doc` at their headings, by the ids writers
+/// will give those, from `labels`, their index among the main text's
+/// headings, which get theirs first. One to any other label keeps its text:
+/// nothing else in a document has an id.
+fn resolve_references(doc: &mut Document, labels: &std::collections::HashMap<String, usize>) {
+    let (_, note_bodies) = write::Footnotes::collect(doc);
     let mut slugs = write::HeadingIds::default();
     let mut ids = Vec::new();
-    write::for_each_heading(blocks, &[], &mut |_, content| ids.push(slugs.next(content)));
+    write::for_each_heading(&doc.blocks, &note_bodies, &mut |_, content| {
+        ids.push(slugs.next(content));
+    });
+    let blocks = &mut doc.blocks;
     walk::resolve_links(blocks, REFERENCE_LINK, &mut |label, _| {
         labels
             .get(label)
@@ -497,6 +503,10 @@ struct Reader {
     /// Whether the last thing read is a `'` a next one joins (see
     /// [`Reader::apostrophe`]).
     after_apostrophe: bool,
+    /// Whether what's read is a note (see [`Reader::footnote`]).
+    in_note: bool,
+    /// The notes read so far, which end the document.
+    notes: Vec<Block>,
     /// How many headings have been read.
     headings: usize,
     /// Each label on a heading, and that heading's index among them.
@@ -771,6 +781,11 @@ impl Reader {
                 }
             }
             "\\cite" => self.cite(args),
+            "\\footnote" => {
+                if let Some(arg) = args.into_iter().next() {
+                    self.footnote(arg);
+                }
+            }
             "\\label" => {
                 if let Some(arg) = args.first() {
                     self.label(literal_text(arg));
@@ -1020,7 +1035,10 @@ impl Reader {
         let space_before =
             matches!(inlines.first(), Some(Inline::Text(text)) if text.starts_with(' '));
         let space_after = matches!(inlines.last(), Some(Inline::Text(text)) if text.ends_with(' '));
-        let content = trimmed(inlines);
+        let mut content = trimmed(inlines);
+        // A note's mark is a link of its own in HTML, which links can't hold.
+        let mut marks = Vec::new();
+        take_note_marks(&mut content, &mut marks);
         if space_before {
             self.space();
         }
@@ -1031,6 +1049,9 @@ impl Reader {
                 title: None,
                 content,
             });
+        }
+        for mark in marks {
+            self.inline(mark);
         }
         if space_after {
             self.space();
@@ -1051,9 +1072,63 @@ impl Reader {
         }
     }
 
+    /// `\\footnote`'s note: read as a text of its own, of blocks, in the
+    /// normal font, whatever it's in. Labels in it go nowhere, as references
+    /// only go to the main text's headings. One showing nothing is none.
+    fn footnote(&mut self, arg: Vec<Piece>) {
+        let blocks = std::mem::take(&mut self.blocks);
+        let inlines = std::mem::take(&mut self.inlines);
+        let font = self.font();
+        let state = (
+            self.in_argument,
+            self.in_heading,
+            self.in_link,
+            self.in_note,
+            self.literal,
+            self.headings,
+            self.breaks,
+            self.in_comment,
+            self.line_start,
+            self.skip_spaces,
+        );
+        self.set_font(Font::default());
+        (self.in_argument, self.in_heading, self.in_link) = (false, false, false);
+        (self.in_note, self.literal) = (true, false);
+        (self.breaks, self.in_comment) = (0, false);
+        (self.line_start, self.skip_spaces) = (true, false);
+        self.flow(arg);
+        self.end_paragraph();
+        let content = std::mem::replace(&mut self.blocks, blocks);
+        self.inlines = inlines;
+        self.set_font(font);
+        (
+            self.in_argument,
+            self.in_heading,
+            self.in_link,
+            self.in_note,
+            self.literal,
+            self.headings,
+            self.breaks,
+            self.in_comment,
+            self.line_start,
+            self.skip_spaces,
+        ) = state;
+        if !content.is_empty() {
+            let label = (self.notes.len() + 1).to_string();
+            self.notes.push(Block::FootnoteDefinition {
+                label: label.clone(),
+                content,
+            });
+            self.inline(Inline::FootnoteRef(label));
+        }
+    }
+
     /// `\\label{label}`, of the heading it's in or right after; of anything
     /// else, it's no label a reference can go to, as nothing else has an id.
     fn label(&mut self, label: String) {
+        if self.in_note {
+            return;
+        }
         if self.in_heading {
             self.heading_labels.push(label);
         } else if self.inlines.is_empty()
@@ -1460,6 +1535,21 @@ fn font(name: &str, font: Font) -> Option<Font> {
     })
 }
 
+/// Moves the marks of notes in `inlines`, a link's text, to `marks`.
+fn take_note_marks(inlines: &mut Vec<Inline>, marks: &mut Vec<Inline>) {
+    inlines.retain_mut(|inline| match inline {
+        Inline::FootnoteRef(_) => {
+            marks.push(inline.clone());
+            false
+        }
+        Inline::Strong(run) | Inline::Emph(run) => {
+            take_note_marks(run, marks);
+            !run.is_empty()
+        }
+        _ => true,
+    });
+}
+
 /// `tex` without its `\label`s, which show nothing, and which nothing goes
 /// to: a formula has no id. A letter that would run into what's before it
 /// stays apart from it.
@@ -1669,6 +1759,11 @@ fn signature(name: &str) -> Option<Signature> {
         "\\href" => Some(Signature {
             optional: true,
             required: 2,
+            ..Signature::default()
+        }),
+        "\\footnote" => Some(Signature {
+            optional: true,
+            required: 1,
             ..Signature::default()
         }),
         "\\url" | "\\nocite" | "\\label" | "\\eqref" | "\\pageref" | "\\nameref" => {
@@ -2768,6 +2863,164 @@ mod tests {
         ];
         for (source, expected) in cases {
             assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
+    }
+
+    /// The source's paragraph, and its notes' contents, by their labels 1,
+    /// 2, ….
+    #[test]
+    fn footnotes_are_notes() {
+        let note = |label: &str, content: &[Block]| Block::FootnoteDefinition {
+            label: label.to_string(),
+            content: content.to_vec(),
+        };
+        let mark = |label: &str| Inline::FootnoteRef(label.to_string());
+        let strong = |text_of: &str| Inline::Strong(vec![text(text_of)]);
+        let link = |url: &str, content: &[Inline]| Inline::Link {
+            url: url.to_string(),
+            title: None,
+            content: content.to_vec(),
+        };
+        let cases: Vec<(&str, Vec<Block>)> = vec![
+            (
+                "a\\footnote{b} c",
+                vec![
+                    para(&[text("a"), mark("1"), text(" c")]),
+                    note("1", &[para(&[text("b")])]),
+                ],
+            ),
+            // In the order they're read, a note in a note before its end.
+            (
+                "a\\footnote{b}c\\footnote{d}",
+                vec![
+                    para(&[text("a"), mark("1"), text("c"), mark("2")]),
+                    note("1", &[para(&[text("b")])]),
+                    note("2", &[para(&[text("d")])]),
+                ],
+            ),
+            (
+                "a\\footnote{b\\footnote{c}}",
+                vec![
+                    para(&[text("a"), mark("2")]),
+                    note("1", &[para(&[text("c")])]),
+                    note("2", &[para(&[text("b"), mark("1")])]),
+                ],
+            ),
+            // Paragraphs and blocks; its number shows nothing here.
+            (
+                "a\\footnote[7]{b\n\nc}",
+                vec![
+                    para(&[text("a"), mark("1")]),
+                    note("1", &[para(&[text("b")]), para(&[text("c")])]),
+                ],
+            ),
+            // Empty, it's none.
+            ("a\\footnote{}b", vec![para(&[text("ab")])]),
+            ("a\\footnote{ }b", vec![para(&[text("ab")])]),
+            // In the normal font, with what's around it left as it was.
+            (
+                "\\textbf{a\\footnote{b}c}",
+                vec![
+                    para(&[Inline::Strong(vec![text("a"), mark("1"), text("c")])]),
+                    note("1", &[para(&[text("b")])]),
+                ],
+            ),
+            (
+                "{\\ttfamily a--b\\footnote{c--d}e--f}",
+                vec![
+                    para(&[text("a--b"), mark("1"), text("e--f")]),
+                    note("1", &[para(&[text("c–d")])]),
+                ],
+            ),
+            (
+                "\\foo{a\\footnote{b--c}}",
+                vec![
+                    para(&[text("a"), mark("1")]),
+                    note("1", &[para(&[text("b–c")])]),
+                ],
+            ),
+            // Paragraphs in it, even from an argument.
+            (
+                "\\emph{a\\footnote{b\n\nc}}",
+                vec![
+                    para(&[Inline::Emph(vec![text("a"), mark("1")])]),
+                    note("1", &[para(&[text("b")]), para(&[text("c")])]),
+                ],
+            ),
+            // In a heading or a link, all its own.
+            (
+                "\\section{a\\footnote{b}}",
+                vec![
+                    heading(1, &[text("a"), mark("1")]),
+                    note("1", &[para(&[text("b")])]),
+                ],
+            ),
+            // A link can't hold its mark, which follows it.
+            (
+                "\\href{u}{a\\footnote{b}c} d",
+                vec![
+                    para(&[link("u", &[text("ac")]), mark("1"), text(" d")]),
+                    note("1", &[para(&[text("b")])]),
+                ],
+            ),
+            (
+                "\\href{u}{\\textbf{a\\footnote{b}}}",
+                vec![
+                    para(&[link("u", &[strong("a")]), mark("1")]),
+                    note("1", &[para(&[text("b")])]),
+                ],
+            ),
+            (
+                "\\href{u}{\\footnote{b}}",
+                vec![para(&[mark("1")]), note("1", &[para(&[text("b")])])],
+            ),
+            (
+                "\\footnote{\\textbf{a}} b",
+                vec![
+                    para(&[mark("1"), text(" b")]),
+                    note("1", &[para(&[strong("a")])]),
+                ],
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
+        // A heading in a note leaves the main text's references as they were.
+        let (doc, _) = read(
+            "\\footnote{\\section{a}}\\section{b}\\label{c}\\section{a}\\ref{c} \\ref{d}\\footnote{\\label{d}e}",
+        );
+        let Block::Paragraph(text_after) = &doc.blocks[3] else {
+            panic!("{:?}", doc.blocks);
+        };
+        assert_eq!(
+            text_after[0],
+            Inline::Link {
+                url: "#b".to_string(),
+                title: None,
+                content: vec![text("[c]")],
+            }
+        );
+        assert_eq!(text_after[1], text(" [d]"));
+        // Nested deep, they're flat.
+        let source = format!("{}x{}", "\\footnote{a".repeat(5_000), "}".repeat(5_000));
+        assert_eq!(read(&source).0.blocks.len(), 5_001);
+    }
+
+    /// Notes our LaTeX writer writes read back.
+    #[test]
+    fn our_latex_footnotes_read_back() {
+        use crate::converter::document::native::{read::markdown, write};
+        for source in [
+            "a[^1] b\n\n[^1]: note\n",
+            "# h[^1]\n\n[^1]: note\n\n    more\n",
+        ] {
+            let doc = markdown::read(source);
+            let tex = write::latex::write(&doc);
+            assert_eq!(
+                write::markdown::write(&read(&tex).0),
+                write::markdown::write(&doc),
+                "{tex}"
+            );
         }
     }
 
