@@ -99,6 +99,17 @@ fn read_parsed(source: &str) -> (Document, Option<Warning>) {
     reader.close_notes();
     reader.end_paragraph();
     reader.blocks.append(&mut reader.notes);
+    if !reader.note_aliases.is_empty() {
+        walk::for_each_inlines(&mut reader.blocks, &mut |inlines| {
+            for inline in inlines.iter_mut() {
+                if let Inline::FootnoteRef(label) = inline
+                    && let Some(note) = reader.note_aliases.get(label)
+                {
+                    *label = note.clone();
+                }
+            }
+        });
+    }
     level_headings(&mut reader.blocks);
     let warning = (reader.unlisted > 0).then_some(Warning {
         one: "list or quote nested too deeply was read as its text",
@@ -532,8 +543,13 @@ struct Reader {
     note_count: usize,
     /// LaTeX's `footnote` counter.
     footnote_count: i64,
-    /// By number, the notes with a mark and no text yet.
-    unwritten_notes: std::collections::BTreeMap<i64, String>,
+    /// By number, the notes with a mark and no text yet, and the note of
+    /// that number before the mark, if it was given its number.
+    unwritten_notes: std::collections::BTreeMap<i64, (String, Option<String>)>,
+    /// By number, the last note with a text.
+    finished_notes: std::collections::HashMap<i64, String>,
+    /// The labels of marks that turned out to be another note's.
+    note_aliases: std::collections::HashMap<String, String>,
     /// The notes with a text and no mark yet, with their numbers, in the
     /// order they're read: a number may have several.
     unmarked_notes: Vec<(i64, String)>,
@@ -826,21 +842,22 @@ impl Reader {
                 }
             }
             "\\cite" => self.cite(args),
-            // A number given is no count, as in `\\footnotemark`.
+            // A number given is no count.
             "\\footnote" => {
                 if args.len() == 1 {
-                    self.footnote_count += 1;
+                    self.footnote_count = self.footnote_count.saturating_add(1);
                 }
+                let number = self.note_number(args.get(1));
                 if let Some(arg) = args.into_iter().next() {
-                    self.footnote(arg);
+                    self.footnote(number, arg);
                 }
             }
             "\\footnotemark" => {
                 if args.is_empty() {
-                    self.footnote_count += 1;
+                    self.footnote_count = self.footnote_count.saturating_add(1);
                 }
                 let number = self.note_number(args.first());
-                self.footnotemark(number);
+                self.footnotemark(number, !args.is_empty());
             }
             "\\footnotetext" => {
                 let number = self.note_number(args.get(1));
@@ -1142,10 +1159,11 @@ impl Reader {
 
     /// `\footnote`'s note, marked where it's read. One showing nothing is
     /// none.
-    fn footnote(&mut self, arg: Vec<Piece>) {
+    fn footnote(&mut self, number: i64, arg: Vec<Piece>) {
         let label = self.new_note();
         let content = self.note_content(&label, arg);
         if !content.is_empty() {
+            self.finished_notes.insert(number, label.clone());
             self.notes.push(Block::FootnoteDefinition {
                 label: label.clone(),
                 content,
@@ -1162,19 +1180,30 @@ impl Reader {
             .unwrap_or(self.footnote_count)
     }
 
-    /// A mark for note `number`, whose text may be yet to come. Marks with
-    /// no number of their own are told from one another by the count, which
-    /// the caller gives after adding to it.
-    fn footnotemark(&mut self, number: i64) {
+    /// A mark for note `number`, whose text may be yet to come. With a
+    /// number `given`, and no text by the end, it's the mark of the note of
+    /// that number read before it (see [`Reader::close_notes`]). One with no
+    /// number given is a note of its own, so it settles such a mark first.
+    fn footnotemark(&mut self, number: i64, given: bool) {
         let unmarked = self
             .unmarked_notes
             .iter()
             .rposition(|(unmarked, _)| *unmarked == number);
-        let label = match unmarked {
-            Some(unmarked) => self.unmarked_notes.remove(unmarked).1,
+        if let Some(unmarked) = unmarked {
+            let label = self.unmarked_notes.remove(unmarked).1;
+            return self.inline(Inline::FootnoteRef(label));
+        }
+        if !given && let Some((label, Some(note))) = self.unwritten_notes.remove(&number) {
+            self.note_aliases.insert(label, note);
+        }
+        let label = match self.unwritten_notes.get(&number) {
+            Some((label, _)) => label.clone(),
             None => {
                 let label = self.new_note();
-                self.unwritten_notes.entry(number).or_insert(label).clone()
+                let earlier = self.finished_notes.get(&number).filter(|_| given).cloned();
+                self.unwritten_notes
+                    .insert(number, (label.clone(), earlier));
+                label
             }
         };
         self.inline(Inline::FootnoteRef(label));
@@ -1183,28 +1212,34 @@ impl Reader {
     /// The text of note `number`: of the mark read for it, if any, or for
     /// the one to come.
     fn footnotetext(&mut self, number: i64, arg: Vec<Piece>) {
-        let marked = self.unwritten_notes.remove(&number);
+        let marked = self.unwritten_notes.remove(&number).map(|(label, _)| label);
         let label = marked.clone().unwrap_or_else(|| self.new_note());
         let content = self.note_content(&label, arg);
         self.notes.push(Block::FootnoteDefinition {
             label: label.clone(),
             content,
         });
+        self.finished_notes.insert(number, label.clone());
         if marked.is_none() {
             self.unmarked_notes.push((number, label));
         }
     }
 
     /// Settles the notes left half done, once all is read. No text is lost:
-    /// a mark with no text has an empty note, and a text with no mark gets
-    /// one at the end.
+    /// a mark with no text is the mark of the note its number was given, or
+    /// has an empty note, and a text with no mark gets one at the end.
     fn close_notes(&mut self) {
         self.end_paragraph();
-        for (_, label) in std::mem::take(&mut self.unwritten_notes) {
-            self.notes.push(Block::FootnoteDefinition {
-                label,
-                content: Vec::new(),
-            });
+        for (label, earlier) in std::mem::take(&mut self.unwritten_notes).into_values() {
+            match earlier {
+                Some(note) => {
+                    self.note_aliases.insert(label, note);
+                }
+                None => self.notes.push(Block::FootnoteDefinition {
+                    label,
+                    content: Vec::new(),
+                }),
+            }
         }
         for (_, label) in std::mem::take(&mut self.unmarked_notes) {
             self.inlines.push(Inline::FootnoteRef(label));
@@ -3287,6 +3322,72 @@ mod tests {
                     para(&[text("a")]),
                     para(&[mark("1")]),
                     note("1", &[para(&[text("b")])]),
+                ],
+            ),
+            // Given a number that's done, it's that note's, by the end.
+            (
+                "a\\footnote{b}c\\footnotemark[1]",
+                vec![
+                    para(&[text("a"), mark("1"), text("c"), mark("1")]),
+                    note("1", &[para(&[text("b")])]),
+                ],
+            ),
+            (
+                "\\footnote[7]{b}\\footnotemark[7]",
+                vec![
+                    para(&[mark("1"), mark("1")]),
+                    note("1", &[para(&[text("b")])]),
+                ],
+            ),
+            (
+                "\\footnotemark[2]\\footnotetext[2]{b}\\footnotemark[2]",
+                vec![
+                    para(&[mark("1"), mark("1")]),
+                    note("1", &[para(&[text("b")])]),
+                ],
+            ),
+            (
+                "a\\footnote{b\\footnote{c}\\footnotemark[2]}",
+                vec![
+                    para(&[text("a"), mark("1")]),
+                    note("2", &[para(&[text("c")])]),
+                    note("1", &[para(&[text("b"), mark("2"), mark("2")])]),
+                ],
+            ),
+            // It's the note of that number before it, not one after.
+            (
+                "\\footnote[1]{a}\\footnotemark[1]\\footnote[1]{b}",
+                vec![
+                    para(&[mark("1"), mark("1"), mark("3")]),
+                    note("1", &[para(&[text("a")])]),
+                    note("3", &[para(&[text("b")])]),
+                ],
+            ),
+            // With no number given, it's a note of its own, even by another
+            // mark of that number.
+            (
+                "\\footnote{a}\\footnotemark[1]\\setcounter{footnote}{0}\\footnotemark",
+                vec![
+                    para(&[mark("1"), mark("1"), mark("3")]),
+                    note("1", &[para(&[text("a")])]),
+                    note("3", &[]),
+                ],
+            ),
+            (
+                "\\footnote{a}\\setcounter{footnote}{0}\\footnotemark",
+                vec![
+                    para(&[mark("1"), mark("2")]),
+                    note("1", &[para(&[text("a")])]),
+                    note("2", &[]),
+                ],
+            ),
+            // Past the highest count there is, it stays.
+            (
+                "\\setcounter{footnote}{9223372036854775807}\\footnote{a}\\footnotemark",
+                vec![
+                    para(&[mark("1"), mark("2")]),
+                    note("1", &[para(&[text("a")])]),
+                    note("2", &[]),
                 ],
             ),
             // Referred to again, it's its mark; anything else, its text.
