@@ -18,8 +18,10 @@ use mitex_parser::syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 use verbatim::Verbatim;
 
 use super::lists::loosens;
+use super::walk;
 use crate::converter::document::native::Warning;
 use crate::converter::document::native::ast::{Block, Document, Inline, List, ListItem};
+use crate::converter::document::native::write;
 
 /// The stack reading takes per level the parser and the reader recurse
 /// into, in a debug build, which takes more than a release one: 553 bytes
@@ -96,6 +98,7 @@ fn read_parsed(source: &str) -> (Document, Option<Warning>) {
     reader.flow(pieces(&document_body(&root).unwrap_or(root)));
     reader.end_paragraph();
     level_headings(&mut reader.blocks);
+    resolve_references(&mut reader.blocks, &reader.labels);
     let warning = (reader.unlisted > 0).then_some(Warning {
         one: "list or quote nested too deeply was read as its text",
         many: "lists or quotes nested too deeply were read as their text",
@@ -107,6 +110,35 @@ fn read_parsed(source: &str) -> (Document, Option<Warning>) {
         ..Document::default()
     };
     (doc, warning)
+}
+
+/// Prefix of a reference's link until every label is known (see
+/// [`resolve_references`]). No real URL starts with a control character.
+const REFERENCE_LINK: char = '\u{1}';
+
+/// Points the references in `blocks` at their headings, by the ids writers
+/// will give those, from `labels`, their index among the headings. One to
+/// any other label keeps its text: nothing else in a document has an id.
+fn resolve_references(blocks: &mut [Block], labels: &std::collections::HashMap<String, usize>) {
+    let mut slugs = write::HeadingIds::default();
+    let mut ids = Vec::new();
+    write::for_each_heading(blocks, &[], &mut |_, content| ids.push(slugs.next(content)));
+    walk::resolve_links(blocks, REFERENCE_LINK, &mut |label, _| {
+        labels
+            .get(label)
+            .and_then(|heading| ids.get(*heading))
+            .cloned()
+    });
+    // What's left as text joins the text around it, as if read as text.
+    walk::for_each_inlines(blocks, &mut |inlines| {
+        inlines.dedup_by(|next, text| match (next, text) {
+            (Inline::Text(next), Inline::Text(text)) => {
+                text.push_str(next);
+                true
+            }
+            _ => false,
+        });
+    });
 }
 
 /// The `document` environment, past the preamble; a fragment has none.
@@ -465,6 +497,14 @@ struct Reader {
     /// Whether the last thing read is a `'` a next one joins (see
     /// [`Reader::apostrophe`]).
     after_apostrophe: bool,
+    /// How many headings have been read.
+    headings: usize,
+    /// Each label on a heading, and that heading's index among them.
+    labels: std::collections::HashMap<String, usize>,
+    /// Whether what's read is a heading's text.
+    in_heading: bool,
+    /// The labels in the heading being read.
+    heading_labels: Vec<String>,
     /// Whether what's read is a link's text (see [`Reader::href`]).
     in_link: bool,
     /// Whether what's read is an unknown command's: nothing in it is joined.
@@ -535,9 +575,8 @@ impl Reader {
                                     signature,
                                 );
                                 let mut args = taken.required;
-                                // `\\cite`'s note is the one optional argument
-                                // that shows.
-                                if name == "\\cite" {
+                                // The optional arguments that show.
+                                if matches!(name.as_str(), "\\cite" | "\\hyperref") {
                                     args.extend(taken.optional);
                                 }
                                 args
@@ -732,6 +771,37 @@ impl Reader {
                 }
             }
             "\\cite" => self.cite(args),
+            "\\label" => {
+                if let Some(arg) = args.first() {
+                    self.label(literal_text(arg));
+                }
+            }
+            "\\ref" | "\\eqref" | "\\autoref" | "\\nameref" => {
+                if let Some(arg) = args.first() {
+                    self.reference(literal_text(arg));
+                }
+            }
+            "\\cref" | "\\Cref" => {
+                if let Some(arg) = args.first() {
+                    for (i, label) in literal_text(arg).split(',').enumerate() {
+                        if i > 0 {
+                            self.text(", ");
+                        }
+                        self.reference(label.trim().to_string());
+                    }
+                }
+            }
+            "\\hyperref" => {
+                let mut args = args.into_iter();
+                let content = args.next().unwrap_or_default();
+                match args.next() {
+                    Some(label) => {
+                        let url = format!("{REFERENCE_LINK}{}", literal_text(&label));
+                        self.href(url, content);
+                    }
+                    None => self.in_font(content, self.font()),
+                }
+            }
             "\\newline" => {
                 self.inline(Inline::LineBreak);
                 self.skip_spaces = true;
@@ -746,7 +816,7 @@ impl Reader {
             // shows nothing.
             // A line, which no writer's text can hold, outside of a block
             // of its own (see `Reader::aligned`).
-            "\\tightlist" | "\\rule" | "\\nocite" => {}
+            "\\tightlist" | "\\rule" | "\\nocite" | "\\pageref" => {}
             "\\ensuremath" => {
                 if let Some(arg) = args.first() {
                     self.math(&source_text(arg), false);
@@ -831,6 +901,8 @@ impl Reader {
     /// argument, which no block goes in. Empty, it shows nothing.
     fn math(&mut self, tex: &str, display: bool) {
         self.non_space();
+        let tex = without_labels(tex);
+        let tex = tex.as_str();
         let trimmed = tex.trim_end();
         // A space that a backslash makes a control space is the formula's.
         let backslashes = trimmed.len() - trimmed.trim_end_matches('\\').len();
@@ -979,6 +1051,33 @@ impl Reader {
         }
     }
 
+    /// `\\label{label}`, of the heading it's in or right after; of anything
+    /// else, it's no label a reference can go to, as nothing else has an id.
+    fn label(&mut self, label: String) {
+        if self.in_heading {
+            self.heading_labels.push(label);
+        } else if self.inlines.is_empty()
+            && matches!(self.blocks.last(), Some(Block::Heading { .. }))
+        {
+            self.labels.insert(label, self.headings - 1);
+        }
+    }
+
+    /// A reference to `label`, as it's written: its number isn't known here.
+    /// One to a heading links to it (see [`resolve_references`]).
+    fn reference(&mut self, label: String) {
+        let text = Inline::Text(format!("[{label}]"));
+        if self.in_link {
+            self.inline(text);
+        } else {
+            self.inline(Inline::Link {
+                url: format!("{REFERENCE_LINK}{label}"),
+                title: None,
+                content: vec![text],
+            });
+        }
+    }
+
     /// `\\cite`'s keys, and its note if it has one, in brackets: no writer
     /// has citations, and without the bibliography there's nothing else to
     /// show.
@@ -1110,14 +1209,20 @@ impl Reader {
         let font = self.font();
         self.emphasized = false;
         let in_argument = std::mem::replace(&mut self.in_argument, true);
+        let in_heading = std::mem::replace(&mut self.in_heading, true);
         self.flow(arg);
+        self.in_heading = in_heading;
         self.in_argument = in_argument;
         self.set_font(font);
         let content = trimmed(std::mem::take(&mut self.inlines));
+        let labels = std::mem::take(&mut self.heading_labels);
         if !content.is_empty() {
             // Seven of them, so an index fits.
             let level = level as u8 + 1;
             self.blocks.push(Block::Heading { level, content });
+            self.labels
+                .extend(labels.into_iter().map(|label| (label, self.headings)));
+            self.headings += 1;
         }
     }
 
@@ -1355,6 +1460,53 @@ fn font(name: &str, font: Font) -> Option<Font> {
     })
 }
 
+/// `tex` without its `\label`s, which show nothing, and which nothing goes
+/// to: a formula has no id. A letter that would run into what's before it
+/// stays apart from it.
+fn without_labels(tex: &str) -> String {
+    let mut out = String::with_capacity(tex.len());
+    let (mut copied, mut at) = (0, 0);
+    while let Some((start, name)) = verbatim::next_command(&tex[at..], verbatim::tex_letter) {
+        let command = at + start;
+        at = command + name.len();
+        if name != "\\label" {
+            continue;
+        }
+        let after = tex[at..].trim_start();
+        let Some(group) = after.strip_prefix('{').and_then(group_end) else {
+            continue;
+        };
+        out.push_str(&tex[copied..command]);
+        at = tex.len() - after.len() + 1 + group;
+        copied = at;
+        let letter = |c: char| c.is_ascii_alphabetic();
+        if out.ends_with(letter) && tex[at..].starts_with(letter) {
+            out.push(' ');
+        }
+    }
+    out.push_str(&tex[copied..]);
+    out
+}
+
+/// How long `text`, after a group's `{`, is to past its `}`. An escaped
+/// brace ends nothing.
+fn group_end(text: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut chars = text.char_indices();
+    while let Some((at, c)) = chars.next() {
+        match c {
+            '\\' => {
+                chars.next();
+            }
+            '{' => depth += 1,
+            '}' if depth == 0 => return Some(at + 1),
+            '}' => depth -= 1,
+            _ => {}
+        }
+    }
+    None
+}
+
 /// What `pieces`, an argument that's no text, such as an address or a key,
 /// say: as written, without the group [`formulas::close_scripts`] puts after
 /// a script, and with what's escaped as itself.
@@ -1519,7 +1671,19 @@ fn signature(name: &str) -> Option<Signature> {
             required: 2,
             ..Signature::default()
         }),
-        "\\url" | "\\nocite" => Some(Signature {
+        "\\url" | "\\nocite" | "\\label" | "\\eqref" | "\\pageref" | "\\nameref" => {
+            Some(Signature {
+                required: 1,
+                ..Signature::default()
+            })
+        }
+        "\\ref" | "\\autoref" | "\\cref" | "\\Cref" => Some(Signature {
+            star: true,
+            required: 1,
+            ..Signature::default()
+        }),
+        "\\hyperref" => Some(Signature {
+            optional: true,
             required: 1,
             ..Signature::default()
         }),
@@ -2486,6 +2650,140 @@ mod tests {
         // Deep ones read flat.
         let source = format!("{}x{}", "\\href{u}{".repeat(5_000), "}".repeat(5_000));
         assert_eq!(read(&source).0.blocks, [para(&[link("u", &[text("x")])])]);
+    }
+
+    /// Each row: the blocks the source reads as.
+    #[test]
+    fn references_go_to_labels_on_headings() {
+        let link = |url: &str, content: &[Inline]| Inline::Link {
+            url: url.to_string(),
+            title: None,
+            content: content.to_vec(),
+        };
+        let sec = || heading(1, &[text("Intro")]);
+        let to_it = |key: &str| link("#intro", &[text(&format!("[{key}]"))]);
+        let cases: Vec<(&str, Vec<Block>)> = vec![
+            // On it, or right after it; a label shows nothing.
+            (
+                "\\section{Intro}\\label{a}\\ref{a}",
+                vec![sec(), para(&[to_it("a")])],
+            ),
+            (
+                "\\section{Intro\\label{a}}\\ref{a}",
+                vec![sec(), para(&[to_it("a")])],
+            ),
+            (
+                "\\section{Intro}\n\\label{a}\n\nb \\ref{a}",
+                vec![sec(), para(&[text("b "), to_it("a")])],
+            ),
+            (
+                "\\ref{a}\\section{Intro}\\label{a}",
+                vec![para(&[to_it("a")]), sec()],
+            ),
+            ("a\\label{b} c", vec![para(&[text("a c")])]),
+            // All kinds, as written; to none, their text.
+            (
+                "\\section{Intro}\\label{a}\\eqref{a}",
+                vec![sec(), para(&[to_it("a")])],
+            ),
+            (
+                "\\section{Intro}\\label{a}\\autoref{a}",
+                vec![sec(), para(&[to_it("a")])],
+            ),
+            (
+                "\\section{Intro}\\label{a}\\cref{a}",
+                vec![sec(), para(&[to_it("a")])],
+            ),
+            (
+                "\\section{Intro}\\label{a}\\ref*{a}",
+                vec![sec(), para(&[to_it("a")])],
+            ),
+            ("\\ref{none}", vec![para(&[text("[none]")])]),
+            ("\\ref{a_b}", vec![para(&[text("[a_b]")])]),
+            ("\\cref{a,b}", vec![para(&[text("[a], [b]")])]),
+            // Only `\\cref` takes a list.
+            (
+                "\\section{Intro}\\label{a}\\ref{a,b}",
+                vec![sec(), para(&[text("[a,b]")])],
+            ),
+            ("a\\pageref{b}c", vec![para(&[text("ac")])]),
+            // After text, the label is no heading's.
+            (
+                "\\section{Intro}a\\label{b}\\ref{b}",
+                vec![sec(), para(&[text("a[b]")])],
+            ),
+            // With text of its own.
+            (
+                "\\section{Intro}\\label{a}\\hyperref[a]{see}",
+                vec![sec(), para(&[link("#intro", &[text("see")])])],
+            ),
+            ("\\hyperref[none]{see}", vec![para(&[text("see")])]),
+            ("\\hyperref{see}", vec![para(&[text("see")])]),
+            // In a link, it's text.
+            (
+                "\\href{u}{\\ref{a}}",
+                vec![para(&[link("u", &[text("[a]")])])],
+            ),
+            // In a quote; by the id its text makes, the second's unique.
+            (
+                "\\section{Intro}\\begin{quote}\\section{Intro}\\label{a}\\end{quote}\\ref{a}",
+                vec![
+                    sec(),
+                    Block::Quote(vec![sec()]),
+                    para(&[link("#intro-1", &[text("[a]")])]),
+                ],
+            ),
+            // An empty one holds no label.
+            ("\\section{\\label{a}}\\ref{a}", vec![para(&[text("[a]")])]),
+            // A formula's shows nothing, what the parser needs closed too.
+            (
+                "\\begin{equation}\\label{a^}x\\end{equation}",
+                vec![Block::Math("\\begin{equation}x\\end{equation}".to_string())],
+            ),
+            (
+                "$x\\label {a{b}c}y$",
+                vec![para(&[Inline::Math("x y".to_string())])],
+            ),
+            // What's joined stays apart, and only a command is one.
+            (
+                "$\\alpha\\label{a}x$",
+                vec![para(&[Inline::Math("\\alpha x".to_string())])],
+            ),
+            (
+                "$\\alpha\\label{a}+x$",
+                vec![para(&[Inline::Math("\\alpha+x".to_string())])],
+            ),
+            (
+                "$x\\\\label{a}$",
+                vec![para(&[Inline::Math("x\\\\label{a}".to_string())])],
+            ),
+            (
+                "$\\label{a\\}b}c$",
+                vec![para(&[Inline::Math("c".to_string())])],
+            ),
+            (
+                "$\\labels{a}$",
+                vec![para(&[Inline::Math("\\labels{a}".to_string())])],
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
+    }
+
+    /// Links to headings our LaTeX writer writes read back.
+    #[test]
+    fn our_latex_heading_links_read_back() {
+        use crate::converter::document::native::{read::markdown, write};
+        for source in [
+            "# Intro\n\n[see](#intro)\n",
+            "# Café\n\n[back](#café)\n",
+            "[on](#b)\n\n# a\n\n# b\n",
+        ] {
+            let doc = markdown::read(source);
+            let tex = write::latex::write(&doc);
+            assert_eq!(read(&tex).0.blocks, doc.blocks, "{tex}");
+        }
     }
 
     /// Links our LaTeX writer writes read back.
