@@ -21,7 +21,7 @@ use super::lists::loosens;
 use super::walk;
 use crate::converter::document::native::Warning;
 use crate::converter::document::native::ast::{
-    Block, Document, Inline, List, ListItem, inline_text,
+    Align, Block, Document, Inline, List, ListItem, Table, inline_text,
 };
 use crate::converter::document::native::write;
 
@@ -565,6 +565,8 @@ struct Reader {
     in_heading: bool,
     /// The labels in the heading being read.
     heading_labels: Vec<String>,
+    /// How many columns the table cell being read spans.
+    cell_span: usize,
     /// The float's last caption, if it has one.
     caption: Option<Vec<Inline>>,
     /// Whether what's read is a link's text (see [`Reader::href`]).
@@ -687,6 +689,8 @@ impl Reader {
                             "quote" | "quotation" | "verse" => self.quote(&node),
                             "center" | "flushleft" | "flushright" => self.aligned(&node),
                             "figure" | "figure*" | "table" | "table*" => self.float(&node),
+                            "tabular" => self.tabular(&node, false),
+                            "tabular*" | "tabularx" => self.tabular(&node, true),
                             name @ ("math" | "displaymath") => {
                                 let mut inside = pieces(&node);
                                 inside.retain(|piece| {
@@ -847,6 +851,18 @@ impl Reader {
                 }
             }
             "\\cite" => self.cite(args),
+            // The cell it's all of spans its count of columns.
+            "\\multicolumn" => {
+                if let [count, _, content] = &args[..] {
+                    self.cell_span = literal_text(count).parse().unwrap_or(1);
+                    self.in_font(content.clone(), self.font());
+                }
+            }
+            "\\multirow" => {
+                if let Some(content) = args.into_iter().nth(2) {
+                    self.in_font(content, self.font());
+                }
+            }
             "\\includegraphics" => {
                 if let Some(arg) = args.first() {
                     self.inline(Inline::Image {
@@ -1381,6 +1397,126 @@ impl Reader {
         self.text("]");
     }
 
+    /// A `tabular`, with a width before its column specification if it
+    /// `has_width`: a table, if it has any rows. The first row is its header
+    /// if a rule ends it, as no writer sets a table without a header apart.
+    fn tabular(&mut self, env: &SyntaxNode, has_width: bool) {
+        self.end_paragraph();
+        let mut items = pieces(env);
+        let (mut at, mut unbracketed) = (1, 0);
+        if has_width {
+            let width = Signature {
+                required: 1,
+                ..Signature::default()
+            };
+            take_arguments(&mut items, &mut at, &mut unbracketed, width);
+        }
+        let specification = take_arguments(&mut items, &mut at, &mut unbracketed, TABULAR).required;
+        let mut align = specification
+            .first()
+            .map(|columns| columns_of(&source_text(columns)))
+            .unwrap_or_default();
+        let mut rows: Vec<Vec<Vec<Inline>>> = Vec::new();
+        let mut header_rule = false;
+        let mut row: Vec<Vec<Piece>> = Vec::new();
+        let mut cell: Vec<Piece> = Vec::new();
+        while let Some(piece) = items.get(at).cloned() {
+            at += 1;
+            let name = match &piece {
+                Piece::Node(node) if node.kind() == SyntaxKind::ItemCmd => command_name(node),
+                _ => String::new(),
+            };
+            match &piece {
+                Piece::Node(node) if node.kind() == SyntaxKind::ItemEnd => break,
+                Piece::Token(SyntaxKind::TokenAmpersand, _) => {
+                    row.push(std::mem::take(&mut cell));
+                }
+                Piece::Token(SyntaxKind::ItemNewLine, _) => {
+                    take_arguments(&mut items, &mut at, &mut unbracketed, LINE_BREAK);
+                    row.push(std::mem::take(&mut cell));
+                    rows.push(self.table_row(std::mem::take(&mut row), align.len()));
+                }
+                _ if name == "\\tabularnewline" => {
+                    take_arguments(&mut items, &mut at, &mut unbracketed, LINE_BREAK);
+                    row.push(std::mem::take(&mut cell));
+                    rows.push(self.table_row(std::mem::take(&mut row), align.len()));
+                }
+                _ if RULES.contains(&name.as_str()) && row.is_empty() && is_blank(&cell) => {
+                    cell.clear();
+                    skip_rule_arguments(&name, &items, &mut at);
+                    header_rule |= rows.len() == 1;
+                }
+                _ => cell.push(piece),
+            }
+        }
+        if !row.is_empty() || !is_blank(&cell) {
+            row.push(cell);
+            rows.push(self.table_row(row, align.len()));
+        }
+        if rows.is_empty() {
+            return;
+        }
+        let cells = rows.iter().map(Vec::len).max().unwrap_or(0);
+        let width = cells.max(align.len()).min(MAX_COLUMNS);
+        align.resize(width, Align::Default);
+        // Short rows are evened out, unless that would make far more of a
+        // table than its source holds: writers take them as they are.
+        if rows.len().saturating_mul(width) <= MAX_EVEN_CELLS {
+            for row in &mut rows {
+                if row.len() < width {
+                    row.resize(width, Vec::new());
+                }
+            }
+        }
+        let header = if header_rule {
+            rows.remove(0)
+        } else {
+            Vec::new()
+        };
+        self.blocks.push(Block::Table(Table {
+            align,
+            header,
+            rows,
+        }));
+    }
+
+    /// The cells of a row of `row`, at most `columns` for what a cell spans.
+    fn table_row(&mut self, row: Vec<Vec<Piece>>, columns: usize) -> Vec<Vec<Inline>> {
+        let mut cells = Vec::with_capacity(row.len());
+        for cell in row {
+            // A table in the cell has spans of its own.
+            let outer = std::mem::replace(&mut self.cell_span, 1);
+            let content = self.table_cell(cell);
+            let span = std::mem::replace(&mut self.cell_span, outer);
+            let span = span.min(columns.saturating_sub(cells.len()));
+            cells.push(content);
+            if span > 1 {
+                cells.resize(cells.len() + span - 1, Vec::new());
+            }
+        }
+        cells
+    }
+
+    /// A cell's inlines: a group, so what it declares ends with it. It holds
+    /// no blocks, so those in it are their text.
+    fn table_cell(&mut self, cell: Vec<Piece>) -> Vec<Inline> {
+        let blocks = std::mem::take(&mut self.blocks);
+        let inlines = std::mem::take(&mut self.inlines);
+        self.in_font(cell, self.font());
+        let mut content = trimmed(std::mem::replace(&mut self.inlines, inlines));
+        let mut inner = std::mem::replace(&mut self.blocks, blocks);
+        let mut texts = Vec::new();
+        walk::for_each_block(&mut inner, &mut |block| push_block_text(block, &mut texts));
+        if !texts.is_empty() {
+            let mut text = texts.join(" ");
+            if !content.is_empty() {
+                text.push(' ');
+            }
+            content.insert(0, Inline::Text(text));
+        }
+        content
+    }
+
     /// A `figure` or `table`: its blocks, where it's written, as no writer
     /// floats them. An image and a caption alone are one image, with the
     /// caption for its alt text, as writers take a figure.
@@ -1735,6 +1871,14 @@ const DEFINITIONS: [&str; 7] = [
 /// definitions with no group don't each read the rest of the document.
 const MAX_DEFINITION_PARAMETERS: usize = 64;
 
+/// `tabular`'s, after a width: its position and columns.
+const TABULAR: Signature = Signature {
+    star: false,
+    optional: true,
+    unstarred_optional: false,
+    required: 1,
+};
+
 /// `\\`'s: `\\*[1em]`.
 const LINE_BREAK: Signature = Signature {
     star: true,
@@ -1801,6 +1945,147 @@ fn referred_label(arg: &[Piece]) -> Option<String> {
             Some(literal_text(&pieces(group)))
         }
         _ => None,
+    }
+}
+
+/// What a rule in a table is written with: they show nothing.
+const RULES: [&str; 6] = [
+    "\\hline",
+    "\\cline",
+    "\\toprule",
+    "\\midrule",
+    "\\bottomrule",
+    "\\cmidrule",
+];
+
+/// How many columns a table's specification gives at most: more than any
+/// table has, and few enough that a repeat count can't take all the memory.
+const MAX_COLUMNS: usize = 256;
+
+/// How many cells a table may come to by evening out its rows, past which
+/// they stay short: padding must not make a small source a huge document.
+const MAX_EVEN_CELLS: usize = 1 << 20;
+
+/// Adds the text `block` itself holds to `texts`, what's nested in it being
+/// walked on its own.
+fn push_block_text(block: &Block, texts: &mut Vec<String>) {
+    match block {
+        Block::Paragraph(content) | Block::Heading { content, .. } => {
+            texts.push(inline_text(content));
+        }
+        Block::Code { code, .. } => texts.push(code.clone()),
+        Block::Math(tex) => texts.push(tex.clone()),
+        Block::Table(table) => {
+            let rows = std::iter::once(&table.header).chain(&table.rows);
+            texts.extend(rows.flatten().map(|cell| inline_text(cell)));
+        }
+        _ => {}
+    }
+}
+
+/// Whether `pieces` show nothing.
+fn is_blank(pieces: &[Piece]) -> bool {
+    pieces.iter().all(|piece| {
+        matches!(
+            piece,
+            Piece::Token(
+                SyntaxKind::TokenWhiteSpace | SyntaxKind::TokenLineBreak | SyntaxKind::TokenComment,
+                _
+            )
+        )
+    })
+}
+
+/// Past the arguments the rule `name` takes in `items`: `\cline` a group of
+/// columns; `\cmidrule` a thickness, a trim and that; the other `booktabs`
+/// rules a thickness; `\hline` none.
+fn skip_rule_arguments(name: &str, items: &[Piece], at: &mut usize) {
+    if name == "\\hline" {
+        return;
+    }
+    if name != "\\cline" {
+        skip_delimited(
+            items,
+            at,
+            SyntaxKind::TokenLBracket,
+            SyntaxKind::TokenRBracket,
+        );
+    }
+    if name == "\\cmidrule" {
+        skip_delimited(items, at, SyntaxKind::TokenLParen, SyntaxKind::TokenRParen);
+    }
+    if matches!(name, "\\cline" | "\\cmidrule")
+        && let Some(group) = past_blanks(items, *at)
+        && matches!(&items[group], Piece::Node(node) if node.kind() == SyntaxKind::ItemCurly)
+    {
+        *at = group + 1;
+    }
+}
+
+/// Past what's between `open` and `close` in `items`, if that's next. With
+/// no `close`, it's no argument, and all stays.
+fn skip_delimited(items: &[Piece], at: &mut usize, open: SyntaxKind, close: SyntaxKind) {
+    let is = |piece: Option<&Piece>, wanted: SyntaxKind| matches!(piece, Some(Piece::Token(kind, _)) if *kind == wanted);
+    let Some(start) = past_blanks(items, *at).filter(|start| is(items.get(*start), open)) else {
+        return;
+    };
+    if let Some(end) = (start..items.len()).find(|end| is(items.get(*end), close)) {
+        *at = end + 1;
+    }
+}
+
+/// Where in `items`, from `at`, what's not blank is.
+fn past_blanks(items: &[Piece], at: usize) -> Option<usize> {
+    (at..items.len()).find(|at| !is_blank(std::slice::from_ref(&items[*at])))
+}
+
+/// The columns of a table's `specification`, up to [`MAX_COLUMNS`]: `l`, `c`
+/// and `r` as they say, and `p`, `m`, `b` and `X`, which fill their text,
+/// to the left. `|` and what `@`, `!`, `>` and `<` put between are none, and
+/// `*{3}{c}` repeats.
+fn columns_of(specification: &str) -> Vec<Align> {
+    let mut columns = Vec::new();
+    let mut rest = specification;
+    while let Some(c) = rest.chars().next() {
+        rest = &rest[c.len_utf8()..];
+        if columns.len() >= MAX_COLUMNS {
+            break;
+        }
+        match c {
+            'l' | 'p' | 'm' | 'b' | 'X' => columns.push(Align::Left),
+            'c' => columns.push(Align::Center),
+            'r' => columns.push(Align::Right),
+            '*' => {
+                let (count, after) = group_text(rest);
+                let (repeated, after) = group_text(after);
+                rest = after;
+                let repeated = columns_of(repeated);
+                let count: usize = count.trim().parse().unwrap_or(0);
+                for _ in 0..count.min(MAX_COLUMNS) {
+                    if columns.len() + repeated.len() > MAX_COLUMNS {
+                        break;
+                    }
+                    columns.extend(&repeated);
+                }
+            }
+            '{' => {
+                rest = &rest[group_end(rest).unwrap_or(rest.len())..];
+            }
+            _ => {}
+        }
+    }
+    columns
+}
+
+/// The group `text` starts with, what's in it and what's after it; with
+/// none, nothing, and `text`.
+fn group_text(text: &str) -> (&str, &str) {
+    let Some(inside) = text.trim_start().strip_prefix('{') else {
+        return ("", text);
+    };
+    match group_end(inside) {
+        Some(end) => (&inside[..end - 1], &inside[end..]),
+        None => (inside, ""),
     }
 }
 
@@ -2075,6 +2360,15 @@ fn signature(name: &str) -> Option<Signature> {
             ..Signature::default()
         }),
         "\\centering" => Some(Signature::default()),
+        "\\multicolumn" => Some(Signature {
+            required: 3,
+            ..Signature::default()
+        }),
+        "\\multirow" => Some(Signature {
+            optional: true,
+            required: 3,
+            ..Signature::default()
+        }),
         "\\footnotemark" => Some(Signature {
             optional: true,
             ..Signature::default()
@@ -3693,6 +3987,199 @@ mod tests {
             let tex = write::latex::write(&doc);
             assert_eq!(read(&tex).0.blocks, doc.blocks, "{tex}");
         }
+    }
+
+    /// Each row: the blocks the source reads as.
+    #[test]
+    fn tabular_is_a_table() {
+        use Align::{Center, Default as Unset, Left, Right};
+        let t = |align: &[Align], header: &[&[&str]], rows: &[&[&str]]| {
+            let row = |cells: &&[&str]| -> Vec<Vec<Inline>> {
+                cells
+                    .iter()
+                    .map(|cell| {
+                        if cell.is_empty() {
+                            Vec::new()
+                        } else {
+                            vec![text(cell)]
+                        }
+                    })
+                    .collect()
+            };
+            Block::Table(Table {
+                align: align.to_vec(),
+                header: header.first().map(row).unwrap_or_default(),
+                rows: rows.iter().map(row).collect(),
+            })
+        };
+        let cases: Vec<(&str, Vec<Block>)> = vec![
+            // A rule after the first row makes it the header.
+            (
+                "\\begin{tabular}{lcr}\n\\hline\na & b & c \\\\\n\\hline\nd & e & f \\\\\n\\hline\n\\end{tabular}",
+                vec![t(
+                    &[Left, Center, Right],
+                    &[&["a", "b", "c"]],
+                    &[&["d", "e", "f"]],
+                )],
+            ),
+            (
+                "\\begin{tabular}{ll}\\toprule a&b\\\\\\midrule c&d\\\\\\bottomrule\\end{tabular}",
+                vec![t(&[Left, Left], &[&["a", "b"]], &[&["c", "d"]])],
+            ),
+            // None, none.
+            (
+                "\\begin{tabular}{ll}a&b\\\\c&d\\end{tabular}",
+                vec![t(&[Left, Left], &[], &[&["a", "b"], &["c", "d"]])],
+            ),
+            (
+                "\\begin{tabular}{l}\\hline a\\\\b\\\\\\hline c\\end{tabular}",
+                vec![t(&[Left], &[], &[&["a"], &["b"], &["c"]])],
+            ),
+            // Specifications.
+            (
+                "\\begin{tabular}[t]{|l|c@{ x }r|p{3cm}>{\\raggedright}m{1em}!{a}b{2pt}|}a\\end{tabular}",
+                vec![t(
+                    &[Left, Center, Right, Left, Left, Left],
+                    &[],
+                    &[&["a", "", "", "", "", ""]],
+                )],
+            ),
+            (
+                "\\begin{tabular}{*{2}{c}r}a\\end{tabular}",
+                vec![t(&[Center, Center, Right], &[], &[&["a", "", ""]])],
+            ),
+            (
+                "\\begin{tabular*}{5cm}{lc}a&b\\end{tabular*}",
+                vec![t(&[Left, Center], &[], &[&["a", "b"]])],
+            ),
+            (
+                "\\begin{tabularx}{\\textwidth}{Xr}a&b\\end{tabularx}",
+                vec![t(&[Left, Right], &[], &[&["a", "b"]])],
+            ),
+            // More cells than the specification says.
+            (
+                "\\begin{tabular}{l}a&b\\end{tabular}",
+                vec![t(&[Left, Unset], &[], &[&["a", "b"]])],
+            ),
+            // Spacing and other line ends; a last row with no line end.
+            (
+                "\\begin{tabular}{l}a\\\\[2pt]b\\\\*c\\tabularnewline d\\end{tabular}",
+                vec![t(&[Left], &[], &[&["a"], &["b"], &["c"], &["d"]])],
+            ),
+            // Only what a rule takes is its own.
+            (
+                "\\begin{tabular}{l}\\hline{a}\\end{tabular}",
+                vec![t(&[Left], &[], &[&["a"]])],
+            ),
+            (
+                "\\begin{tabular}{l}\\hline(a)\\end{tabular}",
+                vec![t(&[Left], &[], &[&["(a)"]])],
+            ),
+            (
+                "\\begin{tabular}{l}\\hline[a]\\end{tabular}",
+                vec![t(&[Left], &[], &[&["[a]"]])],
+            ),
+            (
+                "\\begin{tabular}{l}a\\\\\\toprule[1pt]{b}\\end{tabular}",
+                vec![t(&[Left], &[&["a"]], &[&["b"]])],
+            ),
+            (
+                "\\begin{tabular}{l}a\\\\\\cline {1-1}{b}\\end{tabular}",
+                vec![t(&[Left], &[&["a"]], &[&["b"]])],
+            ),
+            (
+                "\\begin{tabular}{l}a\\tabularnewline[2pt]b\\end{tabular}",
+                vec![t(&[Left], &[], &[&["a"], &["b"]])],
+            ),
+            // Rules with their arguments.
+            (
+                "\\begin{tabular}{l}a\\\\\\cline{1-1}b\\\\\\cmidrule(lr){1-1}c\\\\\\cmidrule[1pt](r){1-1}\\end{tabular}",
+                vec![t(&[Left], &[&["a"]], &[&["b"], &["c"]])],
+            ),
+            // Groups keep what they hold; empty cells stay.
+            (
+                "\\begin{tabular}{ll}{a & b}&\\\\&c\\end{tabular}",
+                vec![t(&[Left, Left], &[], &[&["a & b", ""], &["", "c"]])],
+            ),
+            // Spans.
+            (
+                "\\begin{tabular}{lll}\\multicolumn{2}{c}{a}&b\\\\\\multirow{2}{*}{c}&d&e\\end{tabular}",
+                vec![t(
+                    &[Left, Left, Left],
+                    &[],
+                    &[&["a", "", "b"], &["c", "d", "e"]],
+                )],
+            ),
+            (
+                "\\begin{tabular}{ll}\\multicolumn{99999999}{c}{a}\\end{tabular}",
+                vec![t(&[Left, Left], &[], &[&["a", ""]])],
+            ),
+            // Nothing in it, nothing of it; text around it is apart.
+            ("\\begin{tabular}{ll}\\hline\\end{tabular}", vec![]),
+            (
+                "a\\begin{tabular}{l}b\\end{tabular}c",
+                vec![
+                    para(&[text("a")]),
+                    t(&[Left], &[], &[&["b"]]),
+                    para(&[text("c")]),
+                ],
+            ),
+            // In a table float, its caption is a paragraph of its own.
+            (
+                "\\begin{table}[h]\\caption{c}\\begin{tabular}{l}a\\end{tabular}\\end{table}",
+                vec![para(&[text("c")]), t(&[Left], &[], &[&["a"]])],
+            ),
+            // A table in a cell keeps the cell's span.
+            (
+                "\\begin{tabular}{lll}\\multicolumn{2}{c}{\\begin{tabular}{l}a\\end{tabular}}&b\\end{tabular}",
+                vec![t(&[Left, Left, Left], &[], &[&["a", "", "b"]])],
+            ),
+            // Code in a cell is text too.
+            (
+                "\\begin{tabular}{p{3cm}}a\\begin{verbatim}b\\end{verbatim}c\\end{tabular}",
+                vec![t(&[Left], &[], &[&["a b c"]])],
+            ),
+            // Blocks in a cell are their text.
+            (
+                "\\begin{tabular}{l}\\begin{quote}a\\end{quote}b\\end{tabular}",
+                vec![t(&[Left], &[], &[&["a b"]])],
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
+        // Inlines, and what a cell declares ends with it.
+        let (doc, _) = read("\\begin{tabular}{ll}\\bf a&\\emph{b}\\end{tabular}");
+        assert_eq!(
+            doc.blocks,
+            [Block::Table(Table {
+                align: vec![Left, Left],
+                header: Vec::new(),
+                rows: vec![vec![
+                    vec![Inline::Strong(vec![text("a")])],
+                    vec![Inline::Emph(vec![text("b")])],
+                ]],
+            })]
+        );
+        // Evening out rows doesn't make a small source huge.
+        let wide = "&".repeat(5_000);
+        let source = format!(
+            "\\begin{{tabular}}{{l}}{wide}\\\\{}\\end{{tabular}}",
+            "\\\\".repeat(5_000)
+        );
+        let Block::Table(table) = &read(&source).0.blocks[0] else {
+            panic!("no table");
+        };
+        let cells: usize = table.rows.iter().map(Vec::len).sum();
+        assert!(cells < 20_000, "{cells}");
+        // A repeat of any size is bounded.
+        let Block::Table(table) = &read("\\begin{tabular}{*{999999999}{c}}a\\end{tabular}")
+            .0
+            .blocks[0]
+        else {
+            panic!("no table");
+        };
+        assert_eq!(table.align.len(), MAX_COLUMNS);
     }
 
     /// Links our LaTeX writer writes read back.
