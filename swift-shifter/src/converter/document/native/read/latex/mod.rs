@@ -370,6 +370,9 @@ struct Reader {
     /// Whether the text being read is emphasized: it goes in a run of
     /// [`Inline::Emph`], which nests none.
     emphasized: bool,
+    /// Whether it's bold: it goes in a run of [`Inline::Strong`], which
+    /// nests none either and holds the runs of emphasis.
+    bold: bool,
     /// The verbatim text cut out of the source, which placeholders stand
     /// for (see [`verbatim::cut`]).
     verbatims: Vec<Verbatim>,
@@ -502,21 +505,15 @@ impl Reader {
         if name == self.verbatim_mark {
             return self.verbatim(args);
         }
-        match name {
-            // `\emph` switches between italic and upright, so inside another
-            // it's upright: the reader nests no emphasis, which writers
-            // can't set apart from the one around it (#126). What's after
-            // it reads on as after its argument: the spaces after a control
-            // space there go.
-            "\\emph" => {
-                if let Some(arg) = args.into_iter().next() {
-                    let in_argument = std::mem::replace(&mut self.in_argument, true);
-                    self.emphasized = !self.emphasized;
-                    self.flow(arg);
-                    self.emphasized = !self.emphasized;
-                    self.in_argument = in_argument;
-                }
+        if let Some((bold, emphasized)) = font(name, self.bold, self.emphasized) {
+            // What's after it reads on as after its argument: the spaces
+            // after a control space there go.
+            if let Some(arg) = args.into_iter().next() {
+                self.in_font(arg, bold, emphasized);
             }
+            return;
+        }
+        match name {
             // TeX stops at a paragraph's end in an argument; it's a space,
             // and the spaces after it go as after any control word.
             "\\par" if self.in_argument => {
@@ -606,18 +603,12 @@ impl Reader {
         }
     }
 
-    /// `label`, set in bold.
-    fn strong(&mut self, label: Vec<Piece>) {
-        let outer = std::mem::take(&mut self.inlines);
-        let in_argument = std::mem::replace(&mut self.in_argument, true);
-        let emphasized = std::mem::take(&mut self.emphasized);
-        self.flow(label);
-        self.emphasized = emphasized;
-        self.in_argument = in_argument;
-        let content = trimmed(std::mem::replace(&mut self.inlines, outer));
-        if !content.is_empty() {
-            self.inline(Inline::Strong(content));
-        }
+    /// `arg`, an argument, in the font `bold` and `emphasized` say.
+    fn in_font(&mut self, arg: Vec<Piece>, bold: bool, emphasized: bool) {
+        let outer = (self.bold, self.emphasized, self.in_argument);
+        (self.bold, self.emphasized, self.in_argument) = (bold, emphasized, true);
+        self.flow(arg);
+        (self.bold, self.emphasized, self.in_argument) = outer;
     }
 
     /// An `itemize`, `enumerate` or `description` environment: a list of
@@ -666,10 +657,13 @@ impl Reader {
             };
             if let Some(label) = item.label {
                 if kind == ListKind::Description {
-                    self.strong(label);
+                    self.in_font(label, true, self.emphasized);
                 } else {
                     self.flow(label);
                 }
+                // A control word ending the label takes no space that's
+                // not in the source.
+                self.skip_spaces = false;
                 self.token(SyntaxKind::TokenWhiteSpace, " ");
             }
             self.flow(item.content);
@@ -777,29 +771,39 @@ impl Reader {
         self.run().push(inline);
     }
 
-    /// Where what's read goes: emphasized, the run of emphasis at the end,
-    /// or a new one.
+    /// Where what's read goes: the runs of bold and emphasis at the end, or
+    /// new ones, as far as it's in them.
     fn run(&mut self) -> &mut Vec<Inline> {
-        if !self.emphasized {
-            return &mut self.inlines;
+        let mut run = &mut self.inlines;
+        if self.bold {
+            if !matches!(run.last(), Some(Inline::Strong(_))) {
+                run.push(Inline::Strong(Vec::new()));
+            }
+            let Some(Inline::Strong(bold)) = run.last_mut() else {
+                unreachable!("a run of bold was just pushed");
+            };
+            run = bold;
         }
-        if !matches!(self.inlines.last(), Some(Inline::Emph(_))) {
-            self.inlines.push(Inline::Emph(Vec::new()));
+        if self.emphasized {
+            if !matches!(run.last(), Some(Inline::Emph(_))) {
+                run.push(Inline::Emph(Vec::new()));
+            }
+            let Some(Inline::Emph(emphasis)) = run.last_mut() else {
+                unreachable!("a run of emphasis was just pushed");
+            };
+            run = emphasis;
         }
-        match self.inlines.last_mut() {
-            Some(Inline::Emph(run)) => run,
-            _ => unreachable!("an emphasis was just pushed"),
-        }
+        run
     }
 
     /// A space, unless one is already there: TeX makes one of a run. One
     /// starting a paragraph goes, but not one starting an argument.
     fn space(&mut self) {
         self.settle_breaks();
-        let last = match self.inlines.last() {
-            Some(Inline::Emph(run)) => run.last(),
-            last => last,
-        };
+        let mut last = self.inlines.last();
+        while let Some(Inline::Strong(run) | Inline::Emph(run)) = last {
+            last = run.last();
+        }
         match last {
             Some(Inline::Text(last)) if last.ends_with(' ') => {}
             None if !self.in_argument => {}
@@ -908,12 +912,31 @@ const LINE_BREAK: Signature = Signature {
     required: 0,
 };
 
+/// The font a command sets its argument in, as `(bold, emphasized)`, in text
+/// that's `bold` and `emphasized`; `None` for a command that sets none.
+/// `\emph` switches between italic and upright, so inside another it's
+/// upright: the reader nests no emphasis, which writers can't set apart from
+/// the one around it (#126). No writer shows the other families and shapes,
+/// which leave the font as it is.
+fn font(name: &str, bold: bool, emphasized: bool) -> Option<(bool, bool)> {
+    Some(match name {
+        "\\emph" => (bold, !emphasized),
+        "\\textbf" => (true, emphasized),
+        "\\textmd" => (false, emphasized),
+        "\\textit" | "\\textsl" => (bold, true),
+        "\\textup" => (bold, false),
+        "\\textnormal" => (false, false),
+        "\\textrm" | "\\textsf" | "\\textsc" | "\\underline" => (bold, emphasized),
+        _ => return None,
+    })
+}
+
 /// What a command the reader knows takes; `None` for one it doesn't, which
 /// keeps the text of the groups right after it (see [`Reader::command`]).
 /// Those that take nothing leave the groups after them to be read on.
 fn signature(name: &str) -> Option<Signature> {
     match name {
-        "\\emph" => Some(Signature {
+        _ if font(name, false, false).is_some() => Some(Signature {
             required: 1,
             ..Signature::default()
         }),
@@ -1113,11 +1136,79 @@ fn push_text(inlines: &mut Vec<Inline>, text: &str) {
     }
 }
 
+/// `inlines` with the spaces and line breaks at the edges of their runs of
+/// bold and emphasis (see [`Reader::run`]) moved out of them, where Markdown
+/// wouldn't read them as runs, and those left empty gone.
+fn hoisted(inlines: Vec<Inline>) -> Vec<Inline> {
+    let mut out = Vec::with_capacity(inlines.len());
+    for inline in inlines {
+        let (run, bold) = match inline {
+            Inline::Strong(run) => (run, true),
+            Inline::Emph(run) => (run, false),
+            other => {
+                push_hoisted(&mut out, other);
+                continue;
+            }
+        };
+        let mut run = hoisted(run);
+        let start = run.iter().position(|inline| !at_run_edge(inline));
+        let Some(start) = start else {
+            run.into_iter()
+                .for_each(|inline| push_hoisted(&mut out, inline));
+            continue;
+        };
+        for inline in run.drain(..start) {
+            push_hoisted(&mut out, inline);
+        }
+        if let Some(Inline::Text(text)) = run.first_mut() {
+            let spaces = text.len() - text.trim_start_matches(' ').len();
+            let spaces: String = text.drain(..spaces).collect();
+            push_hoisted(&mut out, Inline::Text(spaces));
+        }
+        let end = run.iter().rposition(|inline| !at_run_edge(inline));
+        let after = run.split_off(end.map_or(0, |end| end + 1));
+        let spaces = match run.last_mut() {
+            Some(Inline::Text(text)) => text.split_off(text.trim_end_matches(' ').len()),
+            _ => String::new(),
+        };
+        out.push(if bold {
+            Inline::Strong(run)
+        } else {
+            Inline::Emph(run)
+        });
+        push_hoisted(&mut out, Inline::Text(spaces));
+        for inline in after {
+            push_hoisted(&mut out, inline);
+        }
+    }
+    out
+}
+
+/// Whether `inline`, at the edge of a run, moves out of it whole.
+fn at_run_edge(inline: &Inline) -> bool {
+    match inline {
+        Inline::LineBreak => true,
+        Inline::Text(text) => text.trim_matches(' ').is_empty(),
+        _ => false,
+    }
+}
+
+/// Appends `inline` to `out`, where a run's edge moved it. Spaces stay as
+/// many as they are: [`Reader::space`] made one of a run, so more are control
+/// spaces, each a space of its own.
+fn push_hoisted(out: &mut Vec<Inline>, inline: Inline) {
+    match inline {
+        Inline::Text(text) if text.is_empty() => {}
+        Inline::Text(text) => push_text(out, &text),
+        other => out.push(other),
+    }
+}
+
 /// `inlines` without the spaces at their ends, a block's (`~` is kept).
 /// Line breaks at the ends go too: LaTeX ends no line there, and Markdown
-/// can't. So do those of an emphasis at an end, where Markdown wouldn't
-/// read it as one.
-fn trimmed(mut inlines: Vec<Inline>) -> Vec<Inline> {
+/// can't.
+fn trimmed(inlines: Vec<Inline>) -> Vec<Inline> {
+    let mut inlines = hoisted(inlines);
     trim_start(&mut inlines);
     trim_end(&mut inlines);
     inlines.retain(|inline| !matches!(inline, Inline::Text(text) if text.is_empty()));
@@ -1289,7 +1380,7 @@ mod tests {
             ),
             (
                 "\\emph{a \\emph{b} c}",
-                &[&[emph(&[text("a ")]), text("b"), emph(&[text(" c")])]],
+                &[&[emph(&[text("a")]), text(" b "), emph(&[text("c")])]],
             ),
             ("\\emph{\\emph{x}}", &[&[text("x")]]),
             (
@@ -1297,10 +1388,7 @@ mod tests {
                 &[&[text("A"), emph(&[text("B")]), text("'s")]],
             ),
             // The spaces after a control space in it go after it.
-            (
-                "A\\emph\\  B",
-                &[&[text("A"), emph(&[text(" ")]), text("B")]],
-            ),
+            ("A\\emph\\  B", &[&[text("A B")]]),
             // One, the rest read on.
             ("\\emph{one}{two}", &[&[emph(&[text("one")]), text("two")]]),
             // Not past an empty line, a comment's line among them, or a
@@ -1313,11 +1401,11 @@ mod tests {
             // empty line or `\par`, which TeX stops at, is a space.
             (
                 "a\\emph{ b }c",
-                &[&[text("a"), emph(&[text(" b ")]), text("c")]],
+                &[&[text("a "), emph(&[text("b")]), text(" c")]],
             ),
             (
                 "a\\emph{b\n}c",
-                &[&[text("a"), emph(&[text("b ")]), text("c")]],
+                &[&[text("a"), emph(&[text("b")]), text(" c")]],
             ),
             (
                 "a\\emph{b\n\nc}d",
@@ -1895,6 +1983,225 @@ mod tests {
         }
     }
 
+    /// Each row: the inlines the source reads as, in a paragraph.
+    #[test]
+    fn fonts_are_read_as_tex_sets_them() {
+        let strong = |inlines: &[Inline]| Inline::Strong(inlines.to_vec());
+        let a = text("a");
+        let b = text("b");
+        let x = text("x");
+        let y = text("y");
+        let cases: Vec<(&str, Vec<Inline>)> = vec![
+            ("\\textbf{a}", vec![strong(&[a.clone()])]),
+            ("\\textbf a b", vec![strong(&[a.clone()]), text(" b")]),
+            ("\\textit{a}", vec![emph(&[a.clone()])]),
+            ("\\textsl{a}", vec![emph(&[a.clone()])]),
+            // Fonts no writer shows keep their text, and take one argument.
+            ("\\textsc{a} b", vec![text("a b")]),
+            ("\\textrm{a}\\textsf{b}", vec![text("ab")]),
+            ("\\underline a b", vec![text("a b")]),
+            ("\\textbf{\\textsc{a}}", vec![strong(&[a.clone()])]),
+            // Empty, they show nothing; a space stays a space.
+            ("x\\textbf{}y", vec![text("xy")]),
+            ("x\\textbf{ }y", vec![text("x y")]),
+            ("x \\textbf{ } y", vec![text("x y")]),
+            // Spaces and line breaks at their edges are outside them.
+            (
+                "x\\textbf{ a }y",
+                vec![text("x "), strong(&[a.clone()]), text(" y")],
+            ),
+            (
+                "x \\textbf{ a } y",
+                vec![text("x "), strong(&[a.clone()]), text(" y")],
+            ),
+            (
+                "x\\emph{ a }y",
+                vec![text("x "), emph(&[a.clone()]), text(" y")],
+            ),
+            (
+                "x\\emph{\\textbf{ a }}y",
+                vec![text("x "), strong(&[emph(&[a.clone()])]), text(" y")],
+            ),
+            // Control spaces there are each a space of their own.
+            ("\\emph{a\\ \\ }b", vec![emph(&[a.clone()]), text("  b")]),
+            ("x\\emph{\\ \\ a}", vec![text("x  "), emph(&[a.clone()])]),
+            // A control word's spaces end with its group.
+            (
+                "\\textbf{a\\relax} b",
+                vec![strong(&[a.clone()]), text(" b")],
+            ),
+            (
+                "x\\textbf{a\\\\}y",
+                vec![
+                    x.clone(),
+                    strong(&[a.clone()]),
+                    Inline::LineBreak,
+                    y.clone(),
+                ],
+            ),
+            (
+                "x\\textbf{\\\\a}y",
+                vec![
+                    x.clone(),
+                    Inline::LineBreak,
+                    strong(&[a.clone()]),
+                    y.clone(),
+                ],
+            ),
+            (
+                "x\\textbf{\\\\}y",
+                vec![x.clone(), Inline::LineBreak, y.clone()],
+            ),
+            (
+                "x\\emph{\\textbf{a\\\\}}y",
+                vec![
+                    x.clone(),
+                    strong(&[emph(&[a.clone()])]),
+                    Inline::LineBreak,
+                    y.clone(),
+                ],
+            ),
+            // In the middle, they stay; an empty line is a space.
+            (
+                "\\textbf{a\\\\b}",
+                vec![strong(&[a.clone(), Inline::LineBreak, b.clone()])],
+            ),
+            ("\\textbf{a\n\nb}", vec![strong(&[text("a b")])]),
+            // Bold and emphasis, either way round, and upright in both.
+            ("\\textbf{\\emph{a}}", vec![strong(&[emph(&[a.clone()])])]),
+            ("\\emph{\\textbf{a}}", vec![strong(&[emph(&[a.clone()])])]),
+            ("\\emph{\\textbf{\\emph{a}}}", vec![strong(&[a.clone()])]),
+            (
+                "\\emph{x\\textbf{a}y}",
+                vec![
+                    emph(&[x.clone()]),
+                    strong(&[emph(&[a.clone()])]),
+                    emph(&[y.clone()]),
+                ],
+            ),
+            (
+                "\\textbf{x\\emph{a}y}",
+                vec![strong(&[x.clone(), emph(&[a.clone()]), y.clone()])],
+            ),
+            // `\textit` is italic in italic, where `\emph` is upright.
+            ("\\emph{\\textit{a}}", vec![emph(&[a.clone()])]),
+            ("\\emph{\\textup{a}}", vec![a.clone()]),
+            // Bold in bold is bold, and what's alike side by side is one.
+            ("\\textbf{x\\textbf{a}}", vec![strong(&[text("xa")])]),
+            ("\\textbf{a}\\textbf{b}", vec![strong(&[text("ab")])]),
+            (
+                "\\textbf{\\emph{a}}\\textbf{\\emph{b}}",
+                vec![strong(&[emph(&[text("ab")])])],
+            ),
+            (
+                "\\textbf{a} \\textbf{b}",
+                vec![strong(&[a.clone()]), text(" "), strong(&[b.clone()])],
+            ),
+            // What takes a font off holds in its argument alone.
+            (
+                "\\textbf{x\\textmd{a}y}",
+                vec![strong(&[x.clone()]), a.clone(), strong(&[y.clone()])],
+            ),
+            (
+                "\\textbf{x\\textnormal{a}y}",
+                vec![strong(&[x.clone()]), a.clone(), strong(&[y.clone()])],
+            ),
+            (
+                "\\textit{x\\textnormal{a}y}",
+                vec![emph(&[x.clone()]), a.clone(), emph(&[y.clone()])],
+            ),
+            (
+                "\\textbf{\\textit{x\\textnormal{a}}}",
+                vec![strong(&[emph(&[x.clone()])]), a.clone()],
+            ),
+            (
+                "\\textbf{\\textit{x\\textmd{a}}}",
+                vec![strong(&[emph(&[x.clone()])]), emph(&[a.clone()])],
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(
+                read(source).0.blocks,
+                [Block::Paragraph(expected)],
+                "{source}"
+            );
+        }
+        // In a heading, a term, an empty one, and alone.
+        assert_eq!(
+            read("\\section{\\textbf{a}}").0.blocks,
+            [heading(1, &[strong(&[text("a")])])]
+        );
+        assert_eq!(
+            read("\\begin{description}\\item[\\textbf{a}] b\\end{description}")
+                .0
+                .blocks,
+            [list(
+                false,
+                &[(None, &[para(&[strong(&[text("a")]), text(" b")])])]
+            )]
+        );
+        assert_eq!(read("\\textbf{ }").0.blocks, []);
+    }
+
+    /// The fonts the LaTeX writer writes read back as they were.
+    #[test]
+    fn our_latex_fonts_read_back() {
+        use crate::converter::document::native::{read::markdown, write};
+        let doc = markdown::read("**a** and *b*, **c *d* e** f\n");
+        let tex = write::latex::write(&doc);
+        assert_eq!(read(&tex).0.blocks, doc.blocks, "{tex}");
+    }
+
+    /// What Markdown can write reads back as the same text, in the same
+    /// fonts. `***a*b*c***`, bold starting and ending in emphasis, it can't
+    /// (#126).
+    #[test]
+    fn fonts_survive_markdown() {
+        use crate::converter::document::native::{read::markdown, write};
+        for source in [
+            "x\\textbf{a} y",
+            "x\\textbf{ a }y",
+            "x\\emph{ a }y",
+            "\\emph{x\\textbf{a}y}",
+            "\\textbf{\\emph{a}}",
+            "\\textbf{a}\\textbf{b}",
+            "\\textbf{\\emph{a}}\\textbf{\\emph{b}}",
+            "\\emph{\\textbf{a}\\textbf{b}}",
+            "\\textbf{a}\\emph{b}",
+            "\\emph{a}\\textbf{b}",
+            "\\textbf{x\\textmd{a}y}",
+            "\\textbf{a\\\\b}",
+            "x\\textbf{a\\\\}y",
+        ] {
+            let (doc, _) = read(source);
+            let written = write::markdown::write(&doc);
+            let text = |blocks: &[Block]| match blocks {
+                [Block::Paragraph(content)] => {
+                    crate::converter::document::native::ast::inline_text(content)
+                }
+                _ => panic!("{blocks:?}"),
+            };
+            assert_eq!(
+                text(&markdown::read(&written).blocks),
+                text(&doc.blocks),
+                "{source}: {written}"
+            );
+        }
+    }
+
+    /// Bold nested 20,000 deep reads flat, like emphasis.
+    #[test]
+    fn deep_bold_reads_flat() {
+        let source = format!("{}x{}", "\\textbf{".repeat(20_000), "}".repeat(20_000));
+        let blocks = std::thread::Builder::new()
+            .stack_size(2 << 20)
+            .spawn(move || read(&source).0.blocks)
+            .unwrap()
+            .join()
+            .unwrap();
+        assert_eq!(blocks, [para(&[Inline::Strong(vec![text("x")])])]);
+    }
+
     /// A `description`'s terms are bold; there's no list of terms to put
     /// them in.
     #[test]
@@ -1914,6 +2221,16 @@ mod tests {
                     ),
                     (None, &[para(&[text("plain")])]),
                 ],
+            )]
+        );
+        // A control word ending it leaves the space after it.
+        assert_eq!(
+            read("\\begin{description}\\item[Term\\relax]means\\end{description}")
+                .0
+                .blocks,
+            [list(
+                false,
+                &[(None, &[para(&[strong(&[text("Term")]), text(" means")])])],
             )]
         );
         // An empty one is no term.
