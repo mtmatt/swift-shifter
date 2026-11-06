@@ -83,7 +83,8 @@ fn read_parsed(source: &str) -> (Document, Option<Warning>) {
     let cut = verbatim::cut(source);
     // Expanding macros, which may never end, would also parse more than
     // `source` holds, past `nesting_bound`.
-    let separated = formulas::separate_formulas(&cut.source);
+    let closed = formulas::close_scripts(&cut.source);
+    let separated = formulas::separate_formulas(&closed);
     let root = mitex_parser::parse_without_macro(&separated, CommandSpec::new(Default::default()));
     let mut reader = Reader {
         verbatims: cut.verbatims,
@@ -2057,6 +2058,23 @@ mod tests {
                 DEPTH - MAX_LIST_NESTING
             )
         );
+    }
+
+    /// A script at its end leaves a group's end where it is, so what follows
+    /// stays outside it (#202).
+    #[test]
+    fn what_follows_a_group_ending_in_a_script_is_read() {
+        for (source, blocks) in [
+            ("\\section{a^}b", 2),
+            ("\\section{a_ }b", 2),
+            ("\\section{a^% c\n}b", 2),
+            (
+                "\\begin{equation}\\label{a^}x\\end{equation}\\section{b}\n\nc",
+                3,
+            ),
+        ] {
+            assert_eq!(read(source).0.blocks.len(), blocks, "{source}");
+        }
     }
 
     /// The top level a document uses is level 1, and the levels under it

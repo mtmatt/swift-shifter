@@ -87,6 +87,48 @@ pub(super) fn separate_formulas(source: &str) -> String {
     out
 }
 
+/// `source` with `{}` after any `^` or `_` with nothing but spaces, line
+/// breaks and comments before a `}`. mitex-parser takes whatever follows
+/// them as their argument, a `}` too, and its group then goes on past where
+/// it ends: from `\label{a^}`, a valid name, maybe to the document's end
+/// (#202). What's in comments is passed by.
+///
+/// Known limit: a `$` or `\end` after them is taken the same way, though
+/// TeX takes no script without an argument there either.
+pub(super) fn close_scripts(source: &str) -> String {
+    let mut out = String::with_capacity(source.len());
+    let (mut copied, mut at) = (0, 0);
+    while let Some(next) = source[at..].find(['\\', '%', '^', '_']) {
+        at += next;
+        let rest = &source[at..];
+        match rest.as_bytes()[0] {
+            b'\\' => at += next_command(rest, tex_letter).map_or(1, |(_, name)| name.len()),
+            b'%' => at += rest.find(['\n', '\r']).unwrap_or(rest.len()),
+            _ => {
+                at += 1;
+                if past_blanks(&source[at..]).starts_with('}') {
+                    out.push_str(&source[copied..at]);
+                    out.push_str("{}");
+                    copied = at;
+                }
+            }
+        }
+    }
+    out.push_str(&source[copied..]);
+    out
+}
+
+/// `text` past the spaces, line breaks and comments it starts with.
+fn past_blanks(mut text: &str) -> &str {
+    loop {
+        text = text.trim_start();
+        if !text.starts_with('%') {
+            return text;
+        }
+        text = &text[text.find(['\n', '\r']).unwrap_or(text.len())..];
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,6 +177,50 @@ mod tests {
             "a $ b\n\n$$c$$\n \n$d${}$e$"
         );
         assert_eq!(separate_formulas("$a\r\n\r\n$$b$$"), "$a\r\n\r\n$$b$$");
+    }
+
+    #[test]
+    fn scripts_before_a_group_s_end_are_closed() {
+        for (source, expected) in [
+            ("{a^}", "{a^{}}"),
+            ("{a_}", "{a_{}}"),
+            ("{a^ }", "{a^{} }"),
+            ("{a^\n}", "{a^{}\n}"),
+            ("{a^\r\n}", "{a^{}\r\n}"),
+            ("{a^% c\n% d\n }", "{a^{}% c\n% d\n }"),
+            ("{a^_}", "{a^_{}}"),
+            ("{a^}{b_}", "{a^{}}{b_{}}"),
+            ("{\\\\^}", "{\\\\^{}}"),
+        ] {
+            assert_eq!(close_scripts(source), expected, "{source}");
+        }
+    }
+
+    #[test]
+    fn what_isnt_a_script_before_a_group_s_end_is_left() {
+        for source in [
+            "{a^b}", "{a^{b}}", "{a\\^}", "{a\\_}", "% {a^}\n", "{a^ % c", "a^", "a^ ", "",
+        ] {
+            assert_eq!(close_scripts(source), source, "{source}");
+        }
+    }
+
+    /// A script at its end leaves a group's end where it is. These tests
+    /// are built into the benchmark too, which has no reader to call.
+    #[test]
+    fn the_parser_ends_a_group_after_a_script() {
+        use mitex_parser::CommandSpec;
+        use mitex_parser::syntax::SyntaxKind;
+        let groups = |source: &str| {
+            mitex_parser::parse_without_macro(source, CommandSpec::new(Default::default()))
+                .children()
+                .filter(|node| node.kind() == SyntaxKind::ItemCurly)
+                .count()
+        };
+        for source in ["{a^}{b}", "{a_ }{b}", "{a^% c\n}{b}"] {
+            assert_eq!(groups(source), 1, "{source}");
+            assert_eq!(groups(&close_scripts(source)), 2, "{source}");
+        }
     }
 
     /// The parser reads each formula as one.
