@@ -24,6 +24,7 @@ use crate::converter::document::native::ast::{
     Align, Block, Document, Inline, List, ListItem, Meta, Table, inline_text,
 };
 use crate::converter::document::native::write;
+use std::rc::Rc;
 
 /// The stack reading takes per level the parser and the reader recurse
 /// into, in a debug build, which takes more than a release one: 553 bytes
@@ -87,14 +88,19 @@ fn nesting_bound(source: &str) -> usize {
 fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
     let source = conditionals::keep_else(source);
     let cut = verbatim::cut(&source);
-    // Expanding macros, which may never end, would also parse more than
-    // `source` holds, past `nesting_bound`.
+    // The parser's expanding macros, which may never end, would parse more
+    // than `source` holds, past `nesting_bound`: `Reader::expand` reads them.
     let closed = formulas::close_scripts(&cut.source);
     let separated = formulas::separate_formulas(&closed);
     let root = mitex_parser::parse_without_macro(&separated, CommandSpec::new(Default::default()));
     let mut reader = Reader {
         verbatims: cut.verbatims,
         verbatim_mark: cut.mark,
+        expansion_left: source
+            .len()
+            .saturating_mul(EXPANSION_PER_BYTE)
+            .max(MIN_EXPANSION),
+        nesting_left: nesting_bound(&source),
         ..Reader::default()
     };
     let body = document_body(&root);
@@ -123,6 +129,14 @@ fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
             one: "list or quote nested too deeply was read as its text",
             many: "lists or quotes nested too deeply were read as their text",
             count: reader.unlisted,
+            line: None,
+        });
+    }
+    if reader.unexpanded > 0 {
+        warnings.push(Warning {
+            one: "command expanding too far was left unexpanded",
+            many: "commands expanding too far were left unexpanded",
+            count: reader.unexpanded,
             line: None,
         });
     }
@@ -441,10 +455,60 @@ fn push_source_tokens(node: &SyntaxNode, tokens: &mut Vec<(SyntaxKind, String)>)
     }
 }
 
-/// Takes from `items[*at..]` what the definition command `name` defines:
-/// what it holds is only read where it's called, which the reader doesn't
-/// do yet (#73), and its text doesn't show here.
-fn skip_definition(items: &mut [Piece], at: &mut usize, unbracketed: &mut usize, name: &str) {
+/// What a definition says: the command it defines, and what that stands for.
+struct Definition {
+    /// As written: `\x`.
+    name: String,
+    /// `None` for a command taking arguments, which isn't read yet.
+    body: Option<Vec<Piece>>,
+}
+
+/// What a command defined with no arguments stands for.
+struct Macro {
+    pieces: Vec<Piece>,
+    /// Its bytes in the source.
+    length: usize,
+    /// How deep it might nest (see [`nesting_bound`]).
+    nesting: usize,
+}
+
+impl Macro {
+    /// `pieces` as a macro, unless they leave open what they open:
+    /// `\newcommand{\be}{\begin{equation}}` would need what's after its
+    /// call, which the parser has read without it.
+    fn new(pieces: Vec<Piece>) -> Option<Macro> {
+        let source = source_text(&pieces);
+        // A `\\` ends a line, and what's after it isn't escaped.
+        let unescaped = source.replace("\\\\", "");
+        let count = |text: &str| unescaped.matches(text).count();
+        // An `\end` with no `\begin` is an error to the parser.
+        let stray_end = pieces.iter().any(|piece| match piece {
+            Piece::Token(kind, _) => *kind == SyntaxKind::TokenError,
+            Piece::Node(node) => node
+                .descendants()
+                .any(|node| node.kind() == SyntaxKind::TokenError),
+        });
+        let balanced = !stray_end
+            && count("\\begin{") == count("\\end{")
+            && count("\\[") == count("\\]")
+            && count("\\(") == count("\\)")
+            && (count("$") - count("\\$")) % 2 == 0;
+        balanced.then(|| Macro {
+            pieces,
+            length: source.len(),
+            nesting: nesting_bound(&source),
+        })
+    }
+}
+
+/// Takes from `items[*at..]` what the definition command `name` defines,
+/// whose text doesn't show here, and says what it was.
+fn take_definition(
+    items: &mut [Piece],
+    at: &mut usize,
+    unbracketed: &mut usize,
+    name: &str,
+) -> Option<Definition> {
     let required = Signature {
         required: 1,
         ..Signature::default()
@@ -453,7 +517,9 @@ fn skip_definition(items: &mut [Piece], at: &mut usize, unbracketed: &mut usize,
         star: true,
         ..required
     };
-    take_arguments(items, at, unbracketed, name_of_it);
+    let defined = take_arguments(items, at, unbracketed, name_of_it).required;
+    let defined = source_text(defined.first()?).trim().to_string();
+    let mut takes_arguments = false;
     if name.ends_with("command") {
         // Its count of arguments, and the default of the first.
         for _ in 0..2 {
@@ -461,7 +527,10 @@ fn skip_definition(items: &mut [Piece], at: &mut usize, unbracketed: &mut usize,
                 optional: true,
                 ..Signature::default()
             };
-            take_arguments(items, at, unbracketed, optional);
+            let taken = take_arguments(items, at, unbracketed, optional);
+            takes_arguments |= taken
+                .optional
+                .is_some_and(|given| source_text(&given).trim() != "0");
         }
     } else {
         // `\def`'s arguments, up to its group, as TeX takes them. With none
@@ -475,11 +544,21 @@ fn skip_definition(items: &mut [Piece], at: &mut usize, unbracketed: &mut usize,
                 Piece::Node(node) => node.kind() != SyntaxKind::ItemCmd,
             });
         match text.map(|text| (text, &items[*at + text])) {
-            Some((text, Piece::Node(node))) if node.kind() == SyntaxKind::ItemCurly => *at += text,
-            _ => return,
+            Some((text, Piece::Node(node))) if node.kind() == SyntaxKind::ItemCurly => {
+                takes_arguments = text > 0;
+                *at += text;
+            }
+            _ => return None,
         }
     }
-    take_arguments(items, at, unbracketed, required);
+    let body = take_arguments(items, at, unbracketed, required)
+        .required
+        .into_iter()
+        .next()?;
+    Some(Definition {
+        name: defined,
+        body: (!takes_arguments).then_some(body),
+    })
 }
 
 /// The name of `env`, an environment: what its `\begin` names.
@@ -580,6 +659,26 @@ struct Reader {
     in_heading: bool,
     /// The labels in the heading being read.
     heading_labels: Vec<String>,
+    /// What's defined so far, by name, as written: `None` for what can't be
+    /// expanded (see [`Reader::define`]).
+    definitions: std::collections::HashMap<String, Option<Rc<Macro>>>,
+    /// How to undo each local definition, in order, for the groups still
+    /// open.
+    definition_log: Vec<UndoDefinition>,
+    /// When each global definition's name was last defined so, which the
+    /// groups around it don't undo.
+    global_definitions: std::collections::HashMap<String, usize>,
+    /// How many definitions the document has made so far.
+    definitions_made: usize,
+    /// How many macros the one being read is called from.
+    expansion_depth: usize,
+    /// The bytes of macros the document may still read.
+    expansion_left: usize,
+    /// How much deeper macros may nest, within the stack [`read`] sized for
+    /// the source, which also holds what's around their calls.
+    nesting_left: usize,
+    /// The calls [`Reader::expand`] left.
+    unexpanded: usize,
     /// Whether the document's class adds each `\\author` to those before.
     authors_add: bool,
     /// What the document says of itself (see [`Reader::preamble`]).
@@ -598,7 +697,7 @@ struct Reader {
     typewriter: bool,
     /// The font at each `\\begingroup` or `\\bgroup` still open, which their
     /// ends set back.
-    groups: Vec<Font>,
+    groups: Vec<Group>,
     /// Whether it's bold: it goes in a run of [`Inline::Strong`], which
     /// nests none either and holds the runs of emphasis.
     bold: bool,
@@ -641,11 +740,14 @@ impl Reader {
                 Piece::Node(node) => match node.kind() {
                     SyntaxKind::ItemCmd if DEFINITIONS.contains(&command_name(&node).as_str()) => {
                         let name = command_name(&node);
-                        skip_definition(&mut items, &mut at, &mut unbracketed, &name);
+                        self.define(&name, &mut items, &mut at, &mut unbracketed);
                         self.non_space();
                     }
                     SyntaxKind::ItemCmd => {
                         let name = command_name(&node);
+                        if self.expand(&name) {
+                            continue;
+                        }
                         let signature = if name == self.verbatim_mark {
                             Some(PLACEHOLDER)
                         } else {
@@ -702,7 +804,7 @@ impl Reader {
                         self.skip_spaces = true;
                     }
                     SyntaxKind::ItemEnv => {
-                        let font = self.font();
+                        let group = self.open_group();
                         match environment_name(&node).as_str() {
                             "itemize" => self.list(&node, ListKind::Itemize),
                             "enumerate" => self.list(&node, ListKind::Enumerate),
@@ -725,19 +827,19 @@ impl Reader {
                             }
                             // `\\begin{bfseries}` is a declaration too.
                             name => {
-                                if let Some(declared) = declared(&format!("\\{name}"), font) {
+                                if let Some(declared) = declared(&format!("\\{name}"), group.font) {
                                     self.set_font(declared);
                                 }
                                 self.flow(pieces(&node));
                             }
                         }
-                        self.set_font(font);
+                        self.close_group(group);
                     }
                     SyntaxKind::ItemFormula => self.formula(&node),
                     SyntaxKind::ItemCurly => {
-                        let font = self.font();
+                        let group = self.open_group();
                         self.flow(pieces(&node));
-                        self.set_font(font);
+                        self.close_group(group);
                     }
                     _ => self.flow(pieces(&node)),
                 },
@@ -836,11 +938,12 @@ impl Reader {
             return self.bare_reference(label);
         }
         if matches!(name, "\\begingroup" | "\\bgroup") {
-            return self.groups.push(self.font());
+            let group = self.open_group();
+            return self.groups.push(group);
         }
         if matches!(name, "\\endgroup" | "\\egroup") {
-            if let Some(font) = self.groups.pop() {
-                self.set_font(font);
+            if let Some(group) = self.groups.pop() {
+                self.close_group(group);
             }
             return;
         }
@@ -1017,11 +1120,109 @@ impl Reader {
 
     /// `groups`, each in a group of its own (see [`Reader::font`]).
     fn flow_groups(&mut self, groups: Vec<Vec<Piece>>) {
-        let font = self.font();
-        for group in groups {
-            self.flow(group);
-            self.set_font(font);
+        for pieces in groups {
+            let group = self.open_group();
+            self.flow(pieces);
+            self.close_group(group);
         }
+    }
+
+    /// Opens a group: what's declared and defined in it holds to
+    /// [`Reader::close_group`].
+    fn open_group(&self) -> Group {
+        Group {
+            font: self.font(),
+            definitions: self.definition_log.len(),
+        }
+    }
+
+    /// Closes `group`, setting back what was declared and defined in it,
+    /// but for what was since defined globally. A `\\begingroup` may outlast
+    /// the group it's in, which has set back what it defined already.
+    fn close_group(&mut self, group: Group) {
+        self.set_font(group.font);
+        let start = group.definitions.min(self.definition_log.len());
+        for undo in self.definition_log.drain(start..).rev() {
+            let global = self.global_definitions.get(&undo.name);
+            if global.is_some_and(|global| *global > undo.made) {
+                continue;
+            }
+            match undo.earlier {
+                Some(earlier) => self.definitions.insert(undo.name, earlier),
+                None => self.definitions.remove(&undo.name),
+            };
+        }
+    }
+
+    /// Takes the definition at `items[*at..]`. It holds to the end of its
+    /// group, or of the document with `\\gdef` and `\\xdef`, from where the
+    /// reader expands what's called (see [`Reader::expand`]). What it can't
+    /// expand (see [`Definition`], [`Macro::new`]) is an unknown command, as
+    /// is what `\\edef` and `\\xdef` define, which would take the meanings of
+    /// the commands in it as they were here. What the reader knows keeps its
+    /// meaning: a `\\section` redefined in terms of the class's insides still
+    /// heads a section.
+    fn define(
+        &mut self,
+        command: &str,
+        items: &mut [Piece],
+        at: &mut usize,
+        unbracketed: &mut usize,
+    ) {
+        let Some(Definition { name, body }) = take_definition(items, at, unbracketed, command)
+        else {
+            return;
+        };
+        let provided_already =
+            command == "\\providecommand" && self.definitions.contains_key(&name);
+        if provided_already || signature(&name).is_some() {
+            return;
+        }
+        let expanded_here = matches!(command, "\\edef" | "\\xdef");
+        let body = body
+            .filter(|_| !expanded_here)
+            .and_then(Macro::new)
+            .map(Rc::new);
+        let earlier = self.definitions.insert(name.clone(), body);
+        self.definitions_made += 1;
+        let made = self.definitions_made;
+        if matches!(command, "\\gdef" | "\\xdef") {
+            self.global_definitions.insert(name, made);
+        } else {
+            self.definition_log.push(UndoDefinition {
+                name,
+                earlier,
+                made,
+            });
+        }
+    }
+
+    /// Reads what `name` stands for, if it's a macro, and says whether it
+    /// did. It doesn't past [`MAX_EXPANSION_DEPTH`], what the stack was
+    /// sized for, or what's left of what the document may expand to, so
+    /// that one that calls itself ends: that call is an unknown command,
+    /// counted for a warning.
+    fn expand(&mut self, name: &str) -> bool {
+        let Some(Some(body)) = self.definitions.get(name).cloned() else {
+            return false;
+        };
+        if self.expansion_depth >= MAX_EXPANSION_DEPTH
+            || body.length >= self.expansion_left
+            || body.nesting > self.nesting_left
+        {
+            self.unexpanded += 1;
+            return false;
+        }
+        self.expansion_left -= body.length + 1;
+        self.nesting_left -= body.nesting;
+        self.expansion_depth += 1;
+        self.non_space();
+        self.flow(body.pieces.clone());
+        self.expansion_depth -= 1;
+        self.nesting_left += body.nesting;
+        // As after any control word.
+        self.skip_spaces = true;
+        true
     }
 
     /// Sets the counter of an `enumerate` the text is in to `args`' value.
@@ -1335,7 +1536,7 @@ impl Reader {
     fn note_content(&mut self, label: &str, arg: Vec<Piece>) -> Vec<Block> {
         let blocks = std::mem::take(&mut self.blocks);
         let inlines = std::mem::take(&mut self.inlines);
-        let font = self.font();
+        let group = self.open_group();
         let note = self.note.replace(label.to_string());
         let state = (
             self.in_argument,
@@ -1357,7 +1558,7 @@ impl Reader {
         self.end_paragraph();
         let content = std::mem::replace(&mut self.blocks, blocks);
         self.inlines = inlines;
-        self.set_font(font);
+        self.close_group(group);
         self.note = note;
         (
             self.in_argument,
@@ -1650,7 +1851,7 @@ impl Reader {
             }
             let name = command_name(&node);
             if DEFINITIONS.contains(&name.as_str()) {
-                skip_definition(&mut items, &mut at, &mut unbracketed, &name);
+                self.define(&name, &mut items, &mut at, &mut unbracketed);
             } else if name == "\\documentclass" {
                 let class = take_arguments(&mut items, &mut at, &mut unbracketed, TABULAR).required;
                 let class = class.first().map(|class| literal_text(class));
@@ -1723,12 +1924,12 @@ impl Reader {
 
     /// `arg`, an argument, in `font`.
     fn in_font(&mut self, arg: Vec<Piece>, font: Font) {
-        let outer = self.font();
+        let group = self.open_group();
         let in_argument = std::mem::replace(&mut self.in_argument, true);
         self.set_font(font);
         self.flow(arg);
         self.in_argument = in_argument;
-        self.set_font(outer);
+        self.close_group(group);
     }
 
     /// An `itemize`, `enumerate` or `description` environment: a list of
@@ -2027,7 +2228,36 @@ const MATH_ENVIRONMENTS: [&str; 7] = [
     "equation", "align", "alignat", "flalign", "gather", "multline", "eqnarray",
 ];
 
-/// The commands that define others (see [`skip_definition`]).
+/// How deep macros may call macros: deeper than documents do, and an end to
+/// one that calls itself.
+const MAX_EXPANSION_DEPTH: usize = 32;
+
+/// The bytes of macros a document may read at least, however short it is
+/// (see [`EXPANSION_PER_BYTE`]).
+const MIN_EXPANSION: usize = 1 << 16;
+
+/// The bytes of macros a document may read for each of its own: well past
+/// what documents do, and an end to macros calling others twice over, which
+/// double at each level.
+const EXPANSION_PER_BYTE: usize = 4;
+
+/// What a group's end does to a definition made in it.
+struct UndoDefinition {
+    name: String,
+    /// What it replaced: `None` if it wasn't defined.
+    earlier: Option<Option<Rc<Macro>>>,
+    /// How many definitions had been made with it.
+    made: usize,
+}
+
+/// What a group sets back at its end (see [`Reader::open_group`]).
+struct Group {
+    font: Font,
+    /// How long [`Reader::definition_log`] was at its start.
+    definitions: usize,
+}
+
+/// The commands that define others (see [`Reader::define`]).
 const DEFINITIONS: [&str; 7] = [
     "\\newcommand",
     "\\renewcommand",
@@ -5785,7 +6015,7 @@ mod tests {
     }
 
     /// A definition shows nothing where it's written, in any of its forms.
-    /// A call isn't read yet: it shows only the groups after it.
+    /// A call to one taking arguments shows only the groups after it.
     #[test]
     fn definitions_show_nothing() {
         for definition in [
@@ -5814,18 +6044,177 @@ mod tests {
         }
     }
 
-    /// Macros aren't expanded: one that expands forever doesn't hang it.
+    /// Each row: the blocks the source reads as.
     #[test]
-    fn a_macro_that_never_ends_is_read_as_written() {
+    fn macros_are_expanded() {
+        let strong = |content: &str| Inline::Strong(vec![text(content)]);
+        let plain = |content: &str| vec![para(&[text(content)])];
+        let note = |label: &str, content: &str| Block::FootnoteDefinition {
+            label: label.to_string(),
+            content: vec![para(&[text(content)])],
+        };
+        let cases: Vec<(&str, Vec<Block>)> = vec![
+            ("\\newcommand{\\x}{a}\\x", plain("a")),
+            ("\\newcommand\\x{a}\\x", plain("a")),
+            ("\\newcommand*{\\x}{a}\\x", plain("a")),
+            ("\\renewcommand{\\x}{a}\\x", plain("a")),
+            ("\\providecommand{\\x}{a}\\x", plain("a")),
+            ("\\def\\x{a}\\x", plain("a")),
+            ("\\gdef\\x{a}\\x", plain("a")),
+            ("\\newcommand{\\x}[0]{a}\\x", plain("a")),
+            (
+                "\\newcommand{\\x}{a}\\begin{document}\\x\\end{document}",
+                plain("a"),
+            ),
+            // The spaces after a call go, and a group after it is a group.
+            ("\\def\\x{a}\\x b", plain("ab")),
+            ("\\def\\x{a}\\x{} b", plain("a b")),
+            ("\\def\\x{a}\\x{b}", plain("ab")),
+            ("\\def\\x{}a \\x b", plain("a b")),
+            // What it stands for reads as it would anywhere.
+            ("\\def\\x{\\textbf{a}}\\x", vec![para(&[strong("a")])]),
+            (
+                "\\def\\x{\\bfseries}{\\x a}b",
+                vec![para(&[strong("a"), text("b")])],
+            ),
+            ("\\def\\x{a}\\def\\y{\\x b}\\y", plain("ab")),
+            ("\\def\\x{\\section{a}}\\x", vec![heading(1, &[text("a")])]),
+            (
+                "\\def\\x{a\\footnote{b}}\\x",
+                vec![
+                    para(&[text("a"), Inline::FootnoteRef("1".to_string())]),
+                    note("1", "b"),
+                ],
+            ),
+            ("\\def\\x{\\$}\\x", plain("$")),
+            (
+                "\\def\\x{a\\\\$b$}\\x",
+                vec![para(&[
+                    text("a"),
+                    Inline::LineBreak,
+                    Inline::Math("b".to_string()),
+                ])],
+            ),
+            // A later definition holds, in its group alone.
+            ("\\def\\x{a}\\def\\x{b}\\x", plain("b")),
+            ("\\def\\x{a}{\\def\\x{b}\\x}\\x", plain("ba")),
+            ("{\\def\\x{a}}b\\x", plain("b")),
+            ("{\\gdef\\x{a}}\\x", plain("a")),
+            ("\\def\\x{a}{\\def\\x{b}\\gdef\\x{c}}\\x", plain("c")),
+            ("{\\gdef\\x{a}\\def\\x{b}}\\x", plain("a")),
+            (
+                "\\def\\x{a}\\begingroup\\def\\x{b}\\x\\endgroup\\x",
+                plain("ba"),
+            ),
+            (
+                "\\def\\x{a}{\\def\\x{b}\\begingroup}\\endgroup\\x",
+                plain("a"),
+            ),
+            (
+                "\\def\\x{a}\\begin{quote}\\def\\x{b}\\end{quote}\\x",
+                plain("a"),
+            ),
+            ("\\def\\x{a}\\emph{\\def\\x{b}}\\x", plain("a")),
+            (
+                "\\def\\x{a}c\\footnote{\\def\\x{b}d}\\x",
+                vec![
+                    para(&[text("c"), Inline::FootnoteRef("1".to_string()), text("a")]),
+                    note("1", "d"),
+                ],
+            ),
+            ("\\def\\x{a}\\providecommand{\\x}{b}\\x", plain("a")),
+            (
+                "\\newcommand{\\x}[1]{#1}\\providecommand{\\x}{b}\\x{a}",
+                plain("a"),
+            ),
+            // Not before it's defined.
+            ("\\x\\def\\x{a}b", plain("b")),
+            // What the reader knows keeps its meaning.
+            (
+                "\\providecommand{\\emph}{b}\\emph{a}",
+                vec![para(&[emph(&[text("a")])])],
+            ),
+            (
+                "\\renewcommand{\\emph}{b}\\emph{a}",
+                vec![para(&[emph(&[text("a")])])],
+            ),
+            (
+                "\\renewcommand\\section{\\@startsection{section}{1}}\\section{a}",
+                vec![heading(1, &[text("a")])],
+            ),
+            // Taking arguments, it's unknown, and so is what it replaced.
+            ("\\newcommand{\\x}[1]{a#1}\\x{b}", plain("b")),
+            ("\\def\\x{a}\\def\\x#1{b}\\x c", plain("c")),
+            // So is one that takes its meanings where it's defined.
+            ("\\edef\\x{a}\\x b", plain("b")),
+            ("\\def\\x{a}{\\xdef\\x{b}}\\x c", plain("c")),
+            // Not balanced, it's unknown, and what's after it stays.
+            (
+                "\\newcommand{\\be}{\\begin{quote}}\\newcommand{\\ee}{\\end{quote}}a\\be b\\ee c",
+                plain("abc"),
+            ),
+            (
+                "\\newcommand{\\be}{\\begin{equation}}\\newcommand{\\ee}{\\end{equation}}a\\be b\\ee c",
+                plain("abc"),
+            ),
+            ("\\def\\x{$}a\\x b", plain("ab")),
+            ("\\def\\x{\\[}a\\x b", plain("ab")),
+            // In math, it stays TeX.
+            (
+                "\\def\\x{a}$\\x$",
+                vec![para(&[Inline::Math("\\x".to_string())])],
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
+    }
+
+    /// One calling itself ends, or calling others twice over, each level
+    /// doubling: what's after it stays, with a warning counting what was
+    /// left unexpanded.
+    #[test]
+    fn a_macro_that_never_ends_is_cut_short() {
+        let mut doubling = "\\def\\xa{xxxxxxxx}".to_string();
+        let mut last = 'a';
+        for name in 'b'..='z' {
+            doubling.push_str(&format!("\\def\\x{name}{{\\x{last}\\x{last}}}"));
+            last = name;
+        }
+        doubling.push_str("\\xz done");
+        // Nesting as deep as the document does, at every call, would take
+        // more than the stack it's sized for.
+        let braces = 20_000;
+        let nesting = format!(
+            "\\def\\a{{{}\\a{}}}\\a done",
+            "{".repeat(braces),
+            "}".repeat(braces)
+        );
+        let sources = [
+            "\\newcommand{\\again}{\\again}\\again done".to_string(),
+            "\\def\\a{\\a\\a}\\a done".to_string(),
+            "\\def\\a{x\\a\\a\\a}\\a done".to_string(),
+            "\\def\\a{\\b\\b}\\def\\b{\\a\\a}\\a done".to_string(),
+            doubling,
+            nesting,
+        ];
         let (sent, received) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let (doc, _) = read("\\newcommand{\\again}{\\again}\\again done");
-            sent.send(doc).unwrap();
+            for source in sources {
+                sent.send((source.clone(), read(&source))).unwrap();
+            }
         });
-        let doc = received
-            .recv_timeout(std::time::Duration::from_secs(10))
-            .expect("reading never ended");
-        assert!(format!("{:?}", doc.blocks).contains("done"));
+        for _ in 0..6 {
+            let (source, (doc, warnings)) = received
+                .recv_timeout(std::time::Duration::from_secs(60))
+                .expect("reading never ended");
+            let start: String = source.chars().take(40).collect();
+            let blocks = format!("{:?}", doc.blocks);
+            assert!(blocks.contains("done"), "{start}");
+            assert!(blocks.len() < 1 << 22, "{start}: {}", blocks.len());
+            assert_eq!(warnings.len(), 1, "{start}");
+            assert!(warnings[0].one.contains("unexpanded"), "{start}");
+        }
     }
 
     /// Punctuation counts, Unicode's too; letters, digits and spaces don't.
