@@ -96,6 +96,7 @@ fn read_parsed(source: &str) -> (Document, Option<Warning>) {
         ..Reader::default()
     };
     reader.flow(pieces(&document_body(&root).unwrap_or(root)));
+    reader.close_notes();
     reader.end_paragraph();
     reader.blocks.append(&mut reader.notes);
     level_headings(&mut reader.blocks);
@@ -109,7 +110,7 @@ fn read_parsed(source: &str) -> (Document, Option<Warning>) {
         blocks: reader.blocks,
         ..Document::default()
     };
-    resolve_references(&mut doc, &reader.labels);
+    resolve_references(&mut doc, &reader.labels, &reader.note_labels);
     (doc, warning)
 }
 
@@ -120,8 +121,25 @@ const REFERENCE_LINK: char = '\u{1}';
 /// Points the references in `doc` at their headings, by the ids writers
 /// will give those, from `labels`, their index among the main text's
 /// headings, which get theirs first. One to any other label keeps its text:
-/// nothing else in a document has an id.
-fn resolve_references(doc: &mut Document, labels: &std::collections::HashMap<String, usize>) {
+/// nothing else in a document has an id. A bare one (see
+/// [`Reader::bare_reference`]) to a label in a note, in `note_labels`, is
+/// that note's mark, which is so first, as marks say what's numbered.
+fn resolve_references(
+    doc: &mut Document,
+    labels: &std::collections::HashMap<String, usize>,
+    note_labels: &std::collections::HashMap<String, String>,
+) {
+    walk::for_each_inlines(&mut doc.blocks, &mut |inlines| {
+        for inline in inlines.iter_mut() {
+            if let Inline::Link { url, content, .. } = inline
+                && content.is_empty()
+                && let Some(label) = url.strip_prefix(REFERENCE_LINK)
+                && let Some(note) = note_labels.get(label)
+            {
+                *inline = Inline::FootnoteRef(note.clone());
+            }
+        }
+    });
     let (_, note_bodies) = write::Footnotes::collect(doc);
     let mut slugs = write::HeadingIds::default();
     let mut ids = Vec::new();
@@ -129,7 +147,10 @@ fn resolve_references(doc: &mut Document, labels: &std::collections::HashMap<Str
         ids.push(slugs.next(content));
     });
     let blocks = &mut doc.blocks;
-    walk::resolve_links(blocks, REFERENCE_LINK, &mut |label, _| {
+    walk::resolve_links(blocks, REFERENCE_LINK, &mut |label, content| {
+        if content.is_empty() {
+            *content = vec![Inline::Text(format!("[{label}]"))];
+        }
         labels
             .get(label)
             .and_then(|heading| ids.get(*heading))
@@ -503,10 +524,21 @@ struct Reader {
     /// Whether the last thing read is a `'` a next one joins (see
     /// [`Reader::apostrophe`]).
     after_apostrophe: bool,
-    /// Whether what's read is a note (see [`Reader::footnote`]).
-    in_note: bool,
+    /// The label of the note being read, if any.
+    note: Option<String>,
     /// The notes read so far, which end the document.
     notes: Vec<Block>,
+    /// How many notes have been given a label.
+    note_count: usize,
+    /// LaTeX's `footnote` counter.
+    footnote_count: i64,
+    /// By number, the notes with a mark and no text yet.
+    unwritten_notes: std::collections::BTreeMap<i64, String>,
+    /// The notes with a text and no mark yet, with their numbers, in the
+    /// order they're read: a number may have several.
+    unmarked_notes: Vec<(i64, String)>,
+    /// Each label in a note, and that note's.
+    note_labels: std::collections::HashMap<String, String>,
     /// How many headings have been read.
     headings: usize,
     /// Each label on a heading, and that heading's index among them.
@@ -586,7 +618,14 @@ impl Reader {
                                 );
                                 let mut args = taken.required;
                                 // The optional arguments that show.
-                                if matches!(name.as_str(), "\\cite" | "\\hyperref") {
+                                if matches!(
+                                    name.as_str(),
+                                    "\\cite"
+                                        | "\\hyperref"
+                                        | "\\footnote"
+                                        | "\\footnotemark"
+                                        | "\\footnotetext"
+                                ) {
                                     args.extend(taken.optional);
                                 }
                                 args
@@ -744,6 +783,12 @@ impl Reader {
         if let Some(font) = declared(name, self.font()) {
             return self.set_font(font);
         }
+        if name == "\\textsuperscript"
+            && let [arg] = &args[..]
+            && let Some(label) = referred_label(arg)
+        {
+            return self.bare_reference(label);
+        }
         if matches!(name, "\\begingroup" | "\\bgroup") {
             return self.groups.push(self.font());
         }
@@ -781,9 +826,26 @@ impl Reader {
                 }
             }
             "\\cite" => self.cite(args),
+            // A number given is no count, as in `\\footnotemark`.
             "\\footnote" => {
+                if args.len() == 1 {
+                    self.footnote_count += 1;
+                }
                 if let Some(arg) = args.into_iter().next() {
                     self.footnote(arg);
+                }
+            }
+            "\\footnotemark" => {
+                if args.is_empty() {
+                    self.footnote_count += 1;
+                }
+                let number = self.note_number(args.first());
+                self.footnotemark(number);
+            }
+            "\\footnotetext" => {
+                let number = self.note_number(args.get(1));
+                if let Some(arg) = args.into_iter().next() {
+                    self.footnotetext(number, arg);
                 }
             }
             "\\label" => {
@@ -878,6 +940,12 @@ impl Reader {
         let [name, value] = &args[..] else {
             return;
         };
+        if source_text(name).trim() == "footnote" {
+            if let Ok(value) = source_text(value).trim().parse() {
+                self.footnote_count = value;
+            }
+            return;
+        }
         let depth = ENUMERATION_COUNTERS
             .iter()
             .position(|counter| *counter == source_text(name).trim());
@@ -1072,18 +1140,94 @@ impl Reader {
         }
     }
 
-    /// `\\footnote`'s note: read as a text of its own, of blocks, in the
-    /// normal font, whatever it's in. Labels in it go nowhere, as references
-    /// only go to the main text's headings. One showing nothing is none.
+    /// `\footnote`'s note, marked where it's read. One showing nothing is
+    /// none.
     fn footnote(&mut self, arg: Vec<Piece>) {
+        let label = self.new_note();
+        let content = self.note_content(&label, arg);
+        if !content.is_empty() {
+            self.notes.push(Block::FootnoteDefinition {
+                label: label.clone(),
+                content,
+            });
+            self.inline(Inline::FootnoteRef(label));
+        }
+    }
+
+    /// The number `\footnotemark` or `\footnotetext` is given, or, with none
+    /// given, the count of notes: `\footnotemark` adds to it first.
+    fn note_number(&mut self, given: Option<&Vec<Piece>>) -> i64 {
+        given
+            .and_then(|given| literal_text(given).parse().ok())
+            .unwrap_or(self.footnote_count)
+    }
+
+    /// A mark for note `number`, whose text may be yet to come. Marks with
+    /// no number of their own are told from one another by the count, which
+    /// the caller gives after adding to it.
+    fn footnotemark(&mut self, number: i64) {
+        let unmarked = self
+            .unmarked_notes
+            .iter()
+            .rposition(|(unmarked, _)| *unmarked == number);
+        let label = match unmarked {
+            Some(unmarked) => self.unmarked_notes.remove(unmarked).1,
+            None => {
+                let label = self.new_note();
+                self.unwritten_notes.entry(number).or_insert(label).clone()
+            }
+        };
+        self.inline(Inline::FootnoteRef(label));
+    }
+
+    /// The text of note `number`: of the mark read for it, if any, or for
+    /// the one to come.
+    fn footnotetext(&mut self, number: i64, arg: Vec<Piece>) {
+        let marked = self.unwritten_notes.remove(&number);
+        let label = marked.clone().unwrap_or_else(|| self.new_note());
+        let content = self.note_content(&label, arg);
+        self.notes.push(Block::FootnoteDefinition {
+            label: label.clone(),
+            content,
+        });
+        if marked.is_none() {
+            self.unmarked_notes.push((number, label));
+        }
+    }
+
+    /// Settles the notes left half done, once all is read. No text is lost:
+    /// a mark with no text has an empty note, and a text with no mark gets
+    /// one at the end.
+    fn close_notes(&mut self) {
+        self.end_paragraph();
+        for (_, label) in std::mem::take(&mut self.unwritten_notes) {
+            self.notes.push(Block::FootnoteDefinition {
+                label,
+                content: Vec::new(),
+            });
+        }
+        for (_, label) in std::mem::take(&mut self.unmarked_notes) {
+            self.inlines.push(Inline::FootnoteRef(label));
+        }
+    }
+
+    /// A label for a new note.
+    fn new_note(&mut self) -> String {
+        self.note_count += 1;
+        self.note_count.to_string()
+    }
+
+    /// Note `label`'s blocks: read as a text of its own, in the normal font,
+    /// whatever it's in. Labels in it are the note's.
+    fn note_content(&mut self, label: &str, arg: Vec<Piece>) -> Vec<Block> {
         let blocks = std::mem::take(&mut self.blocks);
         let inlines = std::mem::take(&mut self.inlines);
         let font = self.font();
+        let note = self.note.replace(label.to_string());
         let state = (
             self.in_argument,
             self.in_heading,
             self.in_link,
-            self.in_note,
             self.literal,
             self.headings,
             self.breaks,
@@ -1093,7 +1237,7 @@ impl Reader {
         );
         self.set_font(Font::default());
         (self.in_argument, self.in_heading, self.in_link) = (false, false, false);
-        (self.in_note, self.literal) = (true, false);
+        self.literal = false;
         (self.breaks, self.in_comment) = (0, false);
         (self.line_start, self.skip_spaces) = (true, false);
         self.flow(arg);
@@ -1101,11 +1245,11 @@ impl Reader {
         let content = std::mem::replace(&mut self.blocks, blocks);
         self.inlines = inlines;
         self.set_font(font);
+        self.note = note;
         (
             self.in_argument,
             self.in_heading,
             self.in_link,
-            self.in_note,
             self.literal,
             self.headings,
             self.breaks,
@@ -1113,20 +1257,28 @@ impl Reader {
             self.line_start,
             self.skip_spaces,
         ) = state;
-        if !content.is_empty() {
-            let label = (self.notes.len() + 1).to_string();
-            self.notes.push(Block::FootnoteDefinition {
-                label: label.clone(),
-                content,
+        content
+    }
+
+    /// A reference that shows only what it goes to: our LaTeX writer's
+    /// `\textsuperscript{\ref{label}}`, for a note referred to again.
+    fn bare_reference(&mut self, label: String) {
+        if self.in_link {
+            self.text(&format!("[{label}]"));
+        } else {
+            self.inline(Inline::Link {
+                url: format!("{REFERENCE_LINK}{label}"),
+                title: None,
+                content: Vec::new(),
             });
-            self.inline(Inline::FootnoteRef(label));
         }
     }
 
     /// `\\label{label}`, of the heading it's in or right after; of anything
     /// else, it's no label a reference can go to, as nothing else has an id.
     fn label(&mut self, label: String) {
-        if self.in_note {
+        if let Some(note) = &self.note {
+            self.note_labels.insert(label, note.clone());
             return;
         }
         if self.in_heading {
@@ -1535,6 +1687,32 @@ fn font(name: &str, font: Font) -> Option<Font> {
     })
 }
 
+/// The label `arg`, an argument, refers to, if a `\\ref` is all it holds.
+fn referred_label(arg: &[Piece]) -> Option<String> {
+    let shown: Vec<&Piece> = arg
+        .iter()
+        .filter(|piece| {
+            !matches!(
+                piece,
+                Piece::Token(
+                    SyntaxKind::TokenWhiteSpace | SyntaxKind::TokenLBrace | SyntaxKind::TokenRBrace,
+                    _
+                )
+            )
+        })
+        .collect();
+    match shown[..] {
+        [Piece::Node(command), Piece::Node(group)]
+            if command.kind() == SyntaxKind::ItemCmd
+                && command_name(command) == "\\ref"
+                && group.kind() == SyntaxKind::ItemCurly =>
+        {
+            Some(literal_text(&pieces(group)))
+        }
+        _ => None,
+    }
+}
+
 /// Moves the marks of notes in `inlines`, a link's text, to `marks`.
 fn take_note_marks(inlines: &mut Vec<Inline>, marks: &mut Vec<Inline>) {
     inlines.retain_mut(|inline| match inline {
@@ -1761,9 +1939,13 @@ fn signature(name: &str) -> Option<Signature> {
             required: 2,
             ..Signature::default()
         }),
-        "\\footnote" => Some(Signature {
+        "\\footnote" | "\\footnotetext" => Some(Signature {
             optional: true,
             required: 1,
+            ..Signature::default()
+        }),
+        "\\footnotemark" => Some(Signature {
+            optional: true,
             ..Signature::default()
         }),
         "\\url" | "\\nocite" | "\\label" | "\\eqref" | "\\pageref" | "\\nameref" => {
@@ -2901,9 +3083,9 @@ mod tests {
             (
                 "a\\footnote{b\\footnote{c}}",
                 vec![
-                    para(&[text("a"), mark("2")]),
-                    note("1", &[para(&[text("c")])]),
-                    note("2", &[para(&[text("b"), mark("1")])]),
+                    para(&[text("a"), mark("1")]),
+                    note("2", &[para(&[text("c")])]),
+                    note("1", &[para(&[text("b"), mark("2")])]),
                 ],
             ),
             // Paragraphs and blocks; its number shows nothing here.
@@ -3006,6 +3188,133 @@ mod tests {
         assert_eq!(read(&source).0.blocks.len(), 5_001);
     }
 
+    /// Each row: the blocks the source reads as.
+    #[test]
+    fn footnote_marks_and_texts_are_matched() {
+        let note = |label: &str, content: &[Block]| Block::FootnoteDefinition {
+            label: label.to_string(),
+            content: content.to_vec(),
+        };
+        let mark = |label: &str| Inline::FootnoteRef(label.to_string());
+        let cases: Vec<(&str, Vec<Block>)> = vec![
+            // By the count: the mark adds to it, the text doesn't.
+            (
+                "a\\footnotemark b\\footnotetext{c}",
+                vec![
+                    para(&[text("a"), mark("1"), text("b")]),
+                    note("1", &[para(&[text("c")])]),
+                ],
+            ),
+            (
+                "a\\footnotemark\\footnotemark\\footnotetext{c}",
+                vec![
+                    para(&[text("a"), mark("1"), mark("2")]),
+                    note("2", &[para(&[text("c")])]),
+                    note("1", &[]),
+                ],
+            ),
+            // By number, whichever comes first.
+            (
+                "a\\footnotemark[5]\\footnotetext[5]{b}",
+                vec![
+                    para(&[text("a"), mark("1")]),
+                    note("1", &[para(&[text("b")])]),
+                ],
+            ),
+            (
+                "\\footnotetext[5]{b}a\\footnotemark[5]",
+                vec![
+                    para(&[text("a"), mark("1")]),
+                    note("1", &[para(&[text("b")])]),
+                ],
+            ),
+            // More than one mark of a number before its text is one note.
+            (
+                "a\\footnotemark[5]c\\footnotemark[5]\\footnotetext[5]{b}",
+                vec![
+                    para(&[text("a"), mark("1"), text("c"), mark("1")]),
+                    note("1", &[para(&[text("b")])]),
+                ],
+            ),
+            // A number used again is another note.
+            (
+                "\\footnotemark[1]\\footnotetext[1]{a}\\footnotemark[1]\\footnotetext[1]{b}",
+                vec![
+                    para(&[mark("1"), mark("2")]),
+                    note("1", &[para(&[text("a")])]),
+                    note("2", &[para(&[text("b")])]),
+                ],
+            ),
+            // `\\footnote` counts, and `\\setcounter` sets it.
+            (
+                "\\footnote{a}\\footnotemark\\footnotetext[2]{b}",
+                vec![
+                    para(&[mark("1"), mark("2")]),
+                    note("1", &[para(&[text("a")])]),
+                    note("2", &[para(&[text("b")])]),
+                ],
+            ),
+            (
+                "\\setcounter{footnote}{4}\\footnotemark\\footnotetext[5]{b}",
+                vec![para(&[mark("1")]), note("1", &[para(&[text("b")])])],
+            ),
+            // A number given to `\\footnote` is no count.
+            (
+                "\\footnote[7]{a}\\footnotemark\\footnotetext[1]{b}",
+                vec![
+                    para(&[mark("1"), mark("2")]),
+                    note("1", &[para(&[text("a")])]),
+                    note("2", &[para(&[text("b")])]),
+                ],
+            ),
+            // Texts with no mark keep their order, and all of them.
+            (
+                "\\footnotetext{a}\\footnotetext{b}",
+                vec![
+                    para(&[mark("1"), mark("2")]),
+                    note("1", &[para(&[text("a")])]),
+                    note("2", &[para(&[text("b")])]),
+                ],
+            ),
+            // No text is lost, nor does a mark show as a label.
+            (
+                "a\\footnotemark",
+                vec![para(&[text("a"), mark("1")]), note("1", &[])],
+            ),
+            (
+                "a\n\n\\footnotetext[3]{b}",
+                vec![
+                    para(&[text("a")]),
+                    para(&[mark("1")]),
+                    note("1", &[para(&[text("b")])]),
+                ],
+            ),
+            // Referred to again, it's its mark; anything else, its text.
+            (
+                "a\\footnote{\\label{b}c} d\\textsuperscript{\\ref{b}}",
+                vec![
+                    para(&[text("a"), mark("1"), text(" d"), mark("1")]),
+                    note("1", &[para(&[text("c")])]),
+                ],
+            ),
+            ("a\\textsuperscript{\\ref{b}}", vec![para(&[text("a[b]")])]),
+            ("a\\textsuperscript{b}", vec![para(&[text("ab")])]),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
+        // Past nine, too, as numbers.
+        let source: String = (1..=12)
+            .map(|n| format!("\\footnotetext[{n}]{{{n}}}"))
+            .collect();
+        let doc = read(&source).0;
+        let [Block::Paragraph(marks), ..] = &doc.blocks[..] else {
+            panic!("{:?}", doc.blocks);
+        };
+        let expected: Vec<Inline> = (1..=12).map(|n| mark(&n.to_string())).collect();
+        assert_eq!(*marks, expected);
+    }
+
     /// Notes our LaTeX writer writes read back.
     #[test]
     fn our_latex_footnotes_read_back() {
@@ -3013,6 +3322,9 @@ mod tests {
         for source in [
             "a[^1] b\n\n[^1]: note\n",
             "# h[^1]\n\n[^1]: note\n\n    more\n",
+            // A note in a note, and one referred to again.
+            "a[^1]\n\n[^1]: **b**[^2]\n\n[^2]: c\n",
+            "a[^1] b[^2] c[^1]\n\n[^1]: d\n\n[^2]: e\n",
         ] {
             let doc = markdown::read(source);
             let tex = write::latex::write(&doc);
