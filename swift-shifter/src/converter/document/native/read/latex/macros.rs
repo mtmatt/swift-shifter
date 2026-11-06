@@ -15,20 +15,34 @@ impl Reader {
         }
         let mut expanded = Tex::default();
         expanded.text.reserve(tex.len());
-        self.expand_tex(tex, 0, &mut expanded);
+        self.expand_tex(tex, None, 0, &mut expanded);
         expanded.text
     }
 
-    /// Appends `tex` to `out` with its macros expanded, `depth` macros deep.
-    fn expand_tex(&mut self, tex: &str, depth: usize, out: &mut Tex) {
+    /// Appends `tex` to `out` with its macros expanded, `depth` macros deep,
+    /// and says how much of `after`, what's unread after `tex`, its last
+    /// call took as arguments.
+    fn expand_tex(
+        &mut self,
+        tex: &str,
+        after: Option<&Unread>,
+        depth: usize,
+        out: &mut Tex,
+    ) -> usize {
         let mut rest = tex;
+        let mut taken_after = 0;
         while let Some(at) = rest.find('\\') {
             out.push(&rest[..at]);
-            let (name, after) = rest[at..].split_at(command_length(&rest[at..]));
-            rest = after;
+            let (name, past_name) = rest[at..].split_at(command_length(&rest[at..]));
+            rest = past_name;
             let body = self.definitions.get(name).cloned().flatten();
             let body = body.filter(|body| !defines(&body.source));
-            let call = body.and_then(|body| Some((arguments(&body, after)?, body)));
+            let unread = Unread {
+                text: rest,
+                then: after,
+                skip: taken_after,
+            };
+            let call = body.and_then(|body| Some((self.arguments_at(&body, &unread)?, body)));
             let Some(((arguments, taken), body)) = call else {
                 out.push(name);
                 continue;
@@ -42,11 +56,127 @@ impl Reader {
                 continue;
             };
             self.expansion_left = self.expansion_left.saturating_sub(text.len() + 1);
-            self.expand_tex(&text, depth + 1, out);
-            rest = &after[taken..];
+            take(&mut rest, &mut taken_after, taken);
+            let unread = Unread {
+                text: rest,
+                then: after,
+                skip: taken_after,
+            };
+            let taken = self.expand_tex(&text, Some(&unread), depth + 1, out);
+            take(&mut rest, &mut taken_after, taken);
         }
         out.push(rest);
+        taken_after
     }
+
+    /// What a call of `body` takes from `unread`: from its first text, which
+    /// is enough for most, or else from as much of the rest as it needs, as
+    /// a macro's text can end in a call whose arguments are after that
+    /// macro's. What it takes is counted in what the document may expand to,
+    /// and a call going past that is counted for the warning. It copies no
+    /// more than twice what it needs, or a small window.
+    fn arguments_at(&mut self, body: &Macro, unread: &Unread) -> Option<(Vec<String>, usize)> {
+        let last = unread.then.is_none();
+        let end = if last { End::Input } else { End::Macro };
+        let found = arguments(body, unread.text, end);
+        if found.is_some() || last {
+            return found;
+        }
+        let mut window = 64_usize;
+        loop {
+            let start = unread.start(window);
+            let end = if start.whole { End::Input } else { End::Window };
+            match arguments(body, &start.text, end) {
+                Some((_, taken)) if taken >= self.expansion_left => {
+                    self.unexpanded += 1;
+                    return None;
+                }
+                Some((arguments, taken)) => {
+                    self.expansion_left -= taken;
+                    let added = start.spaces.iter().filter(|at| **at < taken).count();
+                    return Some((arguments, taken - added));
+                }
+                None if start.whole => {
+                    self.expansion_left = self.expansion_left.saturating_sub(start.text.len());
+                    return None;
+                }
+                None => window = window.saturating_mul(2),
+            }
+        }
+    }
+}
+
+/// What's unread after a macro's call, up the calls it's in: `text`, then
+/// `then` past its first `skip` bytes, which calls in `text` took.
+struct Unread<'a> {
+    text: &'a str,
+    then: Option<&'a Unread<'a>>,
+    skip: usize,
+}
+
+impl Unread<'_> {
+    /// Its first `length` bytes or so, whole characters.
+    fn start(&self, length: usize) -> Start {
+        let mut text = Tex::default();
+        let mut spaces = Vec::new();
+        let mut unread = Some(self);
+        let mut skip = 0;
+        while let Some(part) = unread {
+            let rest = &part.text[skip.min(part.text.len())..];
+            skip = skip.saturating_sub(part.text.len()) + part.skip;
+            let room = length.saturating_sub(text.text.len());
+            let end = (room.min(rest.len())..=rest.len())
+                .find(|end| rest.is_char_boundary(*end))
+                .unwrap_or(rest.len());
+            let before = text.text.len();
+            text.push(&rest[..end]);
+            if text.text.len() > before + end {
+                spaces.push(before);
+            }
+            if end < rest.len() {
+                return Start {
+                    text: text.text,
+                    spaces,
+                    whole: false,
+                };
+            }
+            unread = part.then;
+        }
+        Start {
+            text: text.text,
+            spaces,
+            whole: true,
+        }
+    }
+}
+
+/// The start of what's unread (see [`Unread::start`]).
+struct Start {
+    text: String,
+    /// Where a space keeps tokens of two parts apart, which isn't unread
+    /// text.
+    spaces: Vec<usize>,
+    /// Whether it's all of what's unread.
+    whole: bool,
+}
+
+/// How a text being read for arguments ends.
+#[derive(PartialEq)]
+enum End {
+    /// There's no more.
+    Input,
+    /// At a token's end, a macro's text, with more after it.
+    Macro,
+    /// Anywhere, with more after it.
+    Window,
+}
+
+/// Takes `taken` bytes of what's unread: from `rest`, then past it, into
+/// `taken_after`.
+fn take(rest: &mut &str, taken_after: &mut usize, taken: usize) {
+    let here = taken.min(rest.len());
+    *rest = &rest[here..];
+    *taken_after += taken - here;
 }
 
 /// TeX being put together, keeping tokens apart where it's joined.
@@ -102,8 +232,8 @@ fn command_length(tex: &str) -> usize {
 
 /// What a call of `body` takes from `after`, what's after its name: each
 /// argument, and the bytes they took. `None` if one's missing, which leaves
-/// the call as written.
-fn arguments(body: &Macro, after: &str) -> Option<(Vec<String>, usize)> {
+/// the call as written, or if what's past `end` could change them.
+fn arguments(body: &Macro, after: &str, end: End) -> Option<(Vec<String>, usize)> {
     let mut arguments = Vec::with_capacity(body.parameters);
     let mut at = 0;
     if let Some(default) = &body.default {
@@ -112,6 +242,10 @@ fn arguments(body: &Macro, after: &str) -> Option<(Vec<String>, usize)> {
             let end = closing(inside, ']')?;
             Some((&inside[..end], next + end + 2))
         });
+        let open = after[next..].is_empty() || after[next..].starts_with('[');
+        if end != End::Input && given.is_none() && open {
+            return None;
+        }
         match given {
             Some((argument, end)) => {
                 arguments.push(argument.to_string());
@@ -128,6 +262,10 @@ fn arguments(body: &Macro, after: &str) -> Option<(Vec<String>, usize)> {
             (&inside[..end], end + 2)
         } else if rest.starts_with('\\') {
             let length = command_length(rest);
+            // More letters may be of it.
+            if length == rest.len() && end == End::Window {
+                return None;
+            }
             (&rest[..length], length)
         } else {
             let length = rest.chars().next()?.len_utf8();
@@ -273,6 +411,42 @@ mod tests {
             ("\\newcommand{\\f}[2][d]{#1#2}$\\f{a}$", "da"),
             ("\\newcommand{\\f}[2][d]{#1#2}$\\f[c]{a}$", "ca"),
             ("\\newcommand{\\f}[2][d]{#1#2}$\\f[{]}]{a}$", "{]}a"),
+            // A macro's last call takes what's after that macro.
+            (
+                "\\renewcommand{\\sin}[1]{(#1)}\\newcommand{\\wrapped}{\\sin}$\\wrapped{x}$",
+                "(x)",
+            ),
+            ("\\newcommand{\\f}[2]{#1#2}\\def\\g{\\f{a}}$\\g{b}$", "ab"),
+            (
+                "\\newcommand{\\f}[1]{(#1)}\\def\\g{\\f}\\def\\h{\\g}$\\h{a}b$",
+                "(a)b",
+            ),
+            (
+                "\\newcommand{\\f}[2]{#1#2}\\def\\g{\\f a}\\def\\h{\\g b}$\\h c$",
+                "ab c",
+            ),
+            ("\\newcommand{\\f}[1]{(#1)}\\def\\g{\\f}$\\g$", "\\f"),
+            ("\\newcommand{\\a}[1]{\\a}$\\a{x}{y}{z}$", "\\a"),
+            (
+                "\\newcommand{\\f}[1]{(#1)}\\newcommand{\\g}[1]{\\f\\alpha}$\\g{}b$",
+                "(\\alpha)b",
+            ),
+            (
+                "\\newcommand{\\f}[1]{(#1)}\\newcommand{\\g}[1]{\\f#1}$\\g{\\alpha}b$",
+                "(\\alpha)b",
+            ),
+            (
+                "\\newcommand{\\f}[2]{(#1#2)}\\newcommand{\\g}[1]{\\f\\alpha}$\\g{}bc$",
+                "(\\alpha b)c",
+            ),
+            ("\\newcommand{\\f}[1][d]{#1}\\def\\g{\\f}$\\g[c]$", "c"),
+            ("\\newcommand{\\f}[1][d]{#1}\\def\\g{\\f}$\\g$", "d"),
+            ("\\newcommand{\\f}[1][d]{#1}\\def\\g{\\f}$\\g x$", "d x"),
+            // `\\providecommand` leaves what formulas know.
+            ("\\providecommand{\\label}[1]{}$a$", "a"),
+            ("\\providecommand{\\sin}{q}$\\sin x$", "\\sin x"),
+            ("\\renewcommand{\\sin}{q}$\\sin x$", "q x"),
+            ("\\providecommand{\\foo}{q}$\\foo x$", "q x"),
             // Short of arguments, it's as written.
             ("\\newcommand{\\f}[2]{#1#2}$\\f{a}$", "\\f{a}"),
             // Nor does what's after an argument.
@@ -317,6 +491,38 @@ mod tests {
         ] {
             let tex = formula(source);
             assert!(tex.contains("\\verb!a#1!"), "{source}: {tex}");
+        }
+    }
+
+    /// Finding a call's arguments past its macro takes only as much of the
+    /// long text after it as they need, of what the document may expand to.
+    #[test]
+    fn arguments_past_a_macro_cost_what_they_take() {
+        let source = format!(
+            "\\newcommand{{\\f}}[1]{{(#1)}}\\def\\g{{\\f}}\\def\\x{{y}}${}{}\\x$",
+            "\\g{a}".repeat(1_000),
+            "b ".repeat(100_000)
+        );
+        assert!(formula(&source).ends_with('y'));
+        // Looking at what's after a call, not taking it, costs nothing.
+        let source = format!(
+            "\\newcommand{{\\f}}[1][d]{{#1}}\\def\\g{{\\f}}${}{}$",
+            "\\g a".repeat(950),
+            "b".repeat(64)
+        );
+        assert!(!formula(&source).contains("\\f"));
+    }
+
+    /// An argument found past a macro is whole, wherever it falls in what's
+    /// looked at for it.
+    #[test]
+    fn arguments_past_a_macro_are_whole() {
+        for spaces in 55..70 {
+            let source = format!(
+                "\\newcommand{{\\f}}[1]{{(#1)}}\\def\\g{{\\f}}$\\g{}\\alpha$",
+                " ".repeat(spaces)
+            );
+            assert_eq!(formula(&source), "(\\alpha)", "{spaces}");
         }
     }
 

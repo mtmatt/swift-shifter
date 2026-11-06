@@ -45,6 +45,8 @@ typst-layout = "0.15"
 mitex = "0.2"
 # The LaTeX reader's parser, which mitex itself uses.
 mitex-parser = "0.2"
+# The commands mitex knows, as `mitex` keeps them.
+mitex-spec-gen = "0.2"
 # Persistent maps: the Typst reader's table parts keep the names they were
 # made with, shared rather than copied (#113).
 rpds = "=1.2.1"
