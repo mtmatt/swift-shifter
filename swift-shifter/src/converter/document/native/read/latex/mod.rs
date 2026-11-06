@@ -462,6 +462,11 @@ struct Reader {
     /// Whether the text being read is emphasized: it goes in a run of
     /// [`Inline::Emph`], which nests none.
     emphasized: bool,
+    /// Whether the last thing read is a `'` a next one joins (see
+    /// [`Reader::apostrophe`]).
+    after_apostrophe: bool,
+    /// Whether what's read is an unknown command's: nothing in it is joined.
+    literal: bool,
     /// Whether it's bold: it goes in a run of [`Inline::Strong`], which
     /// nests none either and holds the runs of emphasis.
     bold: bool,
@@ -582,6 +587,7 @@ impl Reader {
                     self.line_start = true;
                 }
                 if lines > 0 {
+                    self.after_apostrophe = false;
                     self.breaks = if self.line_start || lines > 1 {
                         2
                     } else {
@@ -596,8 +602,26 @@ impl Reader {
             // A brace shows nothing, but it's no space.
             SyntaxKind::TokenLBrace | SyntaxKind::TokenRBrace => self.non_space(),
             SyntaxKind::TokenTilde => self.text("\u{a0}"),
+            SyntaxKind::TokenWord if !self.literal => self.text(&ligatures(text)),
+            SyntaxKind::TokenApostrophe if !self.literal => self.apostrophe(),
             _ => self.text(text),
         }
+    }
+
+    /// `'`: a closing quote, and with one right before it, a double one,
+    /// as TeX's fonts join them. The parser gives each on its own, and
+    /// anything between them keeps them apart.
+    fn apostrophe(&mut self) {
+        let joins = self.after_apostrophe;
+        self.non_space();
+        match self.run().last_mut() {
+            Some(Inline::Text(last)) if joins => {
+                last.pop();
+                last.push('”');
+            }
+            _ => self.text("’"),
+        }
+        self.after_apostrophe = !joins;
     }
 
     /// The command `name`, given its required arguments (see [`signature`]),
@@ -608,6 +632,12 @@ impl Reader {
         }
         if name == self.verbatim_mark {
             return self.verbatim(args);
+        }
+        if let Some(symbol) = symbol(name) {
+            self.text(symbol);
+            // Text clears it: the spaces after a control word still go.
+            self.skip_spaces = name[1..].chars().all(|c| c.is_ascii_alphabetic());
+            return;
         }
         if let Some((bold, emphasized)) = font(name, self.bold, self.emphasized) {
             // What's after it reads on as after its argument: the spaces
@@ -625,6 +655,16 @@ impl Reader {
                 self.skip_spaces = true;
             }
             "\\par" => self.end_paragraph(),
+            "\\newline" => {
+                self.inline(Inline::LineBreak);
+                self.skip_spaces = true;
+            }
+            // What's for a PDF's bookmarks goes.
+            "\\texorpdfstring" => {
+                if let Some(tex) = args.into_iter().next() {
+                    self.in_font(tex, self.bold, self.emphasized);
+                }
+            }
             // What a list starts with (see `Reader::list`): elsewhere, it
             // shows nothing.
             // A line, which no writer's text can hold, outside of a block
@@ -652,11 +692,15 @@ impl Reader {
             }
             // Characters LaTeX gives meanings, escaped.
             _ if ESCAPED.contains(&name) => self.text(&name[1..]),
-            // Unknown commands keep their groups' text, as pandoc keeps it.
+            // Unknown commands keep their groups' text, as pandoc keeps it,
+            // and as it's written: `\\texttt`'s font and `\\url`'s address
+            // join nothing.
             _ => {
+                let outer = std::mem::replace(&mut self.literal, true);
                 for group in args {
                     self.flow(group);
                 }
+                self.literal = outer;
             }
         }
     }
@@ -946,6 +990,7 @@ impl Reader {
     /// before it settle, its line isn't empty, and a control word's spaces
     /// end. Every such thing comes through here.
     fn non_space(&mut self) {
+        self.after_apostrophe = false;
         self.settle_breaks();
         self.line_start = false;
         self.skip_spaces = false;
@@ -1122,7 +1167,68 @@ fn font(name: &str, bold: bool, emphasized: bool) -> Option<(bool, bool)> {
         "\\textit" | "\\textsl" => (bold, true),
         "\\textup" => (bold, false),
         "\\textnormal" => (false, false),
-        "\\textrm" | "\\textsf" | "\\textsc" | "\\underline" => (bold, emphasized),
+        "\\textrm" | "\\textsf" | "\\textsc" | "\\underline" | "\\mbox" => (bold, emphasized),
+        _ => return None,
+    })
+}
+
+/// `word`, a word of text, with what TeX's fonts join in it joined.
+fn ligatures(word: &str) -> String {
+    word.replace("---", "—")
+        .replace("--", "–")
+        .replace("``", "“")
+        .replace('`', "‘")
+}
+
+/// What the command `name` sets, for those that stand for a character. The
+/// spaces are pandoc's.
+fn symbol(name: &str) -> Option<&'static str> {
+    Some(match name {
+        "\\textquotedblleft" => "“",
+        "\\textquotedblright" => "”",
+        "\\textquoteleft" => "‘",
+        "\\textquoteright" => "’",
+        "\\textquotesingle" => "'",
+        "\\textasciigrave" => "`",
+        "\\textendash" => "–",
+        "\\textemdash" => "—",
+        "\\textellipsis" | "\\ldots" | "\\dots" => "…",
+        "\\textbackslash" => "\\",
+        "\\textasciitilde" => "~",
+        "\\textasciicircum" => "^",
+        "\\textless" => "<",
+        "\\textgreater" => ">",
+        "\\textbar" => "|",
+        "\\textbullet" => "•",
+        "\\textperiodcentered" => "·",
+        "\\textregistered" => "®",
+        "\\texttrademark" => "™",
+        "\\copyright" | "\\textcopyright" => "©",
+        "\\S" | "\\textsection" => "§",
+        "\\P" | "\\textparagraph" => "¶",
+        "\\dag" | "\\textdagger" => "†",
+        "\\ddag" | "\\textdaggerdbl" => "‡",
+        "\\pounds" | "\\textsterling" => "£",
+        "\\ss" => "ß",
+        "\\ae" => "æ",
+        "\\AE" => "Æ",
+        "\\oe" => "œ",
+        "\\OE" => "Œ",
+        "\\aa" => "å",
+        "\\AA" => "Å",
+        "\\o" => "ø",
+        "\\O" => "Ø",
+        "\\l" => "ł",
+        "\\L" => "Ł",
+        "\\i" => "ı",
+        "\\j" => "ȷ",
+        "\\LaTeX" => "LaTeX",
+        "\\TeX" => "TeX",
+        "\\," | "\\thinspace" => "\u{2006}",
+        "\\;" | "\\:" | "\\>" => "\u{2005}",
+        "\\enspace" => "\u{2002}",
+        "\\quad" => "\u{2003}",
+        "\\qquad" => "\u{2003}\u{2003}",
         _ => return None,
     })
 }
@@ -1140,7 +1246,12 @@ fn signature(name: &str) -> Option<Signature> {
             required: 1,
             ..Signature::default()
         }),
-        "\\par" | "\\" | "\\tightlist" => Some(Signature::default()),
+        "\\par" | "\\" | "\\tightlist" | "\\newline" => Some(Signature::default()),
+        "\\texorpdfstring" => Some(Signature {
+            required: 2,
+            ..Signature::default()
+        }),
+        _ if symbol(name).is_some() => Some(Signature::default()),
         "\\setcounter" => Some(SET_COUNTER),
         "\\rule" => Some(RULE),
         _ if ESCAPED.contains(&name) => Some(Signature::default()),
@@ -1605,7 +1716,7 @@ mod tests {
             ("\\emph~", &[&[emph(&[text("\u{a0}")])]]),
             ("\\emph\\relax x", &[&[text("x")]]),
             ("\\emph(x)", &[&[emph(&[text("(")]), text("x)")]]),
-            ("\\emph It's", &[&[emph(&[text("I")]), text("t's")]]),
+            ("\\emph It's", &[&[emph(&[text("I")]), text("t’s")]]),
             // Two side by side are one; one in another is upright.
             (
                 "\\emph{x}\\emph{y} z",
@@ -1618,7 +1729,7 @@ mod tests {
             ("\\emph{\\emph{x}}", &[&[text("x")]]),
             (
                 "A\\emph{B}'s",
-                &[&[text("A"), emph(&[text("B")]), text("'s")]],
+                &[&[text("A"), emph(&[text("B")]), text("’s")]],
             ),
             // The spaces after a control space in it go after it.
             ("A\\emph\\  B", &[&[text("A B")]]),
@@ -1668,7 +1779,7 @@ mod tests {
             ("a\\\\[{]}] b", &[a_b()]),
             (
                 "a\\\\[2pt]'b ] c",
-                &[vec![text("a"), Inline::LineBreak, text("'b ] c")]],
+                &[vec![text("a"), Inline::LineBreak, text("’b ] c")]],
             ),
             (
                 "a\\\\[x] y] b",
@@ -2006,6 +2117,105 @@ mod tests {
             write::markdown::write(&doc),
             "1. a\n\n7) b\n\n8) c\n\n- (x) d\n\n9. e\n"
         );
+    }
+
+    /// Each row: the text the source reads as.
+    #[test]
+    fn punctuation_is_set_as_tex_sets_it() {
+        let cases = [
+            // What fonts join; words stay apart.
+            ("a-b--c---d", "a-b–c—d"),
+            ("``a'' `b'", "“a” ‘b’"),
+            ("don't", "don’t"),
+            ("a'''", "a”’"),
+            ("a-{}-{}b `{}`c", "a--b ‘‘c"),
+            // What's between two `'` keeps them apart.
+            ("a'{}'b", "a’’b"),
+            ("a'\\mbox{}'b", "a’’b"),
+            ("a' 'b", "a’ ’b"),
+            ("\\textquoteright'b", "’’b"),
+            // Unknown commands' text is as written: fonts like `\texttt` join
+            // nothing, and it may be an address.
+            ("\\texttt{a--b ``c'' d'e}--", "a--b ``c'' d'e–"),
+            ("\\url{a--b}", "a--b"),
+            ("\\texttt{\\mbox{a--b}}c--d", "a--bc–d"),
+            ("a'\n'b", "a’ ’b"),
+            ("a'%\n'b", "a”b"),
+            // Commands for characters: spaces after a word go, `{}` keeps them.
+            ("\\textendash a", "–a"),
+            ("\\textendash{} a", "– a"),
+            ("a\\ldots b", "a…b"),
+            ("a\\dots{} b", "a… b"),
+            ("\\textquotedblleft{}a\\textquotedblright{}", "“a”"),
+            ("\\textquoteleft{}a\\textquoteright{}", "‘a’"),
+            ("\\textquotesingle{}\\textasciigrave{}", "'`"),
+            (
+                "\\textbackslash{}a \\textasciitilde{}\\textasciicircum{}",
+                "\\a ~^",
+            ),
+            ("\\textless{}a\\textgreater{}\\textbar{}", "<a>|"),
+            (
+                "\\textperiodcentered{}\\textbullet{}\\textellipsis{}",
+                "·•…",
+            ),
+            ("\\S{}1 \\P{}2 \\dag\\ddag\\copyright\\pounds", "§1 ¶2 †‡©£"),
+            ("Stra\\ss e \\ae\\oe\\o\\aa\\l\\i{}", "Straße æœøåłı"),
+            ("\\LaTeX{} and \\TeX", "LaTeX and TeX"),
+            // Spaces of their own.
+            ("a\\,b", "a\u{2006}b"),
+            ("a\\;b", "a\u{2005}b"),
+            ("a\\quad b", "a\u{2003}b"),
+            ("a\\qquad b", "a\u{2003}\u{2003}b"),
+            // Showing nothing.
+            ("\\protect\\emph{}a", "a"),
+            ("a\\/b\\-c\\!d", "abcd"),
+            // Their first argument alone; a box keeps its text.
+            ("\\texorpdfstring{a}{b}c", "ac"),
+            ("\\mbox{a}b \\mbox c", "ab c"),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(read(source).0.blocks, [para(&[text(expected)])], "{source}");
+        }
+        // In code and math, nothing's joined.
+        assert_eq!(
+            read("\\verb|a--b| $a--b'$").0.blocks,
+            [para(&[
+                Inline::Code("a--b".to_string()),
+                text(" "),
+                Inline::Math("a--b'".to_string()),
+            ])]
+        );
+        // In bold, an apostrophe joins as well.
+        assert_eq!(
+            read("\\textbf{a''}").0.blocks,
+            [para(&[Inline::Strong(vec![text("a”")])])]
+        );
+        assert_eq!(
+            read("a\\newline  b").0.blocks,
+            [para(&[text("a"), Inline::LineBreak, text("b")])]
+        );
+        assert_eq!(
+            read("\\section{\\texorpdfstring{$x$}{x} a}").0.blocks,
+            [Block::Heading {
+                level: 1,
+                content: vec![Inline::Math("x".to_string()), text(" a")],
+            }]
+        );
+    }
+
+    /// What our LaTeX writer writes for these reads back.
+    #[test]
+    fn our_latex_punctuation_reads_back() {
+        use crate::converter::document::native::{read::markdown, write};
+        for source in [
+            "“a” ‘b’ it’s – and — so… a · b\n",
+            "~ ^ \\\\ < > | \\_ \\* # $ & %\n",
+            "a  \nb\n",
+        ] {
+            let doc = markdown::read(source);
+            let tex = write::latex::write(&doc);
+            assert_eq!(read(&tex).0.blocks, doc.blocks, "{tex}");
+        }
     }
 
     /// Each row: the blocks the source reads as, numbered as LaTeX numbers
