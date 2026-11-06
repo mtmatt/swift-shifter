@@ -466,7 +466,8 @@ struct Definition {
 /// What a command defined with no arguments stands for.
 struct Macro {
     pieces: Vec<Piece>,
-    /// Its bytes in the source.
+    /// Its bytes in the source, with comments, which each call reads past
+    /// too.
     length: usize,
     /// How deep it might nest (see [`nesting_bound`]).
     nesting: usize,
@@ -493,9 +494,16 @@ impl Macro {
             && count("\\[") == count("\\]")
             && count("\\(") == count("\\)")
             && (count("$") - count("\\$")) % 2 == 0;
+        let length = pieces
+            .iter()
+            .map(|piece| match piece {
+                Piece::Token(_, token) => token.len(),
+                Piece::Node(node) => usize::from(node.text_range().len()),
+            })
+            .sum();
         balanced.then(|| Macro {
             pieces,
-            length: source.len(),
+            length,
             nesting: nesting_bound(&source),
         })
     }
@@ -6168,6 +6176,17 @@ mod tests {
         for (source, expected) in cases {
             assert_eq!(read(source).0.blocks, expected, "{source}");
         }
+    }
+
+    /// What each call reads is counted, comments too, so that a long one
+    /// calling itself is cut short after a few calls, not after millions.
+    #[test]
+    fn a_macro_is_counted_with_its_comments() {
+        let comment = format!("%{}\n", "x".repeat(1 << 20));
+        let source = format!("\\def\\a{{{comment}\\a\\a}}\\a done");
+        let (doc, warnings) = read(&source);
+        assert!(format!("{:?}", doc.blocks).contains("done"));
+        assert!(warnings[0].count < 64, "{}", warnings[0].count);
     }
 
     /// One calling itself ends, or calling others twice over, each level
