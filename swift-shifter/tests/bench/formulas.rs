@@ -1,8 +1,9 @@
 //! How many formulas a LaTeX document has, and how many its Typst has and
 //! how many of those parse: the scorer's formulas kept and parsing.
 //!
-//! LaTeX is read as the app's LaTeX reader reads it: its verbatim text cut
-//! out first, by the reader's own code, then parsed with mitex-parser.
+//! LaTeX is read as the app's LaTeX reader reads it: its `\else` branches
+//! kept and its verbatim text cut out first, and the groups scripts end
+//! closed, by the reader's own code, then parsed with mitex-parser.
 //!
 //! Known limits, as Matt decided on 2026-10-27 (15:36): the count follows
 //! LaTeX's structure, not all of TeX's syntax. A `\def` whose parameters
@@ -16,6 +17,12 @@ use std::path::Path;
 
 use mitex_parser::syntax::{SyntaxElement, SyntaxKind, SyntaxNode};
 
+#[allow(dead_code)]
+#[path = "../../src/converter/document/native/read/latex/conditionals.rs"]
+mod conditionals;
+#[allow(dead_code)]
+#[path = "../../src/converter/document/native/read/latex/formulas.rs"]
+mod reader_formulas;
 #[allow(dead_code)]
 #[path = "../../src/converter/document/native/read/latex/verbatim.rs"]
 mod verbatim;
@@ -88,9 +95,13 @@ fn read(path: &Path) -> Result<String, String> {
 }
 
 fn parse(source: &str) -> SyntaxNode {
-    let cut = verbatim::cut(source);
+    // Conditionals are only looked for in what's LaTeX. An `\else` branch's
+    // verbatim text is cut out once it's kept, as the first cut skips it, and
+    // with it out, what isn't LaTeX there can be told.
+    let latex = unparsed(&verbatim::cut(source).source);
+    let cut = verbatim::cut(&conditionals::keep_else(&latex));
     mitex_parser::parse_without_macro(
-        &unparsed(&cut.source),
+        &reader_formulas::close_scripts(&unparsed(&cut.source)),
         mitex_parser::spec::CommandSpec::new(Default::default()),
     )
 }
@@ -353,6 +364,32 @@ fn latex_formulas_are_where_latex_reads_them() {
     let main = dir.path().join("main.tex");
     std::fs::write(dir.path().join("part.tex"), "$x$ $y$").unwrap();
     let cases = [
+        // A group a script ends ends there, past a `\label`'s `^` (#202).
+        (
+            "\\begin{document}\\begin{equation}\\label{a^}x\\end{equation}$y$ $z$\\end{document}",
+            3,
+        ),
+        // An `\iffalse`'s `\else` is read, and its false branch isn't (#185).
+        (
+            "\\begin{document}\\iffalse $no$\\else $a$\\fi $b$\\end{document}",
+            2,
+        ),
+        // Verbatim text in it is none of its formulas.
+        (
+            "\\begin{document}\\iffalse\\else\\verb|$no$| $a$\\fi\\end{document}",
+            1,
+        ),
+        (
+            "\\begin{document}\\iffalse\\else\\verb|%|\\begin{lstlisting}\n$no$\n\
+             \\end{lstlisting}\\fi $b$\\end{document}",
+            1,
+        ),
+        // What isn't LaTeX holds no conditional.
+        (
+            "\\begin{document}\\iftrue\\begin{lstlisting}\\iffalse\\end{lstlisting}\
+             $a$\\else no\\fi $b$\\end{document}",
+            2,
+        ),
         // Inline verbatim, its `%` a character.
         (
             "\\begin{document}\\verb|$no$| \\verb*+%+ $a$\\end{document}",
