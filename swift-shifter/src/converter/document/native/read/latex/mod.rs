@@ -6,6 +6,7 @@
 //! `.tex` input still goes to pandoc until the reader reads what pandoc
 //! does (see `graph::route_hop`).
 
+mod conditionals;
 pub mod files;
 mod formulas;
 pub mod paths;
@@ -80,7 +81,8 @@ fn nesting_bound(source: &str) -> usize {
 /// `source`, parsed, and a warning of the lists nested too deep to keep
 /// (see [`MAX_LIST_NESTING`]).
 fn read_parsed(source: &str) -> (Document, Option<Warning>) {
-    let cut = verbatim::cut(source);
+    let source = conditionals::keep_else(source);
+    let cut = verbatim::cut(&source);
     // Expanding macros, which may never end, would also parse more than
     // `source` holds, past `nesting_bound`.
     let separated = formulas::separate_formulas(&cut.source);
@@ -1189,6 +1191,39 @@ mod tests {
                 other => panic!("{other:?}"),
             })
             .collect()
+    }
+
+    /// Each row: the blocks the source reads as. The spaces after each
+    /// control word go (#185).
+    #[test]
+    fn the_else_of_an_iffalse_is_read() {
+        let cases: Vec<(&str, Vec<Block>)> = vec![
+            ("\\iffalse A\\else B\\fi C", vec![para(&[text("BC")])]),
+            ("a\\iffalse x\\else b\\fi c", vec![para(&[text("abc")])]),
+            (
+                "\\iffalse\nA\n\\else\nB\n\\fi\nC",
+                vec![para(&[text("B C")])],
+            ),
+            ("\\iffalse A\\fi B", vec![para(&[text("B")])]),
+            (
+                "\\iftrue A\\else\\iffalse X\\else B\\fi\\fi",
+                vec![para(&[text("A")])],
+            ),
+            (
+                "\\iffalse A\\else \\verb|x|\\fi",
+                vec![para(&[Inline::Code("x".to_string())])],
+            ),
+            (
+                "\\iffalse A\\else\\section{B}\\fi",
+                vec![Block::Heading {
+                    level: 1,
+                    content: vec![text("B")],
+                }],
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
     }
 
     #[test]
