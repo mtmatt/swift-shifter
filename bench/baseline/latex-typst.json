@@ -33,7 +33,7 @@
       "compiled": false,
       "error": "main.typ:1095:20: expected comma",
       "text_similarity": null,
-      "formulas": { "source": 801, "output": 1645, "parse_errors": 0 },
+      "formulas": { "source": 1867, "output": 1645, "parse_errors": 0 },
       "warnings": 0
     },
     {
@@ -177,7 +177,7 @@
     "compile_rate": 0.09523809523809523,
     "text_similarity": 0.04062862959531236,
     "text_similarity_compiled": 0.42660061075077976,
-    "formulas_kept": 0.9552952426488166,
+    "formulas_kept": 0.9424899008446567,
     "formulas_parse": 1.0,
     "warnings": 0
   }
