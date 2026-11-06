@@ -117,6 +117,9 @@ fn document_body(root: &SyntaxNode) -> Option<SyntaxNode> {
 struct Gathered {
     /// Whether `\tightlist` makes it tight.
     tight: bool,
+    /// The number `start=` in its options gives its first item (enumitem's
+    /// `\begin{enumerate}[start=3]`).
+    start: Option<i64>,
     /// What's before the first `\item`; with none, all it holds.
     before: Vec<Piece>,
     items: Vec<Item>,
@@ -148,10 +151,23 @@ enum ListKind {
 /// or environment left whole, so nothing in it is lost and a command keeps
 /// its argument. `\item[$\boxtimes$]` and `\item[$\square$]` make tasks,
 /// done or not; any other label leads its item's text. `\tightlist` before
-/// the first item makes it tight, as the LaTeX writer writes it.
+/// the first item makes it tight, as the LaTeX writer writes it. Options
+/// after `\begin` are enumitem's: of those, only `start=` shows, in a
+/// writer's numbers, as no writer takes a list's label or spacing. Those
+/// that run code are left to be read, so that what they do isn't lost.
 fn gather(mut items: Vec<Piece>) -> Gathered {
     let mut gathered = Gathered::default();
     let (mut at, mut unbracketed) = (0, 0);
+    if matches!(items.first(), Some(Piece::Node(node)) if node.kind() == SyntaxKind::ItemBegin) {
+        at = 1;
+        let options = take_arguments(&mut items, &mut at, &mut unbracketed, ITEM).optional;
+        let text = options.as_deref().map(options_text).unwrap_or_default();
+        if options_run_code(&text) {
+            at = 1;
+        } else {
+            gathered.start = list_start(&text);
+        }
+    }
     while let Some(piece) = items.get(at).cloned() {
         at += 1;
         let name = match &piece {
@@ -178,6 +194,41 @@ fn gather(mut items: Vec<Piece>) -> Gathered {
         }
     }
     gathered
+}
+
+/// The text of `options`, a list's, without what's in a group, which is an
+/// option's value and may hold anything.
+fn options_text(options: &[Piece]) -> String {
+    let outside_groups: Vec<Piece> = options
+        .iter()
+        .filter(|piece| !matches!(piece, Piece::Node(node) if node.kind() == SyntaxKind::ItemCurly))
+        .cloned()
+        .collect();
+    source_text(&outside_groups)
+}
+
+/// Whether `options`, as [`options_text`] gives them, run code when the
+/// list starts or ends: `before`, `first` and `after`, with their `*` and
+/// `!` forms.
+fn options_run_code(options: &str) -> bool {
+    options.split(',').any(|option| {
+        let key = option.split('=').next().unwrap_or_default().trim();
+        ["before", "first", "after"]
+            .iter()
+            .any(|hook| key.starts_with(hook))
+    })
+}
+
+/// The value of the last `start=` in `options`, as [`options_text`] gives
+/// them, which overrides any before it. With no value, it's 1.
+fn list_start(options: &str) -> Option<i64> {
+    let start = options
+        .rsplit(',')
+        .find(|option| option.split('=').next().unwrap_or_default().trim() == "start")?;
+    match start.split_once('=') {
+        Some((_, value)) => value.trim().parse().ok(),
+        None => Some(1),
+    }
 }
 
 /// Whether `pieces`, an environment's, hold a `\rule` and nothing else.
@@ -237,29 +288,67 @@ fn task(label: &[Piece]) -> Option<bool> {
 
 /// The source `pieces` were parsed from, without the braces of the group
 /// they're an argument's (see [`take_arguments`]), or comments, with the
-/// line's end and the next line's spaces each one takes.
+/// line's end and the next line's spaces each one takes: the letters after
+/// a comment stay apart from a control word before it.
 fn source_text(pieces: &[Piece]) -> String {
-    let mut text = String::new();
-    let mut after_comment = false;
+    let mut tokens = Vec::new();
     for piece in pieces {
         match piece {
-            Piece::Token(SyntaxKind::TokenComment, _) => after_comment = true,
-            Piece::Token(SyntaxKind::TokenLineBreak | SyntaxKind::TokenWhiteSpace, _)
-                if after_comment => {}
-            Piece::Token(SyntaxKind::TokenLBrace | SyntaxKind::TokenRBrace, _) => {
-                after_comment = false;
-            }
-            Piece::Token(_, token) => {
-                after_comment = false;
-                text.push_str(token);
-            }
-            Piece::Node(node) => {
-                after_comment = false;
-                text.push_str(&node.text().to_string());
+            Piece::Token(SyntaxKind::TokenLBrace | SyntaxKind::TokenRBrace, _) => {}
+            Piece::Token(kind, token) => tokens.push((*kind, token.clone())),
+            Piece::Node(node) => push_source_tokens(node, &mut tokens),
+        }
+    }
+    let mut text = String::new();
+    let mut after_comment = false;
+    let mut after_control_word = false;
+    for (kind, token) in tokens {
+        match kind {
+            SyntaxKind::TokenComment => after_comment = true,
+            SyntaxKind::TokenLineBreak | SyntaxKind::TokenWhiteSpace if after_comment => {}
+            _ => {
+                let letter = token.starts_with(|c: char| c.is_ascii_alphabetic());
+                if std::mem::take(&mut after_comment) && letter && after_control_word {
+                    text.push(' ');
+                }
+                // `\langle` after `\left` is a symbol to the parser.
+                after_control_word = matches!(
+                    kind,
+                    SyntaxKind::ClauseCommandName | SyntaxKind::TokenCommandSym
+                ) && token.ends_with(|c: char| c.is_ascii_alphabetic());
+                text.push_str(&token);
             }
         }
     }
     text
+}
+
+/// Appends the tokens of `node`'s source to `tokens`. The tree keeps only
+/// the name of an environment's `\begin` and `\end`. What `\iffalse` hides
+/// shows nothing, and takes the spaces after its `\fi`, as a comment does.
+fn push_source_tokens(node: &SyntaxNode, tokens: &mut Vec<(SyntaxKind, String)>) {
+    let delimiter = match node.kind() {
+        SyntaxKind::ItemBegin => Some("begin"),
+        SyntaxKind::ItemEnd => Some("end"),
+        SyntaxKind::ItemBlockComment | SyntaxKind::ItemTypstCode => {
+            tokens.push((SyntaxKind::TokenComment, String::new()));
+            return;
+        }
+        _ => None,
+    };
+    if let Some(delimiter) = delimiter {
+        let name = node.text();
+        tokens.push((SyntaxKind::TokenWord, format!("\\{delimiter}{{{name}}}")));
+        return;
+    }
+    for element in node.children_with_tokens() {
+        match element {
+            SyntaxElement::Node(node) => push_source_tokens(&node, tokens),
+            SyntaxElement::Token(token) => {
+                tokens.push((token.kind(), token.text().to_string()));
+            }
+        }
+    }
 }
 
 /// Takes from `items[*at..]` what the definition command `name` defines:
@@ -461,8 +550,20 @@ impl Reader {
                         "description" => self.list(&node, ListKind::Description),
                         "quote" | "quotation" | "verse" => self.quote(&node),
                         "center" | "flushleft" | "flushright" => self.aligned(&node),
+                        name @ ("math" | "displaymath") => {
+                            let mut inside = pieces(&node);
+                            inside.retain(|piece| {
+                                !matches!(piece, Piece::Node(node)
+                                    if matches!(node.kind(), SyntaxKind::ItemBegin | SyntaxKind::ItemEnd))
+                            });
+                            self.math(&source_text(&inside), name == "displaymath");
+                        }
+                        name if MATH_ENVIRONMENTS.contains(&name.trim_end_matches('*')) => {
+                            self.math(&source_text(&[Piece::Node(node.clone())]), true);
+                        }
                         _ => self.flow(pieces(&node)),
                     },
+                    SyntaxKind::ItemFormula => self.formula(&node),
                     _ => self.flow(pieces(&node)),
                 },
             }
@@ -526,6 +627,11 @@ impl Reader {
             // A line, which no writer's text can hold, outside of a block
             // of its own (see `Reader::aligned`).
             "\\tightlist" | "\\rule" => {}
+            "\\ensuremath" => {
+                if let Some(arg) = args.first() {
+                    self.math(&source_text(arg), false);
+                }
+            }
             "\\setcounter" => self.set_counter(args),
             // An item that isn't a list's own (see `gather`) is a space in
             // its text, and its groups' text follows.
@@ -567,6 +673,85 @@ impl Reader {
         {
             *counter = value;
         }
+    }
+
+    /// `$…$`, `\(…\)`, `$$…$$` or `\[…\]`: its TeX, as it's written. One
+    /// that doesn't end takes the rest of what it's in, as the parser reads
+    /// it, so nothing is lost.
+    fn formula(&mut self, formula: &SyntaxNode) {
+        let mut pieces = pieces(formula);
+        let display = matches!(pieces.first(),
+            Some(Piece::Token(_, open)) if open == "$$" || open == "\\[");
+        if !pieces.is_empty() {
+            pieces.remove(0);
+        }
+        if matches!(
+            pieces.last(),
+            Some(Piece::Token(
+                SyntaxKind::TokenDollar | SyntaxKind::TokenEndMath,
+                _
+            ))
+        ) {
+            pieces.pop();
+        }
+        self.math(&source_text(&pieces), display);
+    }
+
+    /// Math, as TeX: a block of its own if it's `display`, but in an
+    /// argument, which no block goes in. Empty, it shows nothing.
+    fn math(&mut self, tex: &str, display: bool) {
+        self.non_space();
+        let trimmed = tex.trim_end();
+        // A space that a backslash makes a control space is the formula's.
+        let backslashes = trimmed.len() - trimmed.trim_end_matches('\\').len();
+        let space = tex[trimmed.len()..].chars().next();
+        let tex = match space {
+            Some(space) if backslashes % 2 == 1 => &tex[..trimmed.len() + space.len_utf8()],
+            _ => trimmed,
+        };
+        let tex = self.with_verbatims(tex.trim_start());
+        if tex.is_empty() {
+            return;
+        }
+        if display && !self.in_argument {
+            self.end_paragraph();
+            self.blocks.push(Block::Math(tex));
+        } else {
+            self.inline(Inline::Math(tex));
+        }
+    }
+
+    /// `tex` with the verbatim text its placeholders stand for (see
+    /// [`verbatim::cut`]) back in it, each a `\verb`.
+    fn with_verbatims(&self, tex: &str) -> String {
+        let mut out = String::new();
+        let mut rest = tex;
+        while let Some(at) = rest.find(&self.verbatim_mark) {
+            let after = &rest[at + self.verbatim_mark.len()..];
+            let placeholder = after.strip_prefix('{').and_then(|inside| {
+                let (number, _) = inside.split_once('}')?;
+                let index: usize = number.trim_end().parse().ok()?;
+                let code = self.verbatims.get(index)?;
+                Some((code, number.len() + 2))
+            });
+            out.push_str(&rest[..at]);
+            let Some((code, length)) = placeholder else {
+                // A command of the source's, whose name only starts as the
+                // mark does.
+                out.push_str(&self.verbatim_mark);
+                rest = after;
+                continue;
+            };
+            let (Verbatim::Inline(code) | Verbatim::Block(code)) = code;
+            match ('!'..='~').find(|c| !c.is_alphanumeric() && *c != '*' && !code.contains(*c)) {
+                Some(delimiter) => out.push_str(&format!("\\verb{delimiter}{code}{delimiter}")),
+                // No `\verb` can hold it.
+                None => out.push_str(code),
+            }
+            rest = &after[length..];
+        }
+        out.push_str(rest);
+        out
     }
 
     /// A `quote`-like environment: a quote of its blocks, if it has any.
@@ -634,7 +819,8 @@ impl Reader {
         }
         self.lists += 1;
         if numbered {
-            self.enumerations.push(0);
+            let start = gathered.start.unwrap_or(1);
+            self.enumerations.push(start.saturating_sub(1));
         }
         let outer = std::mem::take(&mut self.blocks);
         // What's before its first item is that item's, so nothing is lost,
@@ -888,6 +1074,12 @@ const SET_COUNTER: Signature = Signature {
 /// The counters of `enumerate`s, from the outermost in.
 const ENUMERATION_COUNTERS: [&str; 4] = ["enumi", "enumii", "enumiii", "enumiv"];
 
+/// The environments that are a formula, with their `\begin` and `\end`, as
+/// writers take them; each has a starred form too.
+const MATH_ENVIRONMENTS: [&str; 7] = [
+    "equation", "align", "alignat", "flalign", "gather", "multline", "eqnarray",
+];
+
 /// The commands that define others (see [`skip_definition`]).
 const DEFINITIONS: [&str; 7] = [
     "\\newcommand",
@@ -936,6 +1128,10 @@ fn font(name: &str, bold: bool, emphasized: bool) -> Option<(bool, bool)> {
 /// Those that take nothing leave the groups after them to be read on.
 fn signature(name: &str) -> Option<Signature> {
     match name {
+        "\\ensuremath" => Some(Signature {
+            required: 1,
+            ..Signature::default()
+        }),
         _ if font(name, false, false).is_some() => Some(Signature {
             required: 1,
             ..Signature::default()
@@ -1886,6 +2082,59 @@ mod tests {
                 "\\setcounter{enumi}{4}\\begin{enumerate}\\setcounter{enumii}{4}\\item a\\end{enumerate}",
                 &[numbered(1, false, &[(None, &a)])],
             ),
+            // enumitem's options show as nothing but their start, which
+            // `\setcounter` still sets over; a label is still an item's.
+            (
+                "\\begin{enumerate}[(a)]\\item a\\end{enumerate}",
+                &[numbered(1, false, &[(None, &a)])],
+            ),
+            (
+                "\\begin{enumerate} [label=(\\alph*), start=4 ,leftmargin=*]\n\\item a\\item b\\end{enumerate}",
+                &[numbered(4, false, &[(None, &a), (None, &b)])],
+            ),
+            (
+                "\\begin{enumerate}[start=4]\\setcounter{enumi}{1}\\item a\\end{enumerate}",
+                &[numbered(2, false, &[(None, &a)])],
+            ),
+            (
+                "\\begin{enumerate}[start=x]\\item a\\end{enumerate}",
+                &[numbered(1, false, &[(None, &a)])],
+            ),
+            // Options that run code are read as text, and what they do holds,
+            // where it's read rather than when they'd run.
+            (
+                "\\begin{enumerate}[before={\\setcounter{enumi}{4}}]\\item a\\end{enumerate}",
+                &[numbered(
+                    5,
+                    false,
+                    &[(None, &[para(&[text("[before=]a")])])],
+                )],
+            ),
+            (
+                "\\begin{enumerate}[after={\\setcounter{enumi}{4}}]\\item a\\end{enumerate}",
+                &[numbered(5, false, &[(None, &[para(&[text("[after=]a")])])])],
+            ),
+            // The last one holds, and one in a group is another's value.
+            (
+                "\\begin{enumerate}[start=2,start=5]\\item a\\end{enumerate}",
+                &[numbered(5, false, &[(None, &a)])],
+            ),
+            (
+                "\\begin{enumerate}[start=4,start]\\item a\\end{enumerate}",
+                &[numbered(1, false, &[(None, &a)])],
+            ),
+            (
+                "\\begin{enumerate}[label={x,start=7,y}]\\item a\\end{enumerate}",
+                &[numbered(1, false, &[(None, &a)])],
+            ),
+            (
+                "\\begin{itemize}[noitemsep]\\item a\\item[x] b\\end{itemize}",
+                &[list(false, &[(None, &a), (None, &[para(&[text("x b")])])])],
+            ),
+            (
+                "\\begin{enumerate}\\item [a]\\end{enumerate}",
+                &[list(false, &[(None, &[para(&[text("a")])])])],
+            ),
             // Comments in its arguments are none of them.
             (
                 "\\begin{enumerate}\\setcounter{enu% name\n  mi}{2% value\n}\\item a\\end{enumerate}",
@@ -1983,24 +2232,160 @@ mod tests {
         }
     }
 
+    /// Each row: the blocks the source reads as.
+    #[test]
+    fn math_is_kept_as_tex() {
+        let inline = |tex: &str| Inline::Math(tex.to_string());
+        let display = |tex: &str| Block::Math(tex.to_string());
+        let a = para(&[text("a")]);
+        let b = para(&[text("b")]);
+        let cases: Vec<(&str, Vec<Block>)> = vec![
+            (
+                "a $x_1$ b \\(y\\) c",
+                vec![para(&[
+                    text("a "),
+                    inline("x_1"),
+                    text(" b "),
+                    inline("y"),
+                    text(" c"),
+                ])],
+            ),
+            // Display math is a block of its own, the text around it two.
+            ("a\\[x\\]b", vec![a.clone(), display("x"), b.clone()]),
+            ("a$$ x $$b", vec![a.clone(), display("x"), b.clone()]),
+            ("\\[\nx % why\n  y\n\\]", vec![display("x y")]),
+            // Environments keep their `\begin` and `\end`, inside formulas
+            // too, which the tree doesn't hold.
+            (
+                "a\\begin{align*}\nx &= y \\\\\nz\n\\end{align*}b",
+                vec![
+                    a.clone(),
+                    display("\\begin{align*}\nx &= y \\\\\nz\n\\end{align*}"),
+                    b.clone(),
+                ],
+            ),
+            (
+                "\\begin{equation}\\begin{split}x\\end{split}\\end{equation}",
+                vec![display(
+                    "\\begin{equation}\\begin{split}x\\end{split}\\end{equation}",
+                )],
+            ),
+            (
+                "$\\begin{aligned}[t]x\\end{aligned}$",
+                vec![para(&[inline("\\begin{aligned}[t]x\\end{aligned}")])],
+            ),
+            (
+                "\\begin{gather}x\\end{gather}",
+                vec![display("\\begin{gather}x\\end{gather}")],
+            ),
+            (
+                "\\begin{multline*}x\\end{multline*}",
+                vec![display("\\begin{multline*}x\\end{multline*}")],
+            ),
+            // These two say no more than their delimiters do.
+            (
+                "\\begin{displaymath}x\\end{displaymath}",
+                vec![display("x")],
+            ),
+            ("\\begin{math}x\\end{math}", vec![para(&[inline("x")])]),
+            ("\\ensuremath{x^2}", vec![para(&[inline("x^2")])]),
+            // What's hidden stays so, verbatim text is what it was, and a
+            // comment doesn't join what's around it.
+            ("$a\\iffalse hidden\\fi b$", vec![para(&[inline("ab")])]),
+            (
+                "$\\text{a\\iffalse hidden\\fi b}$",
+                vec![para(&[inline("\\text{ab}")])],
+            ),
+            (
+                "$\\alpha\\iffalse x\\fi b$",
+                vec![para(&[inline("\\alpha b")])],
+            ),
+            // A control space at the end is the formula's.
+            ("$x\\ $", vec![para(&[inline("x\\ ")])]),
+            ("$x\\\\ $", vec![para(&[inline("x\\\\")])]),
+            // Of however many bytes.
+            ("$x\\\u{3000}$", vec![para(&[inline("x\\\u{3000}")])]),
+            ("$x\\\u{a0} $", vec![para(&[inline("x\\\u{a0}")])]),
+            // Side by side, each is a formula, and text after a display
+            // formula starts a paragraph of its own.
+            ("$x$$y$", vec![para(&[inline("x"), inline("y")])]),
+            ("$x$$$y$$", vec![para(&[inline("x")]), display("y")]),
+            ("\\[x\\] b", vec![display("x"), b.clone()]),
+            ("$\\verb|x%y|$", vec![para(&[inline("\\verb!x%y!")])]),
+            ("$\\verb!x|y!z$", vec![para(&[inline("\\verb!x|y!z")])]),
+            ("$\\verb;x|!y;$", vec![para(&[inline("\\verb\"x|!y\"")])]),
+            (
+                "$\\SwiftShifterVerbatimOther{x}$",
+                vec![para(&[inline("\\SwiftShifterVerbatimOther{x}")])],
+            ),
+            (
+                "\\begin{equation}\\verb|x|\\end{equation}",
+                vec![display("\\begin{equation}\\verb!x!\\end{equation}")],
+            ),
+            ("$\\alpha% why\n b$", vec![para(&[inline("\\alpha b")])]),
+            (
+                "$\\left\\langle% why\n b\\right\\rangle$",
+                vec![para(&[inline("\\left\\langle b\\right\\rangle")])],
+            ),
+            ("$x% why\n b$", vec![para(&[inline("xb")])]),
+            ("$\\\\a% why\n b$", vec![para(&[inline("\\\\ab")])]),
+            // A formula in text in a formula is of it.
+            ("$\\text{a $b$}$", vec![para(&[inline("\\text{a $b$}")])]),
+            // In an argument, no block goes.
+            (
+                "\\section{a \\[x\\]}",
+                vec![heading(1, &[text("a "), inline("x")])],
+            ),
+            ("\\emph{$x$}", vec![para(&[emph(&[inline("x")])])]),
+            // Empty, it's none; unended, it takes what's left, kept.
+            ("a$$$$b", vec![para(&[text("ab")])]),
+            ("a$x", vec![para(&[text("a"), inline("x")])]),
+            // Escaped, it's a dollar.
+            ("\\$5", vec![para(&[text("$5")])]),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
+    }
+
+    /// The formulas the LaTeX writer writes read back as they were.
+    #[test]
+    fn our_latex_math_reads_back() {
+        use crate::converter::document::native::{read::markdown, write};
+        let doc = markdown::read(
+            "An $x^2$ here.\n\n$$\ny = 1\n$$\n\n$$\n\\begin{align}\na &= b\n\\end{align}\n$$\n",
+        );
+        let tex = write::latex::write(&doc);
+        // Markdown keeps a display formula's line ends; LaTeX has none.
+        let expected: Vec<Block> = doc
+            .blocks
+            .into_iter()
+            .map(|block| match block {
+                Block::Math(tex) => Block::Math(tex.trim().to_string()),
+                other => other,
+            })
+            .collect();
+        assert_eq!(read(&tex).0.blocks, expected, "{tex}");
+    }
+
     /// Each row: the inlines the source reads as, in a paragraph.
     #[test]
     fn fonts_are_read_as_tex_sets_them() {
         let strong = |inlines: &[Inline]| Inline::Strong(inlines.to_vec());
-        let a = text("a");
-        let b = text("b");
-        let x = text("x");
-        let y = text("y");
+        let a = || text("a");
+        let b = || text("b");
+        let x = || text("x");
+        let y = || text("y");
         let cases: Vec<(&str, Vec<Inline>)> = vec![
-            ("\\textbf{a}", vec![strong(&[a.clone()])]),
-            ("\\textbf a b", vec![strong(&[a.clone()]), text(" b")]),
-            ("\\textit{a}", vec![emph(&[a.clone()])]),
-            ("\\textsl{a}", vec![emph(&[a.clone()])]),
+            ("\\textbf{a}", vec![strong(&[a()])]),
+            ("\\textbf a b", vec![strong(&[a()]), text(" b")]),
+            ("\\textit{a}", vec![emph(&[a()])]),
+            ("\\textsl{a}", vec![emph(&[a()])]),
             // Fonts no writer shows keep their text, and take one argument.
             ("\\textsc{a} b", vec![text("a b")]),
             ("\\textrm{a}\\textsf{b}", vec![text("ab")]),
             ("\\underline a b", vec![text("a b")]),
-            ("\\textbf{\\textsc{a}}", vec![strong(&[a.clone()])]),
+            ("\\textbf{\\textsc{a}}", vec![strong(&[a()])]),
             // Empty, they show nothing; a space stays a space.
             ("x\\textbf{}y", vec![text("xy")]),
             ("x\\textbf{ }y", vec![text("x y")]),
@@ -2008,84 +2393,56 @@ mod tests {
             // Spaces and line breaks at their edges are outside them.
             (
                 "x\\textbf{ a }y",
-                vec![text("x "), strong(&[a.clone()]), text(" y")],
+                vec![text("x "), strong(&[a()]), text(" y")],
             ),
             (
                 "x \\textbf{ a } y",
-                vec![text("x "), strong(&[a.clone()]), text(" y")],
+                vec![text("x "), strong(&[a()]), text(" y")],
             ),
-            (
-                "x\\emph{ a }y",
-                vec![text("x "), emph(&[a.clone()]), text(" y")],
-            ),
+            ("x\\emph{ a }y", vec![text("x "), emph(&[a()]), text(" y")]),
             (
                 "x\\emph{\\textbf{ a }}y",
-                vec![text("x "), strong(&[emph(&[a.clone()])]), text(" y")],
+                vec![text("x "), strong(&[emph(&[a()])]), text(" y")],
             ),
             // Control spaces there are each a space of their own.
-            ("\\emph{a\\ \\ }b", vec![emph(&[a.clone()]), text("  b")]),
-            ("x\\emph{\\ \\ a}", vec![text("x  "), emph(&[a.clone()])]),
+            ("\\emph{a\\ \\ }b", vec![emph(&[a()]), text("  b")]),
+            ("x\\emph{\\ \\ a}", vec![text("x  "), emph(&[a()])]),
             // A control word's spaces end with its group.
-            (
-                "\\textbf{a\\relax} b",
-                vec![strong(&[a.clone()]), text(" b")],
-            ),
+            ("\\textbf{a\\relax} b", vec![strong(&[a()]), text(" b")]),
             (
                 "x\\textbf{a\\\\}y",
-                vec![
-                    x.clone(),
-                    strong(&[a.clone()]),
-                    Inline::LineBreak,
-                    y.clone(),
-                ],
+                vec![x(), strong(&[a()]), Inline::LineBreak, y()],
             ),
             (
                 "x\\textbf{\\\\a}y",
-                vec![
-                    x.clone(),
-                    Inline::LineBreak,
-                    strong(&[a.clone()]),
-                    y.clone(),
-                ],
+                vec![x(), Inline::LineBreak, strong(&[a()]), y()],
             ),
-            (
-                "x\\textbf{\\\\}y",
-                vec![x.clone(), Inline::LineBreak, y.clone()],
-            ),
+            ("x\\textbf{\\\\}y", vec![x(), Inline::LineBreak, y()]),
             (
                 "x\\emph{\\textbf{a\\\\}}y",
-                vec![
-                    x.clone(),
-                    strong(&[emph(&[a.clone()])]),
-                    Inline::LineBreak,
-                    y.clone(),
-                ],
+                vec![x(), strong(&[emph(&[a()])]), Inline::LineBreak, y()],
             ),
             // In the middle, they stay; an empty line is a space.
             (
                 "\\textbf{a\\\\b}",
-                vec![strong(&[a.clone(), Inline::LineBreak, b.clone()])],
+                vec![strong(&[a(), Inline::LineBreak, b()])],
             ),
             ("\\textbf{a\n\nb}", vec![strong(&[text("a b")])]),
             // Bold and emphasis, either way round, and upright in both.
-            ("\\textbf{\\emph{a}}", vec![strong(&[emph(&[a.clone()])])]),
-            ("\\emph{\\textbf{a}}", vec![strong(&[emph(&[a.clone()])])]),
-            ("\\emph{\\textbf{\\emph{a}}}", vec![strong(&[a.clone()])]),
+            ("\\textbf{\\emph{a}}", vec![strong(&[emph(&[a()])])]),
+            ("\\emph{\\textbf{a}}", vec![strong(&[emph(&[a()])])]),
+            ("\\emph{\\textbf{\\emph{a}}}", vec![strong(&[a()])]),
             (
                 "\\emph{x\\textbf{a}y}",
-                vec![
-                    emph(&[x.clone()]),
-                    strong(&[emph(&[a.clone()])]),
-                    emph(&[y.clone()]),
-                ],
+                vec![emph(&[x()]), strong(&[emph(&[a()])]), emph(&[y()])],
             ),
             (
                 "\\textbf{x\\emph{a}y}",
-                vec![strong(&[x.clone(), emph(&[a.clone()]), y.clone()])],
+                vec![strong(&[x(), emph(&[a()]), y()])],
             ),
             // `\textit` is italic in italic, where `\emph` is upright.
-            ("\\emph{\\textit{a}}", vec![emph(&[a.clone()])]),
-            ("\\emph{\\textup{a}}", vec![a.clone()]),
+            ("\\emph{\\textit{a}}", vec![emph(&[a()])]),
+            ("\\emph{\\textup{a}}", vec![a()]),
             // Bold in bold is bold, and what's alike side by side is one.
             ("\\textbf{x\\textbf{a}}", vec![strong(&[text("xa")])]),
             ("\\textbf{a}\\textbf{b}", vec![strong(&[text("ab")])]),
@@ -2095,28 +2452,28 @@ mod tests {
             ),
             (
                 "\\textbf{a} \\textbf{b}",
-                vec![strong(&[a.clone()]), text(" "), strong(&[b.clone()])],
+                vec![strong(&[a()]), text(" "), strong(&[b()])],
             ),
             // What takes a font off holds in its argument alone.
             (
                 "\\textbf{x\\textmd{a}y}",
-                vec![strong(&[x.clone()]), a.clone(), strong(&[y.clone()])],
+                vec![strong(&[x()]), a(), strong(&[y()])],
             ),
             (
                 "\\textbf{x\\textnormal{a}y}",
-                vec![strong(&[x.clone()]), a.clone(), strong(&[y.clone()])],
+                vec![strong(&[x()]), a(), strong(&[y()])],
             ),
             (
                 "\\textit{x\\textnormal{a}y}",
-                vec![emph(&[x.clone()]), a.clone(), emph(&[y.clone()])],
+                vec![emph(&[x()]), a(), emph(&[y()])],
             ),
             (
                 "\\textbf{\\textit{x\\textnormal{a}}}",
-                vec![strong(&[emph(&[x.clone()])]), a.clone()],
+                vec![strong(&[emph(&[x()])]), a()],
             ),
             (
                 "\\textbf{\\textit{x\\textmd{a}}}",
-                vec![strong(&[emph(&[x.clone()])]), emph(&[a.clone()])],
+                vec![strong(&[emph(&[x()])]), emph(&[a()])],
             ),
         ];
         for (source, expected) in cases {
