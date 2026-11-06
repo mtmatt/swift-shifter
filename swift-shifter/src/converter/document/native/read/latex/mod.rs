@@ -535,6 +535,12 @@ impl Macro {
     }
 }
 
+/// Whether mitex, which writers read formulas with, knows the command `name`.
+fn known_in_formulas(name: &str) -> bool {
+    let name = name.strip_prefix('\\').unwrap_or(name);
+    mitex_spec_gen::DEFAULT_SPEC.get_cmd(name).is_some()
+}
+
 /// Whether `piece` is a definition, or holds one.
 fn holds_definition(piece: &Piece) -> bool {
     let Piece::Node(node) = piece else {
@@ -1242,8 +1248,9 @@ impl Reader {
             default,
             starred,
         } = definition;
-        let provided_already =
-            command == "\\providecommand" && self.definitions.contains_key(&name);
+        // Writers know more commands than the reader does.
+        let provided_already = command == "\\providecommand"
+            && (self.definitions.contains_key(&name) || known_in_formulas(&name));
         if provided_already || signature(&name).is_some() {
             return;
         }

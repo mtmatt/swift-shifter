@@ -6394,6 +6394,7 @@ dependencies = [
  "lopdf",
  "mitex",
  "mitex-parser",
+ "mitex-spec-gen",
  "objc2",
  "objc2-foundation",
  "pulldown-latex",
