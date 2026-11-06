@@ -1193,7 +1193,12 @@ impl Reader {
             let label = self.unmarked_notes.remove(unmarked).1;
             return self.inline(Inline::FootnoteRef(label));
         }
-        if !given && let Some((label, Some(note))) = self.unwritten_notes.remove(&number) {
+        let settled = !given
+            && self
+                .unwritten_notes
+                .get(&number)
+                .is_some_and(|(_, earlier)| earlier.is_some());
+        if settled && let Some((label, Some(note))) = self.unwritten_notes.remove(&number) {
             self.note_aliases.insert(label, note);
         }
         let label = match self.unwritten_notes.get(&number) {
@@ -3352,6 +3357,14 @@ mod tests {
                     para(&[text("a"), mark("1")]),
                     note("2", &[para(&[text("c")])]),
                     note("1", &[para(&[text("b"), mark("2"), mark("2")])]),
+                ],
+            ),
+            // Marks of a number waiting for its text wait together.
+            (
+                "\\footnotemark[1]\\footnotemark\\footnotetext{a}",
+                vec![
+                    para(&[mark("1"), mark("1")]),
+                    note("1", &[para(&[text("a")])]),
                 ],
             ),
             // It's the note of that number before it, not one after.
