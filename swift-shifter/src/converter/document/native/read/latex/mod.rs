@@ -1510,19 +1510,26 @@ impl Reader {
         } else {
             None
         };
-        // As the document's source is, before it's parsed.
-        let text = text.map(|text| formulas::separate_formulas(&formulas::close_scripts(&text)));
+        // As the document's source is, before it's parsed: listings holding
+        // its parameters, left in its text, now hold its arguments, and are
+        // cut first, as what makes the rest ready to parse would change them.
+        // What it expands to, listings' code and all, as that's what the
+        // document grows by.
+        let expanded = text.as_ref().map_or(0, String::len);
+        let text = text.map(|text| {
+            let mark = std::mem::take(&mut self.listing_mark);
+            let text = listings::cut_into(&text, &mark, &mut self.listings);
+            self.listing_mark = mark;
+            formulas::separate_formulas(&formulas::close_scripts(&text))
+        });
         let nesting = text.as_deref().map_or(usize::MAX, nesting_bound);
         let Some(text) = text.filter(|_| nesting <= self.nesting_left) else {
             self.unexpanded += 1;
             return self.unexpanded_call(taken);
         };
-        self.expansion_left = self.expansion_left.saturating_sub(text.len() + CALL_COST);
-        // Listings holding its parameters, left in its text, now hold its
-        // arguments.
-        let mark = std::mem::take(&mut self.listing_mark);
-        let text = listings::cut_into(&text, &mark, &mut self.listings);
-        self.listing_mark = mark;
+        self.expansion_left = self
+            .expansion_left
+            .saturating_sub(expanded.max(text.len()) + CALL_COST);
         let root = mitex_parser::parse_without_macro(&text, CommandSpec::new(Default::default()));
         let mut expanded = pieces(&root);
         let last_command = take_last_command(&mut expanded, |name| self.required_arguments(name));
@@ -2552,7 +2559,10 @@ impl Reader {
                         &caption,
                         CommandSpec::new(Default::default()),
                     );
+                    // In a group of its own, as it was in its braces.
+                    let group = self.open_group();
                     self.flow(pieces(&root));
+                    self.close_group(group);
                     self.end_paragraph();
                 }
                 self.blocks.push(Block::Code { lang: None, code });
@@ -2664,7 +2674,6 @@ thread_local! {
     static BRACKET_SCAN_STEPS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
 }
 
-/// A verbatim placeholder's: its index (see [`verbatim::Cut::mark`]).
 /// `tex` with the code each placeholder of `mark` stands for, `code` of its
 /// index, back in it, each a `\verb`.
 fn with_codes<'a>(tex: &str, mark: &str, code: impl Fn(usize) -> Option<&'a str>) -> String {
@@ -2704,6 +2713,8 @@ fn placeholder_index(args: &[Vec<Piece>]) -> Option<usize> {
     })
 }
 
+/// A placeholder's, verbatim text's or a listing's: its index (see
+/// [`verbatim::Cut::mark`], [`listings::Cut::mark`]).
 const PLACEHOLDER: Signature = Signature {
     star: false,
     optional: false,
@@ -6808,6 +6819,11 @@ mod tests {
                     Inline::Code("yz".into()),
                 ])],
             ),
+            // A comment in it is read as TeX reads one.
+            (
+                "\\begin{lstlisting}[caption={\\TeX% note\nbook}]\nx\n\\end{lstlisting}",
+                vec![para(&[text("TeXbook")]), code("x")],
+            ),
             // Its caption, or title, before it, its other options gone.
             (
                 "a\\begin{lstlisting}[caption={A, $x$}, language=C]\nx\n\\end{lstlisting}b",
@@ -6822,10 +6838,28 @@ mod tests {
                 "\\begin{lstlisting}[title=T]\nx\n\\end{lstlisting}",
                 vec![para(&[text("T")]), code("x")],
             ),
+            // What's declared in it holds to its end.
+            (
+                "\\begin{lstlisting}[caption={\\bfseries T\\def\\x{y}}]\nx\n\\end{lstlisting}b\\x",
+                vec![
+                    para(&[Inline::Strong(vec![text("T")])]),
+                    code("x"),
+                    para(&[text("b")]),
+                ],
+            ),
+            // A comment in the options is no part of them.
+            (
+                "\\begin{lstlisting}[language=C,% note\ncaption={Hello}]\nx\n\\end{lstlisting}",
+                vec![para(&[text("Hello")]), code("x")],
+            ),
             // In a macro, with its arguments.
             (
                 "\\newcommand{\\sample}[1]{\\lstinline{#1}}a \\sample{h&{}i}",
                 vec![para(&[text("a "), Inline::Code("h&{}i".into())])],
+            ),
+            (
+                "\\newcommand{\\sample}[1]{\\lstinline{x_#1}}\\sample{}",
+                vec![para(&[Inline::Code("x_".into())])],
             ),
             // In a formula, as `\verb` is.
             (
@@ -6841,6 +6875,27 @@ mod tests {
         for (source, expected) in cases {
             assert_eq!(read(source).0.blocks, expected, "{source}");
         }
+    }
+
+    /// A macro's listings' code counts in what the document may expand to.
+    #[test]
+    fn listings_in_macros_count_in_the_expansion() {
+        let source = format!(
+            "\\newcommand{{\\f}}[1]{{\\lstinline{{#1{}}}}}{}",
+            "x".repeat(10_000),
+            "\\f{a}".repeat(1_000)
+        );
+        let (doc, warnings) = read(&source);
+        let code: usize = doc
+            .blocks
+            .iter()
+            .map(|block| format!("{block:?}").len())
+            .sum();
+        assert!(code < 200_000, "{code}");
+        assert!(
+            warnings.iter().any(|w| w.one.contains("unexpanded")),
+            "{warnings:?}"
+        );
     }
 
     /// A definition shows nothing where it's written, in any of its forms.
