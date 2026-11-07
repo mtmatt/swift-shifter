@@ -556,16 +556,38 @@ fn known_in_formulas(name: &str) -> bool {
     mitex_spec_gen::DEFAULT_SPEC.get_cmd(name).is_some()
 }
 
-/// Takes the command `pieces` end in, if they end in one, with the spaces
-/// after it, which TeX doesn't see after a control word.
-fn take_last_command(pieces: &mut Vec<Piece>) -> Option<Piece> {
-    let last = pieces.iter().rposition(|piece| match piece {
+/// Takes the command `pieces` end in, if they end in one that would take
+/// its arguments from what's after them: with the spaces after it, which
+/// TeX doesn't see after a control word. Not one a command before it takes
+/// as an argument, as the pieces are read in order, each command taking as
+/// many as `required` says, nor a control symbol taking none with spaces
+/// after it, which are text.
+fn take_last_command(pieces: &mut Vec<Piece>, required: impl Fn(&str) -> usize) -> Option<Piece> {
+    let shows = |piece: &Piece| match piece {
         Piece::Token(SyntaxKind::TokenWhiteSpace, _) => false,
         Piece::Token(SyntaxKind::TokenLineBreak, breaks) => line_ends(breaks) > 1,
         _ => true,
-    })?;
-    let command = matches!(&pieces[last], Piece::Node(node) if node.kind() == SyntaxKind::ItemCmd);
-    if !command {
+    };
+    let command = |piece: &Piece| match piece {
+        Piece::Node(node) if node.kind() == SyntaxKind::ItemCmd => Some(command_name(node)),
+        _ => None,
+    };
+    let last = pieces.iter().rposition(shows)?;
+    let name = command(&pieces[last])?;
+    let control_word = name[1..].starts_with(|c: char| c.is_ascii_alphabetic());
+    if !control_word && last + 1 < pieces.len() && required(&name) == 0 {
+        return None;
+    }
+    // The arguments the commands read so far are still owed.
+    let mut owed = 0_usize;
+    for piece in pieces[..last].iter().filter(|piece| shows(piece)) {
+        owed = match command(piece) {
+            _ if owed > 0 => owed - 1,
+            Some(name) => required(&name),
+            None => 0,
+        };
+    }
+    if owed > 0 {
         return None;
     }
     pieces.truncate(last + 1);
@@ -1467,7 +1489,7 @@ impl Reader {
         self.expansion_left = self.expansion_left.saturating_sub(text.len() + CALL_COST);
         let root = mitex_parser::parse_without_macro(&text, CommandSpec::new(Default::default()));
         let mut expanded = pieces(&root);
-        let last_command = take_last_command(&mut expanded);
+        let last_command = take_last_command(&mut expanded, |name| self.required_arguments(name));
         self.nesting_left -= nesting;
         self.expansion_depth += 1;
         self.non_space();
@@ -1485,6 +1507,18 @@ impl Reader {
             *at -= 1;
             items[*at] = command;
         }
+    }
+
+    /// How many arguments the command `name` must take as it's read, of a
+    /// command the reader knows or a macro, past an optional first one. An
+    /// unknown one takes only the groups after it, none it must.
+    fn required_arguments(&self, name: &str) -> usize {
+        if let Some(signature) = signature(name) {
+            return signature.required;
+        }
+        self.macro_taking_arguments(name).map_or(0, |body| {
+            body.parameters - usize::from(body.default.is_some())
+        })
     }
 
     /// What a call that isn't expanded took, as an unknown command's text.
@@ -6784,6 +6818,31 @@ mod tests {
                 "\\newcommand{\\f}[1]{(#1)\\textbf }\\f{a}{b}".into(),
                 "(a)\\textbf{b}",
             ),
+            // Not one a command before it takes.
+            (
+                "\\newcommand{\\id}[1]{#1}\\id{\\textbf\\LaTeX} b".into(),
+                "\\textbf\\LaTeX{} b",
+            ),
+            (
+                format!("{f}\\newcommand{{\\id}}[1]{{#1}}\\id{{\\f\\LaTeX}} b"),
+                "(LaTeX) b",
+            ),
+            // A command taking none, or one a command before took, doesn't.
+            (
+                "\\newcommand{\\id}[1]{#1}\\id{\\footnotemark\\textbf}{b}".into(),
+                "\\footnotemark\\textbf{b}",
+            ),
+            (
+                "\\newcommand{\\id}[1]{#1}\\id{\\textbf\\footnotemark\\textbf}{b}".into(),
+                "\\textbf\\footnotemark\\textbf{b}",
+            ),
+            // A control symbol's spaces are text, unless it takes arguments.
+            ("\\newcommand{\\id}[1]{#1}\\id{\\%  }x".into(), "\\% x"),
+            (
+                "\\newcommand{\\?}[1]{(#1)}\\newcommand{\\id}[1]{#1}\\id{\\? }{v}".into(),
+                "(v)",
+            ),
+            ("\\newcommand{\\id}[1]{#1}\\id{\\%}x".into(), "\\%x"),
             // Short of arguments, it's unknown, and what it took is text.
             ("\\newcommand{\\f}[2]{#1#2}a\\f{b}".into(), "ab"),
             ("\\newcommand{\\f}[2][d]{#1#2}a\\f[c] ".into(), "a[c]"),
