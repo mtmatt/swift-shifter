@@ -160,6 +160,14 @@ fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
             line: None,
         });
     }
+    if reader.dropped_field_notes > 0 {
+        warnings.push(Warning {
+            one: "note on the title or an author was dropped",
+            many: "notes on the title or authors were dropped",
+            count: reader.dropped_field_notes,
+            line: None,
+        });
+    }
     if reader.unknown_commands > 0 {
         warnings.push(Warning {
             one: "LaTeX command the reader doesn't know kept only its text",
@@ -619,6 +627,33 @@ fn files_named(name: &str) -> Option<usize> {
     }
 }
 
+/// What a reader knows of notes (see [`Reader::note_state`]): its fields
+/// of them, but for the notes read, of which it's how many.
+struct NoteState {
+    note: Option<String>,
+    notes: usize,
+    note_count: usize,
+    footnote_count: i64,
+    unwritten_notes: std::collections::BTreeMap<i64, (String, Option<String>)>,
+    finished_notes: std::collections::HashMap<i64, String>,
+    note_aliases: std::collections::HashMap<String, String>,
+    unmarked_notes: Vec<(i64, String)>,
+    note_labels: std::collections::HashMap<String, String>,
+}
+
+/// Where what's after `\\let` at `items[at..]` ends: the command it defines,
+/// an optional `=` and a space, and the command or character it's to be,
+/// which aren't calls of theirs.
+fn past_let(items: &[Piece], at: usize) -> usize {
+    let at = past_spaces(items, at) + 1;
+    let at = past_spaces(items, at);
+    let at = match items.get(at) {
+        Some(Piece::Token(_, token)) if token == "=" => past_spaces(items, at + 1),
+        _ => at,
+    };
+    (at + 1).min(items.len())
+}
+
 /// Whether `piece` is a definition, or holds one.
 fn holds_definition(piece: &Piece) -> bool {
     let Piece::Node(node) = piece else {
@@ -835,6 +870,9 @@ struct Reader {
     /// The calls of commands the reader doesn't know, which keep only the
     /// text of the groups after them.
     unknown_commands: usize,
+    /// The notes on fields dropped: `\\thanks`, and those a field read
+    /// (see [`Reader::field`]).
+    dropped_field_notes: usize,
     /// How many columns the table cell being read spans.
     cell_span: usize,
     /// The float's last caption, if it has one.
@@ -1255,7 +1293,9 @@ impl Reader {
             // shows nothing.
             // A line, which no writer's text can hold, outside of a block
             // of its own (see `Reader::aligned`).
-            "\\tightlist" | "\\rule" | "\\nocite" | "\\pageref" | "\\centering" | "\\thanks" => {}
+            "\\tightlist" | "\\rule" | "\\nocite" | "\\pageref" | "\\centering" => {}
+            // A note on a field, which is a string: it goes, counted.
+            "\\thanks" => self.dropped_field_notes += 1,
             // A file's name, where the file wasn't read in (see `inputs`).
             _ if files_named(name).is_some() => {}
             // No writer shows colors: the text, in a group of its own, and
@@ -2305,6 +2345,8 @@ impl Reader {
             let name = command_name(&node);
             if DEFINITIONS.contains(&name.as_str()) {
                 self.define(&name, &mut items, &mut at, &mut unbracketed);
+            } else if name == "\\let" {
+                at = past_let(&items, at);
             } else if name == "\\documentclass" {
                 let class = take_arguments(&mut items, &mut at, &mut unbracketed, TABULAR).required;
                 let class = class.first().map(|class| literal_text(class));
@@ -2320,9 +2362,45 @@ impl Reader {
         }
     }
 
-    /// `arg`'s text: a field of the document's, read apart from its text.
+    /// `arg`'s text: a field of the document's, read apart from its text,
+    /// and from its notes: what it holds of them, which a field's text can't
+    /// hold, adds to no count and pairs with no note. The notes it read go,
+    /// counted for a warning.
     fn field(&mut self, arg: Vec<Piece>) -> String {
-        inline_text(&self.table_cell(arg)).trim().to_string()
+        let notes = self.note_state();
+        let text = inline_text(&self.table_cell(arg)).trim().to_string();
+        self.dropped_field_notes += self.notes.len().saturating_sub(notes.notes);
+        self.set_note_state(notes);
+        text
+    }
+
+    /// What the reader knows of notes, to be set back to.
+    fn note_state(&self) -> NoteState {
+        NoteState {
+            note: self.note.clone(),
+            notes: self.notes.len(),
+            note_count: self.note_count,
+            footnote_count: self.footnote_count,
+            unwritten_notes: self.unwritten_notes.clone(),
+            finished_notes: self.finished_notes.clone(),
+            note_aliases: self.note_aliases.clone(),
+            unmarked_notes: self.unmarked_notes.clone(),
+            note_labels: self.note_labels.clone(),
+        }
+    }
+
+    /// Sets what the reader knows of notes back to `state`, the notes read
+    /// since gone.
+    fn set_note_state(&mut self, state: NoteState) {
+        self.note = state.note;
+        self.notes.truncate(state.notes);
+        self.note_count = state.note_count;
+        self.footnote_count = state.footnote_count;
+        self.unwritten_notes = state.unwritten_notes;
+        self.finished_notes = state.finished_notes;
+        self.note_aliases = state.note_aliases;
+        self.unmarked_notes = state.unmarked_notes;
+        self.note_labels = state.note_labels;
     }
 
     /// The authors `arg` names, one for each stretch between its `\\and`s,
@@ -6930,6 +7008,49 @@ mod tests {
         reader.flow(pieces(&root));
         assert_eq!(reader.unexpanded, 20);
         assert!(reader.listings.is_empty(), "{}", reader.listings.len());
+    }
+
+    /// What the preamble's `\let` defines, and what with, isn't called.
+    #[test]
+    fn let_in_the_preamble_calls_nothing() {
+        for source in [
+            "\\title{T}\\let\\saved\\title\\begin{document}x\\end{document}",
+            "\\title{T}\\let\\saved=\\title\\begin{document}x\\end{document}",
+            "\\title{T}\\let \\saved = \\title\\begin{document}x\\end{document}",
+        ] {
+            assert_eq!(read(source).0.meta.title.as_deref(), Some("T"), "{source}");
+        }
+    }
+
+    /// A note in a field adds to no count, and pairs with no note.
+    #[test]
+    fn notes_in_fields_are_apart() {
+        let body = "\\begin{document}x\\footnotemark\\footnotetext{n}\\end{document}";
+        let (plain, _) = read(body);
+        for field in ["\\author{A\\footnotemark}", "\\title{T\\footnote{f}}"] {
+            let (doc, _) = read(&format!("{field}{body}"));
+            assert_eq!(doc.blocks, plain.blocks, "{field}");
+        }
+    }
+
+    /// `\thanks` goes, with a warning, as does a note a field reads.
+    #[test]
+    fn thanks_are_a_warning() {
+        for (field, notes) in [
+            ("\\title{T\\footnote{\\label{n}F}}", 1),
+            ("\\author{A\\footnotemark\\footnotetext{F}}", 1),
+            ("\\author{A\\thanks{u}\\footnote{F}}", 2),
+        ] {
+            let (_, warnings) = read(&format!("{field}\\begin{{document}}x\\end{{document}}"));
+            assert_eq!(warnings.len(), 1, "{field}: {warnings:?}");
+            assert_eq!(warnings[0].count, notes, "{field}");
+        }
+        let (doc, warnings) =
+            read("\\author{A\\thanks{u}\\and B\\thanks{v}}\\begin{document}x\\end{document}");
+        assert_eq!(doc.meta.authors, ["A", "B"]);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert_eq!(warnings[0].count, 2);
+        assert!(warnings[0].one.contains("dropped"));
     }
 
     /// A definition shows nothing where it's written, in any of its forms.
