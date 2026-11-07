@@ -6702,6 +6702,21 @@ mod tests {
         assert!(warnings.is_empty(), "{warnings:?}");
     }
 
+    /// What TeX reads of `\iffalse` and `\iftrue` is what the reader reads
+    /// (see `conditionals`).
+    #[test]
+    fn the_branches_tex_reads_are_read() {
+        for (source, read_as) in [
+            ("\\iffalse A\\else\\iftrue B\\else C\\fi\\fi D", "BD"),
+            ("\\iftrue A \\else B \\fi C", "A C"),
+            ("x\\iftrue\\fi y", "xy"),
+            ("\\iftrue A\\fi@b.c d", "A@b.c d"),
+            ("\\iftrue A\\else B\\fi@b.c d", "A@b.c d"),
+        ] {
+            assert_eq!(read(source).0.blocks, read(read_as).0.blocks, "{source}");
+        }
+    }
+
     /// A definition shows nothing where it's written, in any of its forms.
     #[test]
     fn definitions_show_nothing() {
