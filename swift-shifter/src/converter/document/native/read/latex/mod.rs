@@ -2542,8 +2542,8 @@ impl Reader {
 
     /// The listing a placeholder stands for (see [`listings::cut`]):
     /// `\lstinline`'s inline code, a `lstlisting`'s a code block of its own,
-    /// after its caption, or its title, a paragraph of its own, as `listings`
-    /// sets it above by default.
+    /// in the language its options say, after its caption, or its title, a
+    /// paragraph of its own, as `listings` sets it above by default.
     fn listing(&mut self, args: Vec<Vec<Piece>>) {
         let listing = placeholder_index(&args).and_then(|index| self.listings.get(index));
         match listing.cloned() {
@@ -2565,7 +2565,8 @@ impl Reader {
                     self.close_group(group);
                     self.end_paragraph();
                 }
-                self.blocks.push(Block::Code { lang: None, code });
+                let lang = listings::language(&options);
+                self.blocks.push(Block::Code { lang, code });
             }
             None => {}
         }
@@ -6793,18 +6794,26 @@ mod tests {
         }
     }
 
-    /// `listings`'s code is code, not LaTeX: a `lstlisting` a block, and
-    /// `\lstinline` inline code.
+    /// `listings`'s code is code, not LaTeX: a `lstlisting` a block, in its
+    /// language, and `\lstinline` inline code.
     #[test]
     fn listings_are_code() {
         let code = |code: &str| Block::Code {
             lang: None,
             code: code.into(),
         };
+        let code_in = |lang: &str, code: &str| Block::Code {
+            lang: Some(lang.into()),
+            code: code.into(),
+        };
         let cases: Vec<(&str, Vec<Block>)> = vec![
             (
                 "\\begin{lstlisting}[language=Python]\nprint(1) # %x {\n\\end{lstlisting}",
-                vec![code("print(1) # %x {")],
+                vec![code_in("python", "print(1) # %x {")],
+            ),
+            (
+                "\\begin{lstlisting}[language={[Sharp]C}, numbers=left]\nx\n\\end{lstlisting}",
+                vec![code_in("c", "x")],
             ),
             (
                 "a\\begin{lstlisting}\n$x$ \\end{x}\n\\end{lstlisting}b",
@@ -6830,7 +6839,7 @@ mod tests {
                 vec![
                     para(&[text("a")]),
                     para(&[text("A, "), Inline::Math("x".into())]),
-                    code("x"),
+                    code_in("c", "x"),
                     para(&[text("b")]),
                 ],
             ),
@@ -6850,7 +6859,7 @@ mod tests {
             // A comment in the options is no part of them.
             (
                 "\\begin{lstlisting}[language=C,% note\ncaption={Hello}]\nx\n\\end{lstlisting}",
-                vec![para(&[text("Hello")]), code("x")],
+                vec![para(&[text("Hello")]), code_in("c", "x")],
             ),
             // In a macro, with its arguments.
             (

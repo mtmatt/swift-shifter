@@ -286,6 +286,22 @@ pub(super) fn option(options: &str, key: &str) -> Option<String> {
     })
 }
 
+/// The language a listing's `options` say its code is in, lowercase, as
+/// writers name languages: without its comments, nor a dialect in brackets
+/// before it, as `[Sharp]C`'s, which they have no names for. One with a
+/// space or a backtick in it is none: a writer's code fence would break.
+pub(super) fn language(options: &str) -> Option<String> {
+    let language = without_comments(&option(options, "language")?);
+    let language = language.trim();
+    let language = match language.strip_prefix('[') {
+        Some(dialected) => dialected.split_once(']')?.1,
+        None => language,
+    };
+    let language = language.trim().to_lowercase();
+    let fits = !language.is_empty() && !language.contains(|c: char| c.is_whitespace() || c == '`');
+    fits.then_some(language)
+}
+
 /// `part`, an option, split at its `=`, the first that's not in a comment.
 fn split_at_equals(part: &str) -> Option<(&str, &str)> {
     let mut chars = part.char_indices();
@@ -304,7 +320,7 @@ fn split_at_equals(part: &str) -> Option<(&str, &str)> {
     None
 }
 
-/// `tex`, a key, without its comments.
+/// `tex`, a key or a language, without its comments.
 fn without_comments(tex: &str) -> String {
     let mut out = String::with_capacity(tex.len());
     let mut chars = tex.chars();
@@ -421,6 +437,25 @@ mod tests {
         let cut = cut(&source);
         assert_eq!(cut.mark, format!("{MARK}B"));
         assert_eq!(cut.source, format!("{MARK} {MARK}A {MARK}B{{0}}"));
+    }
+
+    /// Each row: options, and the language they say.
+    #[test]
+    fn languages_are_read_as_writers_name_them() {
+        for (options, expected) in [
+            ("language=Python", Some("python")),
+            ("language = {C++} ", Some("c++")),
+            ("language={[Sharp]C}", Some("c")),
+            ("language=[x86masm]Assembler", Some("assembler")),
+            ("language={}", None),
+            ("language={[Sharp]}", None),
+            ("language=Py% note\nthon", Some("python")),
+            ("language={C ++}", None),
+            ("language=a`b", None),
+            ("caption=x", None),
+        ] {
+            assert_eq!(language(options).as_deref(), expected, "{options}");
+        }
     }
 
     /// Each row: options, a key, and its value.
