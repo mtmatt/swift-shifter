@@ -156,6 +156,14 @@ fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
             line: None,
         });
     }
+    if reader.unknown_commands > 0 {
+        warnings.push(Warning {
+            one: "LaTeX command the reader doesn't know kept only its text",
+            many: "LaTeX commands the reader doesn't know kept only their text",
+            count: reader.unknown_commands,
+            line: None,
+        });
+    }
     if reader.sparse_tables > 0 {
         warnings.push(Warning {
             one: "table too sparse to keep was read as its text",
@@ -798,6 +806,9 @@ struct Reader {
     meta: Meta,
     /// The tables too sparse to keep, read as their text.
     sparse_tables: usize,
+    /// The calls of commands the reader doesn't know, which keep only the
+    /// text of the groups after them.
+    unknown_commands: usize,
     /// How many columns the table cell being read spans.
     cell_span: usize,
     /// The float's last caption, if it has one.
@@ -1243,10 +1254,16 @@ impl Reader {
             }
             // Characters LaTeX gives meanings, escaped.
             _ if ESCAPED.contains(&name) => self.text(&name[1..]),
+            // What's for the page's layout shows nothing (see `layout`).
+            _ if layout(name).is_some() => {}
             // Unknown commands keep their groups' text, as pandoc keeps it,
-            // and as it's written: `\texttt`'s font and `\url`'s address
-            // join nothing.
+            // and as it's written: `\url`'s address joins nothing. What
+            // else they meant is lost, and counted for a warning.
             _ => {
+                // A macro left unexpanded is counted as that.
+                if !matches!(self.definitions.get(name), Some(Some(_))) {
+                    self.unknown_commands += 1;
+                }
                 let outer = std::mem::replace(&mut self.literal, true);
                 self.flow_groups(args);
                 self.literal = outer;
@@ -1318,7 +1335,10 @@ impl Reader {
         // Writers know more commands than the reader does.
         let provided_already = command == "\\providecommand"
             && (self.definitions.contains_key(&name) || known_in_formulas(&name));
-        if provided_already || signature(&name).is_some() {
+        // What it reads keeps its meaning, but for layout, which shows
+        // nothing: a document's own `\maketitle` is its text.
+        let read_as_known = signature(&name).is_some() && layout(&name).is_none();
+        if provided_already || read_as_known {
             return;
         }
         let expanded_here = matches!(command, "\\edef" | "\\xdef");
@@ -3132,6 +3152,42 @@ fn declared(name: &str, font: Font) -> Option<Font> {
     })
 }
 
+/// What a command for the page's layout takes, which shows nothing: no
+/// writer lays out pages, nor sets sizes, and none of these holds the
+/// document's text. Commands that do, as accents and `\bibitem`, aren't
+/// here: what of them is lost is counted for a warning.
+fn layout(name: &str) -> Option<Signature> {
+    let takes = |required| Signature {
+        required,
+        ..Signature::default()
+    };
+    Some(match name {
+        "\\vspace" | "\\hspace" | "\\enlargethispage" => Signature {
+            star: true,
+            required: 1,
+            ..Signature::default()
+        },
+        "\\pagebreak" | "\\nopagebreak" => Signature {
+            optional: true,
+            ..Signature::default()
+        },
+        "\\bibliographystyle"
+        | "\\pagestyle"
+        | "\\thispagestyle"
+        | "\\pagenumbering"
+        | "\\linespread" => takes(1),
+        "\\fontsize" | "\\setlength" | "\\addtolength" | "\\addtocounter" => takes(2),
+        "\\maketitle" | "\\tableofcontents" | "\\listoffigures" | "\\listoftables"
+        | "\\newpage" | "\\clearpage" | "\\cleardoublepage" | "\\noindent" | "\\indent"
+        | "\\smallskip" | "\\medskip" | "\\bigskip" | "\\hfill" | "\\vfill" | "\\relax"
+        | "\\makeatletter" | "\\makeatother" | "\\selectfont" | "\\appendix" | "\\frontmatter"
+        | "\\mainmatter" | "\\backmatter" | "\\raggedright" | "\\raggedleft" | "\\sloppy"
+        | "\\tiny" | "\\scriptsize" | "\\footnotesize" | "\\small" | "\\normalsize" | "\\large"
+        | "\\Large" | "\\LARGE" | "\\huge" | "\\Huge" => takes(0),
+        _ => return None,
+    })
+}
+
 /// Whether `name` is a font declaration (see [`declared`]).
 fn is_declaration(name: &str) -> bool {
     declared(name, Font::default()).is_some()
@@ -3202,6 +3258,9 @@ fn symbol(name: &str) -> Option<&'static str> {
 /// keeps the text of the groups right after it (see [`Reader::command`]).
 /// Those that take nothing leave the groups after them to be read on.
 fn signature(name: &str) -> Option<Signature> {
+    if let Some(signature) = layout(name) {
+        return Some(signature);
+    }
     match name {
         "\\ensuremath" | "\\texttt" => Some(Signature {
             required: 1,
@@ -6567,6 +6626,46 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    /// What's for the page's layout shows nothing, its arguments neither,
+    /// with no warning.
+    #[test]
+    fn layout_shows_nothing() {
+        for (source, expected) in [
+            ("a\\vspace{1em}b \\vspace*{2pt} c", "ab c"),
+            ("a\\hspace{1cm}b\\hfill c", "abc"),
+            ("\\maketitle a\\newpage b\\noindent c", "abc"),
+            ("{\\small a} {\\Large b}", "a b"),
+            ("\\fontsize{10}{12}\\selectfont a", "a"),
+            ("a\\pagebreak b\\nopagebreak c", "abc"),
+            ("\\setlength{\\parindent}{0pt}a", "a"),
+            ("\\bibliographystyle{plain}a", "a"),
+            // But a document's own definition of one is its text.
+            (
+                "\\renewcommand{\\maketitle}{T}\\begin{document}\\maketitle B\\end{document}",
+                "TB",
+            ),
+            ("\\renewcommand{\\vspace}[1]{(#1)}\\vspace{a}", "(a)"),
+        ] {
+            let (doc, warnings) = read(source);
+            assert_eq!(doc.blocks, [para(&[text(expected)])], "{source}");
+            assert!(warnings.is_empty(), "{source}: {warnings:?}");
+        }
+    }
+
+    /// A command the reader doesn't know keeps its groups' text, and each
+    /// call is counted for one warning.
+    #[test]
+    fn unknown_commands_are_a_warning() {
+        let (doc, warnings) = read("\\foo{a} b \\bar \\foo{c}");
+        assert_eq!(doc.blocks, [para(&[text("a b c")])]);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert_eq!(warnings[0].count, 3);
+        assert!(warnings[0].one.contains("doesn't know"));
+        // Nor is a definition unknown, or what the document defines.
+        let (_, warnings) = read("\\newcommand{\\x}{y}\\x \\def\\z#1{#1}\\z{w}");
+        assert!(warnings.is_empty(), "{warnings:?}");
     }
 
     /// A definition shows nothing where it's written, in any of its forms.
