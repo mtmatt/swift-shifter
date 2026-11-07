@@ -245,7 +245,9 @@ fn options_end(text: &str) -> Option<usize> {
 }
 
 /// The value of `key` among a listing's `options`, `key=value` separated by
-/// commas outside groups, a value's braces around all of it gone.
+/// commas outside groups and comments, a value's braces around all of it
+/// gone. A key is read without its comments; a value is TeX as written, for
+/// the parser to read its comments as it reads any.
 pub(super) fn option(options: &str, key: &str) -> Option<String> {
     let mut depth = 0_usize;
     let mut start = 0;
@@ -255,6 +257,9 @@ pub(super) fn option(options: &str, key: &str) -> Option<String> {
         match c {
             '\\' => {
                 chars.next();
+            }
+            '%' => {
+                chars.find(|(_, c)| matches!(c, '\n' | '\r'));
             }
             '{' => depth += 1,
             '}' => depth = depth.saturating_sub(1),
@@ -267,8 +272,8 @@ pub(super) fn option(options: &str, key: &str) -> Option<String> {
     }
     parts.push(&options[start..]);
     parts.into_iter().find_map(|part| {
-        let (name, value) = part.split_once('=')?;
-        if name.trim() != key {
+        let (name, value) = split_at_equals(part)?;
+        if without_comments(name).trim() != key {
             return None;
         }
         let value = value.trim();
@@ -279,6 +284,43 @@ pub(super) fn option(options: &str, key: &str) -> Option<String> {
             .filter(|inside| code_group_end(inside).is_none());
         Some(unbraced.unwrap_or(value).to_string())
     })
+}
+
+/// `part`, an option, split at its `=`, the first that's not in a comment.
+fn split_at_equals(part: &str) -> Option<(&str, &str)> {
+    let mut chars = part.char_indices();
+    while let Some((at, c)) = chars.next() {
+        match c {
+            '\\' => {
+                chars.next();
+            }
+            '%' => {
+                chars.find(|(_, c)| matches!(c, '\n' | '\r'));
+            }
+            '=' => return Some((&part[..at], &part[at + 1..])),
+            _ => {}
+        }
+    }
+    None
+}
+
+/// `tex`, a key, without its comments.
+fn without_comments(tex: &str) -> String {
+    let mut out = String::with_capacity(tex.len());
+    let mut chars = tex.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => {
+                out.push(c);
+                out.extend(chars.next());
+            }
+            '%' => {
+                chars.find(|c| matches!(c, '\n' | '\r'));
+            }
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -390,6 +432,18 @@ mod tests {
             ("caption={a}{b}", "caption", Some("{a}{b}")),
             ("caption={a\\,b}", "caption", Some("a\\,b")),
             ("numbers=left", "language", None),
+            (
+                "language=C,% x, caption=no\ncaption=y",
+                "caption",
+                Some("y"),
+            ),
+            (
+                "caption={\\TeX% note\nbook}",
+                "caption",
+                Some("\\TeX% note\nbook"),
+            ),
+            ("caption % =no\n=y", "caption", Some("y")),
+            ("caption=50\\%", "caption", Some("50\\%")),
         ] {
             assert_eq!(option(options, key).as_deref(), value, "{options}");
         }
