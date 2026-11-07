@@ -1,0 +1,397 @@
+//! The `listings` package's code, `\lstinline` and the `lstlisting`
+//! environment, cut out of the source before the rest of its verbatim text
+//! is (see [`super::verbatim`]): mitex-parser would read it as LaTeX, its
+//! braces, `%` and `\end` included. Each is left as a placeholder that the
+//! reader puts it back at.
+//!
+//! This is the reader's own: `verbatim::cut` is also what pandoc's route
+//! finds files with (see `files`), and is left as it is. So what's in a
+//! comment, verbatim text, or what the parser skips is passed by as it
+//! passes it by.
+
+use super::verbatim::{self, next_command, tex_letter};
+
+/// The name placeholders start from (see [`Cut::mark`]).
+const MARK: &str = "\\SwiftShifterListing";
+
+/// The bytes past `\lstinline` looked at for its code, more than code on a
+/// line has: one left unclosed is looked past again by each after it, so
+/// a line of them costs no more than this for each.
+const MAX_INLINE: usize = 1000;
+
+/// What was cut out.
+#[derive(Clone, Debug, PartialEq)]
+pub(super) enum Listing {
+    /// `\lstinline`'s code.
+    Inline(String),
+    /// A `lstlisting`'s code, and its options as written between brackets.
+    Block {
+        code: String,
+        options: Option<String>,
+    },
+}
+
+/// A source with its listings cut out (see [`cut`]).
+pub(super) struct Cut {
+    /// The source, placeholders where the listings were.
+    pub(super) source: String,
+    /// What was cut out, in order.
+    pub(super) listings: Vec<Listing>,
+    /// The command a placeholder is, its argument the index of what it
+    /// stands for: a control word the source doesn't hold.
+    pub(super) mark: String,
+}
+
+/// `source` with its listings cut out (see [`cut_into`]).
+pub(super) fn cut(source: &str) -> Cut {
+    let mark = mark(source);
+    let mut listings = Vec::new();
+    let source = cut_into(source, &mark, &mut listings);
+    Cut {
+        source,
+        listings,
+        mark,
+    }
+}
+
+/// `source` with its listings cut out, appended to `listings`, each left as
+/// a placeholder of `mark`. One left unclosed is left as it is, and so is one
+/// whose code holds a macro's parameter (`#1`, `##`), for the macro's text,
+/// its arguments in it, to be cut again (see `Reader::expand_call`).
+pub(super) fn cut_into(source: &str, mark: &str, listings: &mut Vec<Listing>) -> String {
+    let mut out = String::with_capacity(source.len());
+    let (mut copied, mut at) = (0, 0);
+    let mut unclosed = Vec::new();
+    let mut listing_unclosed = false;
+    while let Some((start, command)) = next_command(&source[at..], tex_letter) {
+        let after = at + start + command.len();
+        at = after;
+        let rest = &source[after..];
+        let taken = match command {
+            "\\lstinline" => inline(rest),
+            "\\begin" => match verbatim::block(rest, &mut unclosed) {
+                // Verbatim text, which isn't a listing's.
+                Some((_, len)) => {
+                    at += len;
+                    None
+                }
+                None if listing_unclosed => None,
+                None => {
+                    let block = block(rest);
+                    listing_unclosed = block.is_none() && is_listing(rest);
+                    block
+                }
+            },
+            "\\verb" => {
+                at += verbatim::inline(rest).map_or(0, |(_, len)| len);
+                None
+            }
+            "\\iffalse" | "\\iftypst" => {
+                at += verbatim::skipped(rest);
+                None
+            }
+            _ => None,
+        };
+        let taken = taken.filter(|(listing, _)| !holds_parameter(listing));
+        if let Some((listing, len)) = taken {
+            out.push_str(&source[copied..after - command.len()]);
+            out.push_str(&format!("{mark}{{{}}}", listings.len()));
+            listings.push(listing);
+            copied = after + len;
+            at = copied;
+        }
+    }
+    out.push_str(&source[copied..]);
+    out
+}
+
+/// Whether `listing`'s code holds a macro's parameter: a `#` and a digit or
+/// another `#`.
+fn holds_parameter(listing: &Listing) -> bool {
+    let (Listing::Inline(code) | Listing::Block { code, .. }) = listing;
+    code.as_bytes()
+        .windows(2)
+        .any(|pair| pair[0] == b'#' && (pair[1].is_ascii_digit() || pair[1] == b'#'))
+}
+
+/// The command placeholders in `source` are: [`MARK`], and a letter or
+/// more after it, the first that makes a name `source` doesn't hold.
+fn mark(source: &str) -> String {
+    (0usize..)
+        .map(|n| {
+            let mut suffix = String::new();
+            let mut n = n;
+            while n > 0 {
+                n -= 1;
+                suffix.insert(0, char::from(b'A' + (n % 26) as u8));
+                n /= 26;
+            }
+            format!("{MARK}{suffix}")
+        })
+        .find(|mark| !source.contains(mark.as_str()))
+        .expect("more names than the source holds")
+}
+
+/// `\lstinline`'s code, from what's after its name: a star, its options in
+/// brackets, then the code between a delimiter and itself again, as for
+/// `\verb`, or in braces, which may nest; and how long all that is. All of
+/// it is on its line, and within [`MAX_INLINE`]. The options go, as no
+/// inline code holds a language.
+fn inline(after: &str) -> Option<(Listing, usize)> {
+    let bound = (after.len().min(MAX_INLINE)..=after.len())
+        .find(|end| after.is_char_boundary(*end))
+        .unwrap_or(after.len());
+    let after = &after[..bound];
+    let after = &after[..after.find(['\n', '\r']).unwrap_or(after.len())];
+    let star = usize::from(after.starts_with('*'));
+    let options = match after[star..].strip_prefix('[') {
+        Some(inside) => star + options_end(inside)? + 2,
+        None => star,
+    };
+    let rest = &after[options..];
+    if let Some(inside) = rest.strip_prefix('{') {
+        let end = code_group_end(inside)?;
+        let code = inside[..end].to_string();
+        return Some((Listing::Inline(code), options + end + 2));
+    }
+    let delimiter = rest
+        .chars()
+        .next()
+        .filter(|c| !c.is_alphabetic() && !c.is_whitespace())?;
+    let opened = delimiter.len_utf8();
+    let end = rest[opened..].find(delimiter)?;
+    let code = rest[opened..opened + end].to_string();
+    Some((Listing::Inline(code), options + opened + end + opened))
+}
+
+/// Whether `after`, what's after `\begin`, names a `lstlisting`.
+fn is_listing(after: &str) -> bool {
+    after
+        .trim_start_matches([' ', '\t'])
+        .starts_with("{lstlisting}")
+}
+
+/// A `lstlisting`'s code, from what's after `\begin`: past its options in
+/// brackets right after its name, which may run over lines, and the rest of
+/// that line, as `listings` reads it, the lines to its `\end`, without the
+/// line break before that; and how long all that is.
+fn block(after: &str) -> Option<(Listing, usize)> {
+    if !is_listing(after) {
+        return None;
+    }
+    const END: &str = "\\end{lstlisting}";
+    let start = after.find("{lstlisting}")? + "{lstlisting}".len();
+    let close = after[start..].find(END)?;
+    let inside = &after[start..start + close];
+    let spaces = inside.len() - inside.trim_start_matches([' ', '\t']).len();
+    let bracketed = inside[spaces..].strip_prefix('[');
+    let bracket = bracketed.and_then(options_end);
+    let options = bracketed
+        .zip(bracket)
+        .map(|(text, end)| text[..end].to_string());
+    let past_options = bracket.map_or(0, |bracket| spaces + bracket + 2);
+    // The rest of that line goes, and its line break.
+    let code = match inside[past_options..].find(['\n', '\r']) {
+        Some(end) => {
+            let code = &inside[past_options + end..];
+            let code = code.strip_prefix("\r\n").unwrap_or(&code[1..]);
+            ["\r\n", "\n", "\r"]
+                .into_iter()
+                .find_map(|line_end| code.strip_suffix(line_end))
+                .unwrap_or(code)
+        }
+        None => "",
+    };
+    let code = code.to_string();
+    Some((Listing::Block { code, options }, start + close + END.len()))
+}
+
+/// Where the `}` closing a group of code is in `text`, its braces counted
+/// as they're written, as code's are: `None` if it isn't there.
+fn code_group_end(text: &str) -> Option<usize> {
+    let mut depth = 0_usize;
+    for (at, c) in text.char_indices() {
+        match c {
+            '}' if depth == 0 => return Some(at),
+            '{' => depth += 1,
+            '}' => depth -= 1,
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Where the `]` closing options in `text` is: they're TeX, so it's outside
+/// their groups, and past escaped characters (`\}`) and comments. `None` if
+/// it isn't there, or a group closes that isn't open.
+fn options_end(text: &str) -> Option<usize> {
+    let mut depth = 0_usize;
+    let mut chars = text.char_indices();
+    while let Some((at, c)) = chars.next() {
+        match c {
+            '\\' => {
+                chars.next();
+            }
+            '%' => {
+                chars.find(|(_, c)| matches!(c, '\n' | '\r'));
+            }
+            ']' if depth == 0 => return Some(at),
+            '{' => depth += 1,
+            '}' => depth = depth.checked_sub(1)?,
+            _ => {}
+        }
+    }
+    None
+}
+
+/// The value of `key` among a listing's `options`, `key=value` separated by
+/// commas outside groups, a value's braces around all of it gone.
+pub(super) fn option(options: &str, key: &str) -> Option<String> {
+    let mut depth = 0_usize;
+    let mut start = 0;
+    let mut parts = Vec::new();
+    let mut chars = options.char_indices();
+    while let Some((at, c)) = chars.next() {
+        match c {
+            '\\' => {
+                chars.next();
+            }
+            '{' => depth += 1,
+            '}' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(&options[start..at]);
+                start = at + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&options[start..]);
+    parts.into_iter().find_map(|part| {
+        let (name, value) = part.split_once('=')?;
+        if name.trim() != key {
+            return None;
+        }
+        let value = value.trim();
+        // Braces around all of it, not `{a}{b}`.
+        let unbraced = value
+            .strip_prefix('{')
+            .and_then(|inside| inside.strip_suffix('}'))
+            .filter(|inside| code_group_end(inside).is_none());
+        Some(unbraced.unwrap_or(value).to_string())
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn inline(code: &str) -> Listing {
+        Listing::Inline(code.into())
+    }
+
+    fn block(code: &str, options: Option<&str>) -> Listing {
+        Listing::Block {
+            code: code.into(),
+            options: options.map(Into::into),
+        }
+    }
+
+    /// Each row: the source, what it's left as, and what's cut out.
+    #[test]
+    fn listings_are_cut_out_as_listings_reads_them() {
+        let mark = |n: &str| format!("{MARK}{{{n}}}");
+        let cases: Vec<(&str, String, Vec<Listing>)> = vec![
+            (
+                "\\begin{lstlisting}\n%x $y$ {\n\\end{verbatim}\n\\end{lstlisting}\nafter",
+                format!("{}\nafter", mark("0")),
+                vec![block("%x $y$ {\n\\end{verbatim}", None)],
+            ),
+            (
+                "\\begin{lstlisting}[language=C, caption={a, [b]}] gone\nint x;\n\\end{lstlisting}",
+                mark("0"),
+                vec![block("int x;", Some("language=C, caption={a, [b]}"))],
+            ),
+            (
+                "\\begin{lstlisting} [language=C,\n numbers=left] gone\nx\n\\end{lstlisting}",
+                mark("0"),
+                vec![block("x", Some("language=C,\n numbers=left"))],
+            ),
+            (
+                "\\begin{lstlisting}[caption={\\}]}]\nx\n\\end{lstlisting}",
+                mark("0"),
+                vec![block("x", Some("caption={\\}]}"))],
+            ),
+            (
+                "\\begin{lstlisting}[unclosed\nx\n\\end{lstlisting}",
+                mark("0"),
+                vec![block("x", None)],
+            ),
+            (
+                "a \\lstinline|x{%| \\lstinline[language=C]{a{b}c} \\lstinline!y!",
+                format!("a {} {} {}", mark("0"), mark("1"), mark("2")),
+                vec![inline("x{%"), inline("a{b}c"), inline("y")],
+            ),
+            (
+                "\\lstinline*|x| \\lstinline[caption={\\{}]|y| $a*b$",
+                format!("{} {} $a*b$", mark("0"), mark("1")),
+                vec![inline("x"), inline("y")],
+            ),
+        ];
+        for (source, left, listings) in cases {
+            let cut = cut(source);
+            assert_eq!((cut.source, cut.listings), (left, listings), "{source}");
+        }
+    }
+
+    /// In a comment, verbatim text or what the parser skips, unclosed, or
+    /// across a line's end, it's left as it is.
+    #[test]
+    fn what_is_no_listing_is_left() {
+        for source in [
+            "% \\lstinline|x| \\begin{lstlisting}x\\end{lstlisting}",
+            "\\verb|\\lstinline|x| \\begin{verbatim}\\lstinline|y|\\end{verbatim}",
+            "\\iffalse \\lstinline|x| \\fi",
+            "\\begin{lstlisting}[x] unclosed",
+            "\\lstinline|x",
+            "\\lstinline{x",
+            "\\lstinline{x\ny}",
+            "\\lstinline[x|y|",
+            "\\begin{lstlistingx}a\\end{lstlistingx}",
+            // A macro's parameter in it is the macro's.
+            "\\lstinline{#1} \\lstinline|##|",
+        ] {
+            let cut = cut(source);
+            assert_eq!(
+                (cut.source.as_str(), cut.listings),
+                (source, Vec::new()),
+                "{source}"
+            );
+        }
+        // Past the bound, it's none.
+        let long = format!("\\lstinline{{{}}}", "x".repeat(MAX_INLINE));
+        assert!(cut(&long).listings.is_empty());
+    }
+
+    /// A placeholder is a command the source doesn't hold.
+    #[test]
+    fn placeholders_are_named_apart_from_the_source() {
+        let source = format!("{MARK} {MARK}A \\lstinline|x|");
+        let cut = cut(&source);
+        assert_eq!(cut.mark, format!("{MARK}B"));
+        assert_eq!(cut.source, format!("{MARK} {MARK}A {MARK}B{{0}}"));
+    }
+
+    /// Each row: options, a key, and its value.
+    #[test]
+    fn options_are_read_by_key() {
+        for (options, key, value) in [
+            ("language=C, caption=x", "language", Some("C")),
+            ("language = C ,caption={a, b}", "caption", Some("a, b")),
+            ("caption={a}{b}", "caption", Some("{a}{b}")),
+            ("caption={a\\,b}", "caption", Some("a\\,b")),
+            ("numbers=left", "language", None),
+        ] {
+            assert_eq!(option(options, key).as_deref(), value, "{options}");
+        }
+    }
+}
