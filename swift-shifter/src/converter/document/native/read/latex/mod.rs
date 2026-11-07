@@ -541,6 +541,22 @@ fn known_in_formulas(name: &str) -> bool {
     mitex_spec_gen::DEFAULT_SPEC.get_cmd(name).is_some()
 }
 
+/// Takes the command `pieces` end in, if they end in one, with the spaces
+/// after it, which TeX doesn't see after a control word.
+fn take_last_command(pieces: &mut Vec<Piece>) -> Option<Piece> {
+    let last = pieces.iter().rposition(|piece| match piece {
+        Piece::Token(SyntaxKind::TokenWhiteSpace, _) => false,
+        Piece::Token(SyntaxKind::TokenLineBreak, breaks) => line_ends(breaks) > 1,
+        _ => true,
+    })?;
+    let command = matches!(&pieces[last], Piece::Node(node) if node.kind() == SyntaxKind::ItemCmd);
+    if !command {
+        return None;
+    }
+    pieces.truncate(last + 1);
+    pieces.pop()
+}
+
 /// Whether `piece` is a definition, or holds one.
 fn holds_definition(piece: &Piece) -> bool {
     let Piece::Node(node) = piece else {
@@ -815,6 +831,10 @@ impl Reader {
                     SyntaxKind::ItemCmd => {
                         let name = command_name(&node);
                         if self.expand(&name) {
+                            continue;
+                        }
+                        if let Some(body) = self.macro_taking_arguments(&name) {
+                            self.expand_call(&body, &mut items, &mut at, &mut unbracketed);
                             continue;
                         }
                         let signature = if name == self.verbatim_mark {
@@ -1349,11 +1369,102 @@ impl Reader {
         true
     }
 
-    /// What `name` stands for in text, where a macro taking arguments isn't
-    /// read yet.
+    /// What `name` stands for, if it's a macro taking no arguments, which
+    /// is read from its pieces.
     fn macro_named(&self, name: &str) -> Option<Rc<Macro>> {
         let body = self.definitions.get(name).cloned().flatten();
         body.filter(|body| body.parameters == 0)
+    }
+
+    /// What `name` stands for, if it's a macro taking arguments, which is
+    /// read from its source with them in it (see [`Reader::expand_call`]).
+    fn macro_taking_arguments(&self, name: &str) -> Option<Rc<Macro>> {
+        let body = self.definitions.get(name).cloned().flatten();
+        body.filter(|body| body.parameters > 0)
+    }
+
+    /// Reads a call of `body`, a macro taking arguments, with those it
+    /// takes from `items[*at..]`: its source with them in it, parsed again,
+    /// as [`Reader::expand`] reads one taking none, and within the same
+    /// bounds. Short of arguments, or past those bounds, it's an unknown
+    /// command, and what it took shows as its text.
+    fn expand_call(
+        &mut self,
+        body: &Macro,
+        items: &mut [Piece],
+        at: &mut usize,
+        unbracketed: &mut usize,
+    ) {
+        let optional = body.default.is_some();
+        let signature = Signature {
+            optional,
+            required: body.parameters - usize::from(optional),
+            ..Signature::default()
+        };
+        let taken = take_arguments(items, at, unbracketed, signature);
+        let last_is_control_word = matches!(taken.required.last().map(Vec::as_slice),
+            Some([Piece::Node(node)]) if node.kind() == SyntaxKind::ItemCmd
+                && command_name(node)[1..].starts_with(|c: char| c.is_ascii_alphabetic()));
+        let mut arguments = Vec::with_capacity(body.parameters);
+        if let Some(default) = &body.default {
+            let given = taken.optional.as_deref().map(source_text);
+            arguments.push(given.unwrap_or_else(|| default.clone()));
+        }
+        arguments.extend(taken.required.iter().map(|argument| source_text(argument)));
+        if arguments.len() < body.parameters {
+            return self.unexpanded_call(taken);
+        }
+        let text = if self.expansion_depth < MAX_EXPANSION_DEPTH {
+            macros::substituted(&body.source, &arguments, self.expansion_left)
+        } else {
+            None
+        };
+        // As the document's source is, before it's parsed.
+        let text = text.map(|text| formulas::separate_formulas(&formulas::close_scripts(&text)));
+        let nesting = text.as_deref().map_or(usize::MAX, nesting_bound);
+        let Some(text) = text.filter(|_| nesting <= self.nesting_left) else {
+            self.unexpanded += 1;
+            return self.unexpanded_call(taken);
+        };
+        self.expansion_left = self.expansion_left.saturating_sub(text.len() + CALL_COST);
+        let root = mitex_parser::parse_without_macro(&text, CommandSpec::new(Default::default()));
+        let mut expanded = pieces(&root);
+        let last_command = take_last_command(&mut expanded);
+        self.nesting_left -= nesting;
+        self.expansion_depth += 1;
+        self.non_space();
+        self.flow(expanded);
+        self.expansion_depth -= 1;
+        self.nesting_left += nesting;
+        // Spaces after its last argument are read, but for those after a
+        // control word, which TeX doesn't see.
+        self.skip_spaces = last_is_control_word;
+        // A command it ends in takes its arguments from what's after the
+        // call, as in TeX: it's read next, in place of what the call took.
+        // Read there, not in it, a chain of such calls costs no stack, and
+        // what it may expand to still bounds it.
+        if let Some(command) = last_command {
+            *at -= 1;
+            items[*at] = command;
+        }
+    }
+
+    /// What a call that isn't expanded took, as an unknown command's text.
+    fn unexpanded_call(&mut self, taken: Arguments) {
+        let mut groups = Vec::new();
+        if let Some(optional) = taken.optional {
+            let mut bracketed = vec![Piece::Token(SyntaxKind::TokenLBracket, "[".into())];
+            bracketed.extend(optional);
+            bracketed.push(Piece::Token(SyntaxKind::TokenRBracket, "]".into()));
+            groups.push(bracketed);
+        }
+        groups.extend(taken.required);
+        self.non_space();
+        // As after any control word.
+        self.skip_spaces = groups.is_empty();
+        let outer = std::mem::replace(&mut self.literal, true);
+        self.flow_groups(groups);
+        self.literal = outer;
     }
 
     /// Whether `body` may be read `depth` macros deep (see
@@ -2419,6 +2530,12 @@ const MIN_EXPANSION: usize = 1 << 16;
 /// what documents do, and an end to macros calling others twice over, which
 /// double at each level.
 const EXPANSION_PER_BYTE: usize = 4;
+
+/// What a call of a macro taking arguments costs of what a document may
+/// expand to, besides the bytes it expands to: parsing them again costs
+/// more than their bytes, and a short one that calls itself would cost
+/// many times what reading the document does.
+const CALL_COST: usize = 32;
 
 /// What a group's end does to a definition made in it.
 struct UndoDefinition {
@@ -6225,7 +6342,6 @@ mod tests {
     }
 
     /// A definition shows nothing where it's written, in any of its forms.
-    /// A call to one taking arguments shows only the groups after it.
     #[test]
     fn definitions_show_nothing() {
         for definition in [
@@ -6242,10 +6358,6 @@ mod tests {
             let source = format!("a{definition}b");
             assert_eq!(read(&source).0.blocks, [para(&[text("ab")])], "{source}");
         }
-        assert_eq!(
-            read("\\newcommand{\\f}[1]{hidden}a\\f b \\f{c}").0.blocks,
-            [para(&[text("ab c")])]
-        );
         // With no group in sight, what's after it isn't lost.
         let far = format!("a\\def\\f{}{{b}}", "#".repeat(MAX_DEFINITION_PARAMETERS));
         for source in ["a\\def\\f#1${hidden}b", "a\\def\\f#1 b", &far] {
@@ -6360,10 +6472,10 @@ mod tests {
                 "\\renewcommand\\section{\\@startsection{section}{1}}\\section{a}",
                 vec![heading(1, &[text("a")])],
             ),
-            // Taking arguments, it's unknown, and so is what it replaced.
-            ("\\newcommand{\\x}[1]{a#1}\\x{b}", plain("b")),
-            ("\\def\\x{a}\\def\\x#1{b}\\x c", plain("c")),
-            // So is one that takes its meanings where it's defined.
+            // Taking arguments, it replaces what it replaced.
+            ("\\def\\x{a}\\def\\x#1{b#1}\\x c", plain("bc")),
+            // One that takes its meanings where it's defined is unknown, and
+            // so is what it replaced.
             ("\\edef\\x{a}\\x b", plain("b")),
             ("\\def\\x{a}{\\xdef\\x{b}}\\x c", plain("c")),
             // Not balanced, it's unknown, and what's after it stays.
@@ -6380,6 +6492,98 @@ mod tests {
         ];
         for (source, expected) in cases {
             assert_eq!(read(source).0.blocks, expected, "{source}");
+        }
+    }
+
+    /// Each row: a call of a macro taking arguments, and what it stands for,
+    /// written out, which it reads as.
+    #[test]
+    fn macros_taking_arguments_are_expanded() {
+        let f = "\\newcommand{\\f}[1]{(#1)}";
+        let cases = [
+            (format!("{f}a\\f{{b}}c"), "a(b)c"),
+            ("\\newcommand{\\f}[2]{#2#1}\\f{a}{b}".into(), "ba"),
+            ("\\def\\f#1#2{#2#1}\\f ab".into(), "ba"),
+            // The spaces after it are read, but after a control word.
+            (format!("{f}\\f{{a}} b"), "(a) b"),
+            (format!("{f}\\f a b"), "(a) b"),
+            (format!("\\def\\y{{y}}{f}\\f\\y b"), "(y)b"),
+            // An argument doesn't run on into what's after it.
+            (
+                "\\def\\x{X}\\def\\xy{Z}\\newcommand{\\f}[1]{#1y}\\f\\x".into(),
+                "Xy",
+            ),
+            ("\\newcommand{\\f}[1]{a\\\\#1}\\f{b}".into(), "a\\\\b"),
+            ("\\newcommand{\\f}[1]{\\##1\\#}\\f{a}".into(), "\\#a\\#"),
+            ("\\newcommand{\\f}[1]{#1##}\\f{a}".into(), "a\\#"),
+            // What's in an argument is as it was.
+            (format!("{f}\\f{{a  b}}"), "(a b)"),
+            (format!("{f}\\f{{a%c\nb}}"), "(ab)"),
+            (format!("{f}\\f{{\\verb|a#1|}}"), "(\\verb|a#1|)"),
+            (format!("{f}\\f{{$x^2$}}"), "($x^2$)"),
+            (
+                "\\newcommand{\\f}[1]{$\\text{#1 c}$}\\f{a b}".into(),
+                "$\\text{a b c}$",
+            ),
+            (format!("{f}\\f{{\\emph{{a}}}}"), "(\\emph{a})"),
+            // An optional first argument.
+            ("\\newcommand{\\f}[2][d]{#1#2}\\f{a}".into(), "da"),
+            ("\\newcommand{\\f}[2][d]{#1#2}\\f[c]{a}".into(), "ca"),
+            // What it stands for is read as the document is.
+            (
+                "\\newcommand{\\f}[1]{\\section{#1}}\\f{a} b".into(),
+                "\\section{a} b",
+            ),
+            (
+                format!("{f}\\newcommand{{\\g}}[1]{{\\f{{#1}}\\f{{#1}}}}\\g{{a}}"),
+                "(a)(a)",
+            ),
+            ("\\newcommand{\\f}[1]{\\def\\y{#1}}\\f{a}\\y".into(), "a"),
+            // A command it ends in takes its arguments from after the call.
+            (
+                "\\newcommand{\\id}[1]{#1}A\\id\\footnote{note}B".into(),
+                "A\\footnote{note}B",
+            ),
+            (
+                "\\newcommand{\\id}[1]{#1}\\id\\verb|hello|".into(),
+                "\\verb|hello|",
+            ),
+            (
+                format!("{f}\\newcommand{{\\g}}[1]{{#1\\f}}\\g{{a}}{{b}} c"),
+                "a(b) c",
+            ),
+            (
+                "\\newcommand{\\f}[1]{(#1)\\textbf }\\f{a}{b}".into(),
+                "(a)\\textbf{b}",
+            ),
+            // Short of arguments, it's unknown, and what it took is text.
+            ("\\newcommand{\\f}[2]{#1#2}a\\f{b}".into(), "ab"),
+            ("\\newcommand{\\f}[2][d]{#1#2}a\\f[c] ".into(), "a[c]"),
+            ("\\newcommand{\\f}[1]{#1}a\\f\n\nb".into(), "a\n\nb"),
+        ];
+        for (source, written) in cases {
+            assert_eq!(read(&source).0.blocks, read(written).0.blocks, "{source}");
+        }
+    }
+
+    /// A macro taking arguments that calls itself ends, with the warning
+    /// for that, however it grows.
+    #[test]
+    fn a_macro_taking_arguments_that_never_ends_is_cut_short() {
+        for source in [
+            "\\newcommand{\\a}[1]{\\a{#1}}\\a{x} done",
+            "\\newcommand{\\a}[1]{\\a{#1#1}}\\a{x} done",
+            "\\newcommand{\\a}[1]{#1\\a{#1}}\\a{x} done",
+            "\\newcommand{\\a}[1]{{\\a{#1}}}\\a{x} done",
+            "\\newcommand{\\a}[1]{\\a{{#1}}}\\a{x} done",
+            "\\newcommand{\\a}[1]{\\a#1\\a#1}\\a x done",
+            "\\newcommand{\\a}[1][d]{\\a}\\a done",
+            "\\newcommand{\\a}[1][d]{#1\\a}\\a done",
+        ] {
+            let (doc, warnings) = read(source);
+            assert!(format!("{:?}", doc.blocks).contains("done"), "{source}");
+            assert_eq!(warnings.len(), 1, "{source}");
+            assert!(warnings[0].one.contains("unexpanded"), "{source}");
         }
     }
 
