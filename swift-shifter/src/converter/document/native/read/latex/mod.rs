@@ -116,6 +116,7 @@ fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
         verbatim_mark: cut.mark,
         listings: listed.listings,
         listing_mark: listed.mark,
+        boundary: macros::boundary_for(&source),
         expansion_left: source
             .len()
             .saturating_mul(EXPANSION_PER_BYTE)
@@ -570,11 +571,26 @@ impl Macro {
     }
 }
 
-/// Whether mitex, which writers read formulas with, knows the command `name`.
-fn known_in_formulas(name: &str) -> bool {
+/// Whether LaTeX has the command `name`, as far as mitex, which writers
+/// read formulas with, knows it: but for what mitex takes from KaTeX (see
+/// [`KATEX_ALIASES`]), which a document providing it means its own.
+fn known_to_latex(name: &str) -> bool {
     let name = name.strip_prefix('\\').unwrap_or(name);
-    mitex_spec_gen::DEFAULT_SPEC.get_cmd(name).is_some()
+    !KATEX_ALIASES.contains(&name) && mitex_spec_gen::DEFAULT_SPEC.get_cmd(name).is_some()
 }
+
+/// Commands mitex knows that LaTeX, amsmath and amssymb don't: KaTeX's
+/// aliases, after HTML's entities (`\larr`) and others' habits (`\R`,
+/// `\tg`). Not `\empty`, which LaTeX's kernel has, nor `\th`, its thorn.
+const KATEX_ALIASES: [&str; 71] = [
+    "Alpha", "Beta", "Chi", "Complex", "Darr", "Epsilon", "Eta", "Harr", "Iota", "Kappa", "Larr",
+    "Lrarr", "Mu", "N", "Nu", "Omicron", "Q", "R", "Rarr", "Reals", "Rho", "Tau", "Uarr", "Z",
+    "Zeta", "alef", "alefsym", "arcctg", "arctg", "argmax", "argmin", "bull", "ch", "clubs",
+    "cnums", "cosec", "cotg", "ctg", "cth", "dArr", "darr", "diamonds", "exist", "hArr", "harr",
+    "hearts", "image", "infin", "isin", "lArr", "lang", "larr", "lrArr", "lrarr", "natnums",
+    "omicron", "plusmn", "rArr", "rang", "rarr", "real", "reals", "sdot", "sect", "sh", "spades",
+    "tg", "thetasym", "uArr", "uarr", "weierp",
+];
 
 /// Takes the command `pieces` end in, if they end in one that would take
 /// its arguments from what's after them: with the spaces after it, which
@@ -898,6 +914,9 @@ struct Reader {
     /// command their placeholders are.
     listings: Vec<listings::Listing>,
     listing_mark: String,
+    /// What marks an argument's ends in a macro's text (see
+    /// [`macros::boundary_for`]).
+    boundary: char,
     /// How many lists the text being read is in.
     lists: usize,
     /// The counters of the `enumerate`s the text being read is in, the
@@ -1407,7 +1426,7 @@ impl Reader {
         } = definition;
         // Writers know more commands than the reader does.
         let provided_already = command == "\\providecommand"
-            && (self.definitions.contains_key(&name) || known_in_formulas(&name));
+            && (self.definitions.contains_key(&name) || known_to_latex(&name));
         // What it reads keeps its meaning, but for layout, which shows
         // nothing: a document's own `\maketitle` is its text.
         let read_as_known = signature(&name).is_some() && layout(&name).is_none();
@@ -1546,7 +1565,8 @@ impl Reader {
             return self.unexpanded_call(taken);
         }
         let text = if self.expansion_depth < MAX_EXPANSION_DEPTH {
-            macros::substituted(&body.source, &arguments, self.expansion_left)
+            macros::substituted(&body.source, &arguments, self.expansion_left, self.boundary)
+                .map(|text| macros::without_boundaries(&text, self.boundary))
         } else {
             None
         };

@@ -4,6 +4,32 @@
 
 use super::{DEFINITIONS, MAX_EXPANSION_DEPTH, Macro, Reader};
 
+/// What [`substituted`] puts at each end of an argument, in a document of
+/// `source`: where the macro's source and the argument's meet, which TeX
+/// read apart. The spaces after a control word go only where they're of its
+/// own source (see [`Reader::expand_tex`]), so not past this; it's taken out
+/// when the text is done (see [`without_boundaries`]). A private use
+/// character `source` doesn't hold, so neither does any macro's text or
+/// argument, which are of it.
+pub(super) fn boundary_for(source: &str) -> char {
+    let private = |c: &char| matches!(c, '\u{e000}'..='\u{f8ff}' | '\u{f0000}'..='\u{ffffd}');
+    let held: std::collections::HashSet<char> = source.chars().filter(private).collect();
+    ('\u{e000}'..='\u{f8ff}')
+        .chain('\u{f0000}'..='\u{ffffd}')
+        .find(|c| !held.contains(c))
+        // A source holding all 71,000 of them shares one.
+        .unwrap_or('\u{e000}')
+}
+
+/// `text` without the `boundary`s put in it (see [`boundary_for`]).
+pub(super) fn without_boundaries(text: &str, boundary: char) -> String {
+    text.replace(boundary, "")
+}
+
+/// The spaces TeX doesn't see after a control word: not other Unicode
+/// spaces, which are text.
+const TEX_SPACES: [char; 4] = [' ', '\t', '\n', '\r'];
+
 impl Reader {
     /// `tex`, a formula, with the macros it calls expanded, as far as
     /// [`Reader::expand`] would; a call that goes past that stays as it is,
@@ -13,10 +39,10 @@ impl Reader {
         if defines(tex) {
             return tex.to_string();
         }
-        let mut expanded = Tex::default();
+        let mut expanded = Tex::new(self.boundary);
         expanded.text.reserve(tex.len());
         self.expand_tex(tex, None, 0, &mut expanded);
-        expanded.text
+        without_boundaries(&expanded.text, self.boundary)
     }
 
     /// Appends `tex` to `out` with its macros expanded, `depth` macros deep,
@@ -37,8 +63,17 @@ impl Reader {
             rest = past_name;
             let body = self.definitions.get(name).cloned().flatten();
             let body = body.filter(|body| !defines(&body.source));
+            // TeX doesn't see the spaces after a control word, which would
+            // be a call's text's in `\text`: those of its own source, not
+            // past a boundary, which isn't a space.
+            let control_word = name[1..].starts_with(|c: char| c.is_ascii_alphabetic() || c == '@');
+            let past_spaces = if control_word {
+                rest.trim_start_matches(TEX_SPACES)
+            } else {
+                rest
+            };
             let unread = Unread {
-                text: rest,
+                text: past_spaces,
                 then: after,
                 skip: taken_after,
             };
@@ -48,7 +83,7 @@ impl Reader {
                 continue;
             };
             let text = (depth < MAX_EXPANSION_DEPTH)
-                .then(|| substituted(&body.source, &arguments, self.expansion_left))
+                .then(|| substituted(&body.source, &arguments, self.expansion_left, self.boundary))
                 .flatten();
             let Some(text) = text else {
                 self.unexpanded += 1;
@@ -56,6 +91,7 @@ impl Reader {
                 continue;
             };
             self.expansion_left = self.expansion_left.saturating_sub(text.len() + 1);
+            rest = past_spaces;
             take(&mut rest, &mut taken_after, taken);
             let unread = Unread {
                 text: rest,
@@ -78,15 +114,15 @@ impl Reader {
     fn arguments_at(&mut self, body: &Macro, unread: &Unread) -> Option<(Vec<String>, usize)> {
         let last = unread.then.is_none();
         let end = if last { End::Input } else { End::Macro };
-        let found = arguments(body, unread.text, end);
+        let found = arguments(body, unread.text, end, self.boundary);
         if found.is_some() || last {
             return found;
         }
         let mut window = 64_usize;
         loop {
-            let start = unread.start(window);
+            let start = unread.start(window, self.boundary);
             let end = if start.whole { End::Input } else { End::Window };
-            match arguments(body, &start.text, end) {
+            match arguments(body, &start.text, end, self.boundary) {
                 Some((_, taken)) if taken >= self.expansion_left => {
                     self.unexpanded += 1;
                     return None;
@@ -115,9 +151,9 @@ struct Unread<'a> {
 }
 
 impl Unread<'_> {
-    /// Its first `length` bytes or so, whole characters.
-    fn start(&self, length: usize) -> Start {
-        let mut text = Tex::default();
+    /// Its first `length` bytes or so, whole characters, `boundary`s kept.
+    fn start(&self, length: usize, boundary: char) -> Start {
+        let mut text = Tex::new(boundary);
         let mut spaces = Vec::new();
         let mut unread = Some(self);
         let mut skip = 0;
@@ -180,26 +216,41 @@ fn take(rest: &mut &str, taken_after: &mut usize, taken: usize) {
 }
 
 /// TeX being put together, keeping tokens apart where it's joined.
-#[derive(Default)]
 struct Tex {
     text: String,
     /// Whether `text` ends in a control word, which letters would run on
     /// from.
     in_control_word: bool,
+    /// What marks an argument's ends in it (see [`boundary_for`]).
+    boundary: char,
 }
 
 impl Tex {
+    fn new(boundary: char) -> Tex {
+        Tex {
+            text: String::new(),
+            in_control_word: false,
+            boundary,
+        }
+    }
+
     /// Appends `tex`, whole tokens, with a space before it if it would run
     /// on from a control word. Spaces there mean nothing in math, and an
-    /// argument of `\text` that holds one is its own.
+    /// argument of `\text` that holds one is its own. A boundary keeps
+    /// nothing apart, and is looked past.
     fn push(&mut self, tex: &str) {
         if tex.is_empty() {
             return;
         }
-        if self.in_control_word && tex.starts_with(|c: char| c.is_ascii_alphabetic()) {
+        let starts = tex.trim_start_matches(self.boundary);
+        if self.in_control_word && starts.starts_with(|c: char| c.is_ascii_alphabetic()) {
             self.text.push(' ');
         }
         self.text.push_str(tex);
+        let tex = tex.trim_end_matches(self.boundary);
+        if tex.is_empty() {
+            return;
+        }
         let before_letters = tex.trim_end_matches(|c: char| c.is_ascii_alphabetic());
         let backslashes = before_letters.len() - before_letters.trim_end_matches('\\').len();
         self.in_control_word = before_letters.len() < tex.len() && backslashes % 2 == 1;
@@ -233,11 +284,11 @@ fn command_length(tex: &str) -> usize {
 /// What a call of `body` takes from `after`, what's after its name: each
 /// argument, and the bytes they took. `None` if one's missing, which leaves
 /// the call as written, or if what's past `end` could change them.
-fn arguments(body: &Macro, after: &str, end: End) -> Option<(Vec<String>, usize)> {
+fn arguments(body: &Macro, after: &str, end: End, boundary: char) -> Option<(Vec<String>, usize)> {
     let mut arguments = Vec::with_capacity(body.parameters);
     let mut at = 0;
     if let Some(default) = &body.default {
-        let next = at + spaces(&after[at..]);
+        let next = at + spaces(&after[at..], boundary);
         let given = after[next..].strip_prefix('[').and_then(|inside| {
             let end = closing(inside, ']')?;
             Some((&inside[..end], next + end + 2))
@@ -255,7 +306,7 @@ fn arguments(body: &Macro, after: &str, end: End) -> Option<(Vec<String>, usize)
         }
     }
     while arguments.len() < body.parameters {
-        at += spaces(&after[at..]);
+        at += spaces(&after[at..], boundary);
         let rest = &after[at..];
         let (argument, length) = if let Some(inside) = rest.strip_prefix('{') {
             let end = closing(inside, '}')?;
@@ -277,9 +328,12 @@ fn arguments(body: &Macro, after: &str, end: End) -> Option<(Vec<String>, usize)
     Some((arguments, at))
 }
 
-/// The bytes of spaces `tex` starts with.
-fn spaces(tex: &str) -> usize {
-    tex.len() - tex.trim_start().len()
+/// The bytes of spaces `tex` starts with, and `boundary`s among them.
+fn spaces(tex: &str, boundary: char) -> usize {
+    tex.len()
+        - tex
+            .trim_start_matches(|c: char| c.is_whitespace() || c == boundary)
+            .len()
 }
 
 /// Where `close` is in `tex`, outside any group: `}` ends the group `tex` is
@@ -301,12 +355,17 @@ fn closing(tex: &str, close: char) -> Option<usize> {
     None
 }
 
-/// `source`, a macro's, with `arguments` for its `#1`, `#2` and so on, and
-/// `#` for its `##`. `None` if that's `limit` bytes or more, before it's all
-/// put together.
-pub(super) fn substituted(source: &str, arguments: &[String], limit: usize) -> Option<String> {
-    let mut text = Tex::default();
-    let mut push = |tex: &str| {
+/// `source`, a macro's, with `arguments` for its `#1`, `#2` and so on, each
+/// between `boundary`s (see [`boundary_for`]), and `#` for its `##`. `None`
+/// if that's `limit` bytes or more, before it's all put together.
+pub(super) fn substituted(
+    source: &str,
+    arguments: &[String],
+    limit: usize,
+    boundary: char,
+) -> Option<String> {
+    let mut text = Tex::new(boundary);
+    let push = |text: &mut Tex, tex: &str| {
         let fits = text.text.len() + tex.len() < limit;
         if fits {
             text.push(tex);
@@ -333,16 +392,20 @@ pub(super) fn substituted(source: &str, arguments: &[String], limit: usize) -> O
         if next != Some('#') && argument.is_none() {
             continue;
         }
-        if !push(&source[run..at]) {
+        if !push(&mut text, &source[run..at]) {
             return None;
         }
         chars.next();
-        if !push(argument.map_or("#", String::as_str)) {
+        let put = match argument {
+            Some(argument) => format!("{boundary}{argument}{boundary}"),
+            None => "#".to_string(),
+        };
+        if !push(&mut text, &put) {
             return None;
         }
         run = at + 2;
     }
-    push(&source[run..]).then_some(text.text)
+    push(&mut text, &source[run..]).then_some(text.text)
 }
 
 #[cfg(test)]
@@ -381,7 +444,8 @@ mod tests {
             ("\\def\\y{\\x}\\def\\x{a}$\\y$", "a"),
             // The name is the whole of it.
             ("\\def\\x{a}$\\xy$", "\\xy"),
-            ("\\def\\x{a}$\\x y$", "a y"),
+            // TeX doesn't see the spaces after a control word.
+            ("\\def\\x{a}$\\x y$", "ay"),
             ("\\def\\x{\\alpha}$\\x{}y$", "\\alpha{}y"),
             // `\\\\` is a line break, then an `x`, and `\\#` is a character.
             ("\\def\\x{a}$\\\\x$", "\\\\x"),
@@ -402,7 +466,37 @@ mod tests {
                 "\\newcommand{\\f}[1]{\\text{#1 c}}$\\f{a b}$",
                 "\\text{a b c}",
             ),
-            ("\\def\\x{a}$\\text{\\x b}$", "\\text{a b}"),
+            ("\\def\\x{a}$\\text{\\x b}$", "\\text{ab}"),
+            // But for those after an argument, which are the macro's.
+            (
+                "\\def\\x{a}\\newcommand{\\f}[1]{#1 b}$\\text{\\f{\\x}}$",
+                "\\text{a b}",
+            ),
+            (
+                "\\def\\x{a}\\newcommand{\\f}[1]{#1 b}$\\text{\\f{\\x c}}$",
+                "\\text{ac b}",
+            ),
+            // Nor those an argument starts with, nor in one passed on.
+            (
+                "\\def\\x{a}\\def\\f#1{\\x#1}$\\text{\\f{ b}}$",
+                "\\text{a b}",
+            ),
+            // Other Unicode spaces are text.
+            ("\\def\\x{a}$\\text{\\x\u{a0}b}$", "\\text{a\u{a0}b}"),
+            // A private use character of the document's is as it is.
+            (
+                "\\def\\x{a}\\newcommand{\\f}[1]{#1\u{e000}}$\\text{\u{e000}\\f{\\x\u{e000}}}$",
+                "\\text{\u{e000}a\u{e000}\u{e000}}",
+            ),
+            (
+                "\\def\\x{a}\\def\\g#1{#1}\\def\\f#1{\\g{#1 b}}$\\text{\\f{\\x}}$",
+                "\\text{a b}",
+            ),
+            ("\\def\\x{a}$\\text{\\x{} b}$", "\\text{a{} b}"),
+            ("\\def\\x{a}$\\text{\\x\\ b}$", "\\text{a\\ b}"),
+            ("\\def\\@x{a}$\\text{\\@x b}$", "\\text{ab}"),
+            // But after a control symbol.
+            ("\\def\\+{a}$\\text{\\+ b}$", "\\text{a b}"),
             // A control word doesn't run on into what's after it.
             ("\\newcommand{\\f}[1]{\\alpha#1}$\\f{b}$", "\\alpha b"),
             ("\\newcommand{\\f}[1]{\\alpha}$\\f{a}b$", "\\alpha b"),
@@ -423,7 +517,7 @@ mod tests {
             ),
             (
                 "\\newcommand{\\f}[2]{#1#2}\\def\\g{\\f a}\\def\\h{\\g b}$\\h c$",
-                "ab c",
+                "abc",
             ),
             ("\\newcommand{\\f}[1]{(#1)}\\def\\g{\\f}$\\g$", "\\f"),
             ("\\newcommand{\\a}[1]{\\a}$\\a{x}{y}{z}$", "\\a"),
@@ -441,12 +535,19 @@ mod tests {
             ),
             ("\\newcommand{\\f}[1][d]{#1}\\def\\g{\\f}$\\g[c]$", "c"),
             ("\\newcommand{\\f}[1][d]{#1}\\def\\g{\\f}$\\g$", "d"),
-            ("\\newcommand{\\f}[1][d]{#1}\\def\\g{\\f}$\\g x$", "d x"),
+            ("\\newcommand{\\f}[1][d]{#1}\\def\\g{\\f}$\\g x$", "dx"),
             // `\\providecommand` leaves what formulas know.
             ("\\providecommand{\\label}[1]{}$a$", "a"),
             ("\\providecommand{\\sin}{q}$\\sin x$", "\\sin x"),
-            ("\\renewcommand{\\sin}{q}$\\sin x$", "q x"),
-            ("\\providecommand{\\foo}{q}$\\foo x$", "q x"),
+            ("\\renewcommand{\\sin}{q}$\\sin x$", "qx"),
+            ("\\providecommand{\\foo}{q}$\\foo x$", "qx"),
+            // But for what mitex takes from KaTeX, which LaTeX doesn't have.
+            (
+                "\\providecommand{\\R}{\\mathbb{R}}$x\\in\\R$",
+                "x\\in\\mathbb{R}",
+            ),
+            ("\\providecommand{\\tg}{T}$\\tg$", "T"),
+            ("\\providecommand{\\alpha}{T}$\\alpha$", "\\alpha"),
             // Short of arguments, it's as written.
             ("\\newcommand{\\f}[2]{#1#2}$\\f{a}$", "\\f{a}"),
             // Nor does what's after an argument.
@@ -466,11 +567,11 @@ mod tests {
             // `\\DeclareMathOperator`.
             (
                 "\\DeclareMathOperator{\\op}{ab}$\\op x$",
-                "\\operatorname{ab} x",
+                "\\operatorname{ab}x",
             ),
             (
                 "\\DeclareMathOperator*{\\op}{ab}$\\op x$",
-                "\\operatorname*{ab} x",
+                "\\operatorname*{ab}x",
             ),
             (
                 "\\DeclareMathOperator{\\op}{ab}\\begin{document}$\\op$\\end{document}",
