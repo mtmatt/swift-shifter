@@ -10,6 +10,7 @@ mod conditionals;
 pub mod files;
 mod formulas;
 mod inputs;
+mod listings;
 mod macros;
 pub mod paths;
 pub mod stage;
@@ -103,7 +104,8 @@ fn nesting_bound(source: &str) -> usize {
 /// (see [`MAX_LIST_NESTING`]).
 fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
     let source = conditionals::keep_else(source);
-    let cut = verbatim::cut(&source);
+    let listed = listings::cut(&source);
+    let cut = verbatim::cut(&listed.source);
     // The parser's expanding macros, which may never end, would parse more
     // than `source` holds, past `nesting_bound`: `Reader::expand` reads them.
     let closed = formulas::close_scripts(&cut.source);
@@ -112,6 +114,8 @@ fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
     let mut reader = Reader {
         verbatims: cut.verbatims,
         verbatim_mark: cut.mark,
+        listings: listed.listings,
+        listing_mark: listed.mark,
         expansion_left: source
             .len()
             .saturating_mul(EXPANSION_PER_BYTE)
@@ -852,6 +856,10 @@ struct Reader {
     verbatims: Vec<Verbatim>,
     /// The command a placeholder is (see [`verbatim::Cut::mark`]).
     verbatim_mark: String,
+    /// The listings cut out of the source (see [`listings::cut`]), and the
+    /// command their placeholders are.
+    listings: Vec<listings::Listing>,
+    listing_mark: String,
     /// How many lists the text being read is in.
     lists: usize,
     /// The counters of the `enumerate`s the text being read is in, the
@@ -898,7 +906,7 @@ impl Reader {
                             self.expand_call(&body, &mut items, &mut at, &mut unbracketed);
                             continue;
                         }
-                        let signature = if name == self.verbatim_mark {
+                        let signature = if name == self.verbatim_mark || name == self.listing_mark {
                             Some(PLACEHOLDER)
                         } else {
                             signature(&name)
@@ -1074,6 +1082,9 @@ impl Reader {
         }
         if name == self.verbatim_mark {
             return self.verbatim(args);
+        }
+        if name == self.listing_mark {
+            return self.listing(args);
         }
         if let Some(symbol) = symbol(name) {
             self.text(symbol);
@@ -1507,6 +1518,11 @@ impl Reader {
             return self.unexpanded_call(taken);
         };
         self.expansion_left = self.expansion_left.saturating_sub(text.len() + CALL_COST);
+        // Listings holding its parameters, left in its text, now hold its
+        // arguments.
+        let mark = std::mem::take(&mut self.listing_mark);
+        let text = listings::cut_into(&text, &mark, &mut self.listings);
+        self.listing_mark = mark;
         let root = mitex_parser::parse_without_macro(&text, CommandSpec::new(Default::default()));
         let mut expanded = pieces(&root);
         let last_command = take_last_command(&mut expanded, |name| self.required_arguments(name));
@@ -1668,34 +1684,16 @@ impl Reader {
     /// `tex` with the verbatim text its placeholders stand for (see
     /// [`verbatim::cut`]) back in it, each a `\verb`.
     fn with_verbatims(&self, tex: &str) -> String {
-        let mut out = String::new();
-        let mut rest = tex;
-        while let Some(at) = rest.find(&self.verbatim_mark) {
-            let after = &rest[at + self.verbatim_mark.len()..];
-            let placeholder = after.strip_prefix('{').and_then(|inside| {
-                let (number, _) = inside.split_once('}')?;
-                let index: usize = number.trim_end().parse().ok()?;
-                let code = self.verbatims.get(index)?;
-                Some((code, number.len() + 2))
-            });
-            out.push_str(&rest[..at]);
-            let Some((code, length)) = placeholder else {
-                // A command of the source's, whose name only starts as the
-                // mark does.
-                out.push_str(&self.verbatim_mark);
-                rest = after;
-                continue;
-            };
-            let (Verbatim::Inline(code) | Verbatim::Block(code)) = code;
-            match ('!'..='~').find(|c| !c.is_alphanumeric() && *c != '*' && !code.contains(*c)) {
-                Some(delimiter) => out.push_str(&format!("\\verb{delimiter}{code}{delimiter}")),
-                // No `\verb` can hold it.
-                None => out.push_str(code),
-            }
-            rest = &after[length..];
-        }
-        out.push_str(rest);
-        out
+        let tex = with_codes(tex, &self.verbatim_mark, |index| {
+            let (Verbatim::Inline(code) | Verbatim::Block(code)) = self.verbatims.get(index)?;
+            Some(code.as_str())
+        });
+        // And the listings', the same way (see [`listings::cut`]).
+        with_codes(&tex, &self.listing_mark, |index| {
+            let (listings::Listing::Inline(code) | listings::Listing::Block { code, .. }) =
+                self.listings.get(index)?;
+            Some(code.as_str())
+        })
     }
 
     /// A `quote`-like environment: a quote of its blocks, if it has any.
@@ -2508,27 +2506,55 @@ impl Reader {
     /// its argument (see [`verbatim::cut`]): `\verb`'s inline code, the
     /// `verbatim` environment's a code block of its own.
     fn verbatim(&mut self, args: Vec<Vec<Piece>>) {
-        let index = args.iter().flatten().find_map(|piece| match piece {
-            Piece::Token(SyntaxKind::TokenWord, number) => number.parse::<usize>().ok(),
-            _ => None,
-        });
-        match index.and_then(|index| self.verbatims.get(index)).cloned() {
-            // Right after another, it's one with it, as TeX sets them, which
-            // writers can't set apart.
-            Some(Verbatim::Inline(code)) => {
-                self.non_space();
-                // Empty, it shows nothing.
-                if code.is_empty() {
-                    return;
-                }
-                let run = self.run();
-                match run.last_mut() {
-                    Some(Inline::Code(before)) => before.push_str(&code),
-                    _ => run.push(Inline::Code(code)),
-                }
-            }
+        match placeholder_index(&args)
+            .and_then(|index| self.verbatims.get(index))
+            .cloned()
+        {
+            Some(Verbatim::Inline(code)) => self.inline_code(code),
             Some(Verbatim::Block(code)) => {
                 self.end_paragraph();
+                self.blocks.push(Block::Code { lang: None, code });
+            }
+            None => {}
+        }
+    }
+
+    /// Inline code: right after other code, it's one with it, as TeX sets
+    /// them, which writers can't set apart. Empty, it shows nothing.
+    fn inline_code(&mut self, code: String) {
+        self.non_space();
+        if code.is_empty() {
+            return;
+        }
+        let run = self.run();
+        match run.last_mut() {
+            Some(Inline::Code(before)) => before.push_str(&code),
+            _ => run.push(Inline::Code(code)),
+        }
+    }
+
+    /// The listing a placeholder stands for (see [`listings::cut`]):
+    /// `\lstinline`'s inline code, a `lstlisting`'s a code block of its own,
+    /// after its caption, or its title, a paragraph of its own, as `listings`
+    /// sets it above by default.
+    fn listing(&mut self, args: Vec<Vec<Piece>>) {
+        let listing = placeholder_index(&args).and_then(|index| self.listings.get(index));
+        match listing.cloned() {
+            Some(listings::Listing::Inline(code)) => self.inline_code(code),
+            Some(listings::Listing::Block { code, options }) => {
+                self.end_paragraph();
+                let options = options.unwrap_or_default();
+                let caption = listings::option(&options, "caption")
+                    .or_else(|| listings::option(&options, "title"));
+                if let Some(caption) = caption {
+                    let caption = formulas::separate_formulas(&formulas::close_scripts(&caption));
+                    let root = mitex_parser::parse_without_macro(
+                        &caption,
+                        CommandSpec::new(Default::default()),
+                    );
+                    self.flow(pieces(&root));
+                    self.end_paragraph();
+                }
                 self.blocks.push(Block::Code { lang: None, code });
             }
             None => {}
@@ -2639,6 +2665,45 @@ thread_local! {
 }
 
 /// A verbatim placeholder's: its index (see [`verbatim::Cut::mark`]).
+/// `tex` with the code each placeholder of `mark` stands for, `code` of its
+/// index, back in it, each a `\verb`.
+fn with_codes<'a>(tex: &str, mark: &str, code: impl Fn(usize) -> Option<&'a str>) -> String {
+    let mut out = String::new();
+    let mut rest = tex;
+    while let Some(at) = rest.find(mark) {
+        let after = &rest[at + mark.len()..];
+        let placeholder = after.strip_prefix('{').and_then(|inside| {
+            let (number, _) = inside.split_once('}')?;
+            let index: usize = number.trim_end().parse().ok()?;
+            Some((code(index)?, number.len() + 2))
+        });
+        out.push_str(&rest[..at]);
+        let Some((code, length)) = placeholder else {
+            // A command of the source's, whose name only starts as the mark
+            // does.
+            out.push_str(mark);
+            rest = after;
+            continue;
+        };
+        match ('!'..='~').find(|c| !c.is_alphanumeric() && *c != '*' && !code.contains(*c)) {
+            Some(delimiter) => out.push_str(&format!("\\verb{delimiter}{code}{delimiter}")),
+            // No `\verb` can hold it.
+            None => out.push_str(code),
+        }
+        rest = &after[length..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// The index a placeholder's argument holds (see [`PLACEHOLDER`]).
+fn placeholder_index(args: &[Vec<Piece>]) -> Option<usize> {
+    args.iter().flatten().find_map(|piece| match piece {
+        Piece::Token(SyntaxKind::TokenWord, number) => number.parse::<usize>().ok(),
+        _ => None,
+    })
+}
+
 const PLACEHOLDER: Signature = Signature {
     star: false,
     optional: false,
@@ -6714,6 +6779,67 @@ mod tests {
             ("\\iftrue A\\else B\\fi@b.c d", "A@b.c d"),
         ] {
             assert_eq!(read(source).0.blocks, read(read_as).0.blocks, "{source}");
+        }
+    }
+
+    /// `listings`'s code is code, not LaTeX: a `lstlisting` a block, and
+    /// `\lstinline` inline code.
+    #[test]
+    fn listings_are_code() {
+        let code = |code: &str| Block::Code {
+            lang: None,
+            code: code.into(),
+        };
+        let cases: Vec<(&str, Vec<Block>)> = vec![
+            (
+                "\\begin{lstlisting}[language=Python]\nprint(1) # %x {\n\\end{lstlisting}",
+                vec![code("print(1) # %x {")],
+            ),
+            (
+                "a\\begin{lstlisting}\n$x$ \\end{x}\n\\end{lstlisting}b",
+                vec![para(&[text("a")]), code("$x$ \\end{x}"), para(&[text("b")])],
+            ),
+            (
+                "a \\lstinline|x{%| b \\lstinline[language=C]{y}\\verb|z|",
+                vec![para(&[
+                    text("a "),
+                    Inline::Code("x{%".into()),
+                    text(" b "),
+                    Inline::Code("yz".into()),
+                ])],
+            ),
+            // Its caption, or title, before it, its other options gone.
+            (
+                "a\\begin{lstlisting}[caption={A, $x$}, language=C]\nx\n\\end{lstlisting}b",
+                vec![
+                    para(&[text("a")]),
+                    para(&[text("A, "), Inline::Math("x".into())]),
+                    code("x"),
+                    para(&[text("b")]),
+                ],
+            ),
+            (
+                "\\begin{lstlisting}[title=T]\nx\n\\end{lstlisting}",
+                vec![para(&[text("T")]), code("x")],
+            ),
+            // In a macro, with its arguments.
+            (
+                "\\newcommand{\\sample}[1]{\\lstinline{#1}}a \\sample{h&{}i}",
+                vec![para(&[text("a "), Inline::Code("h&{}i".into())])],
+            ),
+            // In a formula, as `\verb` is.
+            (
+                "$\\text{\\lstinline|a_b|}$",
+                vec![para(&[Inline::Math("\\text{\\verb!a_b!}".into())])],
+            ),
+            // In verbatim text, it's that text.
+            (
+                "\\begin{verbatim}\n\\begin{lstlisting}\nx\n\\end{lstlisting}\n\\end{verbatim}",
+                vec![code("\\begin{lstlisting}\nx\n\\end{lstlisting}")],
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(read(source).0.blocks, expected, "{source}");
         }
     }
 
