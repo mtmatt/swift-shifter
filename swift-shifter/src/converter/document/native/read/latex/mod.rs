@@ -9,6 +9,7 @@
 mod conditionals;
 pub mod files;
 mod formulas;
+mod inputs;
 mod macros;
 pub mod paths;
 pub mod stage;
@@ -42,6 +43,20 @@ const STACK_BASE: usize = 1 << 20;
 /// characters other than letters, digits and spaces, is read as plain
 /// text, with a warning.
 const MAX_STACK: usize = 1 << 30;
+
+/// `source`, a document in `dir`, with the files it reads in (see
+/// [`inputs`]), as [`read`] reads it, and warnings of what of those wasn't
+/// read too.
+#[allow(
+    dead_code,
+    reason = "native::convert reads .tex with it at the switch (#73)"
+)]
+pub fn read_in(source: &str, dir: &std::path::Path) -> (Document, Vec<Warning>) {
+    let inlined = inputs::inlined(source, dir);
+    let (doc, mut warnings) = read(&inlined.source);
+    warnings.extend(inlined.warnings());
+    (doc, warnings)
+}
 
 /// `source`, and, where it might nest too deep to parse, a warning that it
 /// was read as plain text instead, or one of what of it was (see
@@ -557,6 +572,19 @@ fn take_last_command(pieces: &mut Vec<Piece>) -> Option<Piece> {
     pieces.pop()
 }
 
+/// How many files or folders `name`, a command reading a file in, names
+/// (see [`inputs`]): what it takes, which shows nothing where the file isn't
+/// read in. Not in [`signature`], which would take a letter of `\\input
+/// file`'s name for one.
+fn files_named(name: &str) -> Option<usize> {
+    match name {
+        "\\input" | "\\include" => Some(1),
+        "\\import" | "\\subimport" | "\\inputfrom" | "\\subinputfrom" | "\\includefrom"
+        | "\\subincludefrom" => Some(2),
+        _ => None,
+    }
+}
+
 /// Whether `piece` is a definition, or holds one.
 fn holds_definition(piece: &Piece) -> bool {
     let Piece::Node(node) = piece else {
@@ -864,11 +892,14 @@ impl Reader {
                                 }
                                 args
                             }
-                            // Unknown: the groups right after it.
+                            // Unknown: the groups right after it; a file's
+                            // name, those it names (see `files_named`).
                             None => {
+                                let most = files_named(&name).unwrap_or(usize::MAX);
                                 let mut groups = Vec::new();
                                 while let Some(Piece::Node(group)) = items.get(at)
                                     && group.kind() == SyntaxKind::ItemCurly
+                                    && groups.len() < most
                                 {
                                     groups.push(pieces(group));
                                     at += 1;
@@ -1176,6 +1207,8 @@ impl Reader {
             // A line, which no writer's text can hold, outside of a block
             // of its own (see `Reader::aligned`).
             "\\tightlist" | "\\rule" | "\\nocite" | "\\pageref" | "\\centering" | "\\thanks" => {}
+            // A file's name, where the file wasn't read in (see `inputs`).
+            _ if files_named(name).is_some() => {}
             // No writer shows colors: the text, in a group of its own, and
             // a color declared shows nothing. The text isn't an argument
             // that keeps it inline: a display formula in it is one still.
