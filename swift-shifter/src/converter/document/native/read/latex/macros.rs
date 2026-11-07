@@ -304,7 +304,7 @@ fn closing(tex: &str, close: char) -> Option<usize> {
 /// `source`, a macro's, with `arguments` for its `#1`, `#2` and so on, and
 /// `#` for its `##`. `None` if that's `limit` bytes or more, before it's all
 /// put together.
-fn substituted(source: &str, arguments: &[String], limit: usize) -> Option<String> {
+pub(super) fn substituted(source: &str, arguments: &[String], limit: usize) -> Option<String> {
     let mut text = Tex::default();
     let mut push = |tex: &str| {
         let fits = text.text.len() + tex.len() < limit;
