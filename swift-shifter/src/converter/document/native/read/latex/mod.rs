@@ -1156,6 +1156,15 @@ impl Reader {
             // A line, which no writer's text can hold, outside of a block
             // of its own (see `Reader::aligned`).
             "\\tightlist" | "\\rule" | "\\nocite" | "\\pageref" | "\\centering" | "\\thanks" => {}
+            // No writer shows colors: the text, in a group of its own, and
+            // a color declared shows nothing. The text isn't an argument
+            // that keeps it inline: a display formula in it is one still.
+            "\\textcolor" => {
+                if let Some(text) = args.into_iter().nth(1) {
+                    self.flow_groups(vec![text]);
+                }
+            }
+            "\\color" => {}
             "\\ensuremath" => {
                 if let Some(arg) = args.first() {
                     self.math(&source_text(arg), false);
@@ -2981,6 +2990,17 @@ fn signature(name: &str) -> Option<Signature> {
         "\\par" | "\\" | "\\tightlist" | "\\newline" => Some(Signature::default()),
         "\\texorpdfstring" => Some(Signature {
             required: 2,
+            ..Signature::default()
+        }),
+        // A color model in brackets, then the color.
+        "\\textcolor" => Some(Signature {
+            optional: true,
+            required: 2,
+            ..Signature::default()
+        }),
+        "\\color" => Some(Signature {
+            optional: true,
+            required: 1,
             ..Signature::default()
         }),
         "\\href" => Some(Signature {
@@ -5304,10 +5324,29 @@ mod tests {
             // Their first argument alone; a box keeps its text.
             ("\\texorpdfstring{a}{b}c", "ac"),
             ("\\mbox{a}b \\mbox c", "ab c"),
+            // Colors, which no writer shows: the text alone.
+            ("a\\textcolor{red}{b}c", "abc"),
+            ("a\\textcolor[rgb]{1,0,0}{b} c", "ab c"),
+            ("a {\\color{red} b} c", "a b c"),
+            ("a\\color[rgb]{1,0,0}b", "ab"),
         ];
         for (source, expected) in cases {
             assert_eq!(read(source).0.blocks, [para(&[text(expected)])], "{source}");
         }
+        // A color's text is in the font around it.
+        assert_eq!(
+            read("\\textbf{a\\textcolor{red}{b}}c").0.blocks,
+            [para(&[Inline::Strong(vec![text("ab")]), text("c")])]
+        );
+        // A display formula in it is one still.
+        assert_eq!(
+            read("a\\textcolor{red}{\\[x=1\\]}b").0.blocks,
+            read("a\\[x=1\\]b").0.blocks
+        );
+        assert!(matches!(
+            read("a\\textcolor{red}{\\[x=1\\]}b").0.blocks[..],
+            [_, Block::Math(_), _]
+        ));
         // In code and math, nothing's joined.
         assert_eq!(
             read("\\verb|a--b| $a--b'$").0.blocks,
