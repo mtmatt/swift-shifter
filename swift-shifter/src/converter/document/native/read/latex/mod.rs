@@ -1623,7 +1623,7 @@ impl Reader {
     fn math(&mut self, tex: &str, display: bool) {
         self.non_space();
         let tex = self.expanded_math(tex);
-        let tex = without_labels(&tex);
+        let tex = unlinked(&tex);
         let tex = tex.as_str();
         let trimmed = tex.trim_end();
         // A space that a backslash makes a control space is the formula's.
@@ -3044,23 +3044,34 @@ fn take_note_marks(inlines: &mut Vec<Inline>, marks: &mut Vec<Inline>) {
     });
 }
 
-/// `tex` without its `\label`s, which show nothing, and which nothing goes
-/// to: a formula has no id. A letter that would run into what's before it
-/// stays apart from it.
-fn without_labels(tex: &str) -> String {
+/// `tex` with nothing in it that links: a formula has no id, so its
+/// `\label`s go, as nothing goes to them, and a `\ref` or `\eqref` in it
+/// is its label as text, as one in text shows when it links to no heading
+/// (see [`Reader::reference`]). Writers would make one a link to a label
+/// that isn't there, which typst can't compile. A letter that would run
+/// into what's before it stays apart from it.
+fn unlinked(tex: &str) -> String {
     let mut out = String::with_capacity(tex.len());
     let (mut copied, mut at) = (0, 0);
     while let Some((start, name)) = verbatim::next_command(&tex[at..], verbatim::tex_letter) {
         let command = at + start;
         at = command + name.len();
-        if name != "\\label" {
+        if !matches!(name, "\\label" | "\\ref" | "\\eqref") {
             continue;
         }
         let after = tex[at..].trim_start();
+        let after = match after.strip_prefix('*') {
+            Some(starred) if name != "\\label" => starred.trim_start(),
+            _ => after,
+        };
         let Some(group) = after.strip_prefix('{').and_then(group_end) else {
             continue;
         };
         out.push_str(&tex[copied..command]);
+        if name != "\\label" {
+            let label = after[1..group].trim();
+            out.push_str(&format!("\\text{{[{}]}}", text_escaped(label)));
+        }
         at = tex.len() - after.len() + 1 + group;
         copied = at;
         let letter = |c: char| c.is_ascii_alphabetic();
@@ -3069,6 +3080,27 @@ fn without_labels(tex: &str) -> String {
         }
     }
     out.push_str(&tex[copied..]);
+    out
+}
+
+/// `text`, a label in a formula, written to show as it is in `\text`: as
+/// it was written, without the groups `formulas::close_scripts` closed its
+/// `_` and `^` with, and TeX's special characters escaped or named.
+fn text_escaped(text: &str) -> String {
+    let text = text.replace("_{}", "_").replace("^{}", "^");
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '_' | '#' | '%' | '&' | '$' | '{' | '}' => {
+                out.push('\\');
+                out.push(c);
+            }
+            '\\' => out.push_str("\\textbackslash{}"),
+            '^' => out.push_str("\\textasciicircum{}"),
+            '~' => out.push_str("\\textasciitilde{}"),
+            c => out.push(c),
+        }
+    }
     out
 }
 
@@ -6601,6 +6633,44 @@ mod tests {
                 ),
             ]
         );
+    }
+
+    /// A reference in a formula is its label as text, as nothing in a
+    /// formula links, and typst typesets it.
+    #[test]
+    fn references_in_formulas_are_text() {
+        let math = |source: &str| match &read(source).0.blocks[..] {
+            [Block::Math(tex)] => tex.clone(),
+            [Block::Paragraph(inlines)] => match &inlines[..] {
+                [Inline::Math(tex)] => tex.clone(),
+                other => panic!("{source}: {other:?}"),
+            },
+            other => panic!("{source}: {other:?}"),
+        };
+        for (source, tex) in [
+            ("$a \\eqref{x}$", "a \\text{[x]}"),
+            ("$\\ref*{s:a_b}b$", "\\text{[s:a\\_b]}b"),
+            ("$\\ref {a}$", "\\text{[a]}"),
+            ("\\[y \\ref{z}\\label{w}\\]", "y \\text{[z]}"),
+            ("$\\eqref{a#b&c}$", "\\text{[a\\#b\\&c]}"),
+            // As it was written, scripts and all.
+            ("$\\ref{tail_}$", "\\text{[tail\\_]}"),
+            (
+                "$\\ref{a^b~c}$",
+                "\\text{[a\\textasciicircum{}b\\textasciitilde{}c]}",
+            ),
+            // Left as it is where it isn't one.
+            ("$\\refx{a}$", "\\refx{a}"),
+            ("$\\ref x$", "\\ref x"),
+        ] {
+            assert_eq!(math(source), tex, "{source}");
+        }
+        let (doc, _) = read("$x \\eqref{a}$ and\n\n\\[y \\ref{b_c} \\ref{d^e~f_}\\]");
+        let typeset = crate::converter::document::native::typeset(&doc, std::path::Path::new("."));
+        let Ok((_, shown_as_tex)) = typeset else {
+            panic!("{typeset:?}");
+        };
+        assert_eq!(shown_as_tex, 0);
     }
 
     /// A definition shows nothing where it's written, in any of its forms.
