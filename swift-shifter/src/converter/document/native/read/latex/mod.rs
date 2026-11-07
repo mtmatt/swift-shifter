@@ -1192,6 +1192,11 @@ impl Reader {
                     None => self.in_font(content, self.font()),
                 }
             }
+            "\\texttt" => {
+                if let Some(arg) = args.into_iter().next() {
+                    self.typewriter(arg);
+                }
+            }
             "\\newline" => {
                 self.inline(Inline::LineBreak);
                 self.skip_spaces = true;
@@ -1671,6 +1676,75 @@ impl Reader {
             self.flow(pieces);
             self.end_paragraph();
         }
+    }
+
+    /// `\texttt`'s argument: code, if all it added is text, as the LaTeX
+    /// writer writes code. Otherwise what it holds stays where it was read,
+    /// which no writer shows as typewriter.
+    fn typewriter(&mut self, arg: Vec<Piece>) {
+        let blocks = self.blocks.len();
+        let run = self.run();
+        let inlines = run.len();
+        let text = match run.last() {
+            Some(Inline::Text(text)) => Some(text.len()),
+            _ => None,
+        };
+        let outer = self.outer_lengths();
+        let font = Font {
+            typewriter: true,
+            ..self.font()
+        };
+        self.in_font(arg, font);
+        // A font changed in it may leave what's after in another run, and
+        // a section in it clears a paragraph that shows nothing.
+        if self.blocks.len() > blocks || self.outer_lengths() != outer {
+            return;
+        }
+        let run = self.run();
+        // `None` where a cleared paragraph left fewer than there were.
+        let added = run.len().checked_sub(inlines);
+        let code = match (run.last_mut(), text) {
+            (Some(Inline::Text(last)), Some(text))
+                if added == Some(0) && last.len() > text && last.is_char_boundary(text) =>
+            {
+                last.split_off(text)
+            }
+            (Some(Inline::Text(_)), None) if added == Some(1) => {
+                let Some(Inline::Text(code)) = run.pop() else {
+                    unreachable!("the last inline is text");
+                };
+                code
+            }
+            _ => return,
+        };
+        // Right after other code, it's one with it, as in `verbatim`. It's
+        // pushed as it is: spaces after what ended the argument still go.
+        match run.last_mut() {
+            Some(Inline::Code(before)) => before.push_str(&code),
+            _ => run.push(Inline::Code(code)),
+        }
+    }
+
+    /// The lengths of the inlines and runs [`Reader::run`] goes through to
+    /// the run, not counting the run: while they stay, so does the run,
+    /// and nothing's been read but into it. `None` if it's gone.
+    fn outer_lengths(&self) -> Option<Vec<usize>> {
+        let mut lengths = Vec::new();
+        let mut run = &self.inlines;
+        if self.bold {
+            lengths.push(run.len());
+            let Some(Inline::Strong(bold)) = run.last() else {
+                return None;
+            };
+            run = bold;
+        }
+        if self.emphasized {
+            lengths.push(run.len());
+            if !matches!(run.last(), Some(Inline::Emph(_))) {
+                return None;
+            }
+        }
+        Some(lengths)
     }
 
     /// `\href`'s link to `url`, its text `content`, in the font around it,
@@ -3129,7 +3203,7 @@ fn symbol(name: &str) -> Option<&'static str> {
 /// Those that take nothing leave the groups after them to be read on.
 fn signature(name: &str) -> Option<Signature> {
     match name {
-        "\\ensuremath" => Some(Signature {
+        "\\ensuremath" | "\\texttt" => Some(Signature {
             required: 1,
             ..Signature::default()
         }),
@@ -5421,6 +5495,129 @@ mod tests {
         }
     }
 
+    /// Each row: the inlines the source reads as, in a paragraph.
+    #[test]
+    fn typewriter_text_is_code() {
+        let code = |code: &str| Inline::Code(code.to_string());
+        let strong = |inlines: &[Inline]| Inline::Strong(inlines.to_vec());
+        let cases: Vec<(&str, Vec<Inline>)> = vec![
+            ("\\texttt{a}", vec![code("a")]),
+            ("x \\texttt{a} y", vec![text("x "), code("a"), text(" y")]),
+            ("\\texttt a b", vec![code("a"), text(" b")]),
+            ("\\texttt'", vec![code("'")]),
+            ("\\texttt\\TeX a", vec![code("TeX"), text("a")]),
+            // As it's written, and its spaces too; joined by nothing.
+            ("\\texttt{a--b ``c'' d'e}", vec![code("a--b ``c'' d'e")]),
+            ("\\texttt{ a  b }", vec![code(" a b ")]),
+            // With characters as the writer writes them.
+            (
+                "\\texttt{a\\_b\\textbackslash{}c-{}-{}d}",
+                vec![code("a_b\\c--d")],
+            ),
+            // In bold and emphasis, in their runs.
+            ("\\textbf{\\texttt{a}}", vec![strong(&[code("a")])]),
+            ("\\emph{\\texttt{a}}", vec![emph(&[code("a")])]),
+            (
+                "\\textbf{\\emph{\\texttt{a}}}",
+                vec![strong(&[emph(&[code("a")])])],
+            ),
+            (
+                "\\textbf{x\\texttt{a}y}",
+                vec![strong(&[text("x"), code("a"), text("y")])],
+            ),
+            // Empty, it's none.
+            ("x\\texttt{}y", vec![text("xy")]),
+            // Holding more than text, it's what it holds, joining nothing.
+            (
+                "\\texttt{a--\\emph{b}}",
+                vec![text("a--"), emph(&[text("b")])],
+            ),
+            ("\\texttt{\\texttt{a}}", vec![code("a")]),
+            // A font changed in it leaves what's after in a run of its own.
+            (
+                "\\emph{x\\texttt{\\emph{b}é}}",
+                vec![emph(&[text("x")]), text("b"), emph(&[text("é")])],
+            ),
+            (
+                "\\emph{x\\texttt{\\emph{b}cd}}",
+                vec![emph(&[text("x")]), text("b"), emph(&[text("cd")])],
+            ),
+            (
+                "\\textbf{x\\texttt{\\textmd{b}é}}",
+                vec![strong(&[text("x")]), text("b"), strong(&[text("é")])],
+            ),
+            ("é\\texttt{ü}", vec![text("é"), code("ü")]),
+            ("\\emph{é\\texttt{ü}}", vec![emph(&[text("é"), code("ü")])]),
+            // Right after other code, it's one with it.
+            ("\\texttt{a}\\texttt{b}", vec![code("ab")]),
+            ("\\verb|a|\\texttt{b}", vec![code("ab")]),
+            ("\\texttt{a}\\verb|b|", vec![code("ab")]),
+            (
+                "\\texttt{a} \\texttt{b}",
+                vec![code("a"), text(" "), code("b")],
+            ),
+            ("\\texttt{\\emph{a}b}", vec![emph(&[text("a")]), text("b")]),
+            (
+                "x\\texttt{\\emph{a}b}",
+                vec![text("x"), emph(&[text("a")]), text("b")],
+            ),
+            (
+                "\\texttt{a\\emph{b}}c",
+                vec![text("a"), emph(&[text("b")]), text("c")],
+            ),
+        ];
+        for (source, expected) in cases {
+            assert_eq!(read(source).0.blocks, [para(&expected)], "{source}");
+        }
+        // Nothing left of what's before it is no trouble.
+        assert_eq!(read("\\emph{ }\\texttt{\\section{}}").0.blocks, []);
+        // A block in it stays between what's around it.
+        assert_eq!(
+            read("x \\texttt{a\\begin{center}b\\end{center}c} y")
+                .0
+                .blocks,
+            [
+                para(&[text("x a")]),
+                para(&[text("b")]),
+                para(&[text("c y")])
+            ]
+        );
+        // Nesting costs no more than it holds.
+        let source = format!(
+            "{}x{}",
+            "\\texttt{\\emph{".repeat(5_000),
+            "}}".repeat(5_000)
+        );
+        assert!(!read(&source).0.blocks.is_empty());
+    }
+
+    /// Code read from LaTeX reads back from Markdown as it was.
+    #[test]
+    fn typewriter_code_reads_back_from_markdown() {
+        use crate::converter::document::native::{read::markdown, write};
+        for source in ["\\texttt{a}\\texttt{b}", "\\verb|a|\\texttt{b} c"] {
+            let doc = read(source).0;
+            let md = write::markdown::write(&doc);
+            assert_eq!(markdown::read(&md).blocks, doc.blocks, "{md}");
+        }
+    }
+
+    /// Code our LaTeX writer writes reads back.
+    #[test]
+    fn our_latex_code_reads_back() {
+        use crate::converter::document::native::{read::markdown, write};
+        for source in [
+            "`a`\n",
+            "see `a--b` and `c d`\n",
+            "`'q' \"r\" <x> ~ ^ \\ { } $ & % # _`\n",
+            "**`a`** *`b`*\n",
+        ] {
+            let doc = markdown::read(source);
+            let tex = write::latex::write(&doc);
+            assert_eq!(read(&tex).0.blocks, doc.blocks, "{tex}");
+        }
+    }
+
     /// Each row: the text the source reads as.
     #[test]
     fn punctuation_is_set_as_tex_sets_it() {
@@ -5436,11 +5633,9 @@ mod tests {
             ("a'\\mbox{}'b", "a’’b"),
             ("a' 'b", "a’ ’b"),
             ("\\textquoteright'b", "’’b"),
-            // Unknown commands' text is as written: fonts like `\texttt` join
-            // nothing, and it may be an address.
-            ("\\texttt{a--b ``c'' d'e}--", "a--b ``c'' d'e–"),
-            ("\\path{a--b}", "a--b"),
-            ("\\texttt{\\mbox{a--b}}c--d", "a--bc–d"),
+            // Unknown commands' text is as written: it may be an address.
+            ("\\path{a--b ``c'' d'e}--", "a--b ``c'' d'e–"),
+            ("\\foo{\\mbox{a--b}}c--d", "a--bc–d"),
             ("a'\n'b", "a’ ’b"),
             ("a'%\n'b", "a”b"),
             // Commands for characters: spaces after a word go, `{}` keeps them.
