@@ -1516,6 +1516,7 @@ impl Reader {
         // What it expands to, listings' code and all, as that's what the
         // document grows by.
         let expanded = text.as_ref().map_or(0, String::len);
+        let listings = self.listings.len();
         let text = text.map(|text| {
             let mark = std::mem::take(&mut self.listing_mark);
             let text = listings::cut_into(&text, &mark, &mut self.listings);
@@ -1524,6 +1525,9 @@ impl Reader {
         });
         let nesting = text.as_deref().map_or(usize::MAX, nesting_bound);
         let Some(text) = text.filter(|_| nesting <= self.nesting_left) else {
+            // What it cut goes with it, or calls refused again and again
+            // would keep theirs.
+            self.listings.truncate(listings);
             self.unexpanded += 1;
             return self.unexpanded_call(taken);
         };
@@ -6881,21 +6885,42 @@ mod tests {
     #[test]
     fn listings_in_macros_count_in_the_expansion() {
         let source = format!(
-            "\\newcommand{{\\f}}[1]{{\\lstinline{{#1{}}}}}{}",
+            "\\newcommand{{\\f}}[1]{{\\begin{{lstlisting}}\n#1{}\n\\end{{lstlisting}}}}{}",
             "x".repeat(10_000),
             "\\f{a}".repeat(1_000)
         );
         let (doc, warnings) = read(&source);
-        let code: usize = doc
+        let codes = doc
             .blocks
             .iter()
-            .map(|block| format!("{block:?}").len())
-            .sum();
-        assert!(code < 200_000, "{code}");
+            .filter(|block| matches!(block, Block::Code { code, .. } if code.ends_with("xxx")))
+            .count();
+        assert!((1..20).contains(&codes), "{codes}");
         assert!(
             warnings.iter().any(|w| w.one.contains("unexpanded")),
             "{warnings:?}"
         );
+    }
+
+    /// A call refused for how deep it would nest keeps none of the listings
+    /// its text held.
+    #[test]
+    fn refused_calls_keep_no_listings() {
+        let call = format!("\\f{{{}}}", "[".repeat(50));
+        let source = format!(
+            "\\newcommand{{\\f}}[1]{{\\lstinline|#1|#1#1#1#1}}{}",
+            call.repeat(20)
+        );
+        let root = mitex_parser::parse_without_macro(&source, CommandSpec::new(Default::default()));
+        let mut reader = Reader {
+            expansion_left: usize::MAX,
+            nesting_left: nesting_bound(&source) / 10,
+            listing_mark: "\\SwiftShifterListing".to_string(),
+            ..Reader::default()
+        };
+        reader.flow(pieces(&root));
+        assert_eq!(reader.unexpanded, 20);
+        assert!(reader.listings.is_empty(), "{}", reader.listings.len());
     }
 
     /// A definition shows nothing where it's written, in any of its forms.
