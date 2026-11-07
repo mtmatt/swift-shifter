@@ -207,7 +207,7 @@ impl Tex {
 }
 
 /// Whether `tex` calls a command that defines others.
-fn defines(tex: &str) -> bool {
+pub(super) fn defines(tex: &str) -> bool {
     let mut rest = tex;
     while let Some(at) = rest.find('\\') {
         let (name, after) = rest[at..].split_at(command_length(&rest[at..]));
