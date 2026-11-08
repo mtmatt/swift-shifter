@@ -1266,6 +1266,8 @@ impl Reader {
             && let [arg] = &args[..]
             && let Some(label) = referred_label(arg)
         {
+            // As `\label` keeps it (see `Reader::as_written`).
+            let label = delimiters::unmarked(&label, &self.delimiter_mark);
             return self.bare_reference(label);
         }
         if matches!(name, "\\begingroup" | "\\bgroup") {
@@ -1296,13 +1298,13 @@ impl Reader {
             "\\par" => self.end_paragraph(),
             "\\url" => {
                 if let Some(arg) = args.first() {
-                    let url = literal_text(arg);
+                    let url = self.as_written(arg);
                     self.url(url);
                 }
             }
             "\\href" => {
                 if let [url, content] = &args[..] {
-                    self.href(literal_text(url), content.clone());
+                    self.href(self.as_written(url), content.clone());
                 }
             }
             "\\cite" => self.cite(args),
@@ -1326,7 +1328,7 @@ impl Reader {
             // The cell it's all of spans its count of columns.
             "\\multicolumn" => {
                 if let [count, _, content] = &args[..] {
-                    self.cell_span = literal_text(count).parse().unwrap_or(1);
+                    self.cell_span = self.as_written(count).parse().unwrap_or(1);
                     self.in_font(content.clone(), self.font());
                 }
             }
@@ -1338,7 +1340,7 @@ impl Reader {
             "\\includegraphics" => {
                 if let Some(arg) = args.first() {
                     self.inline(Inline::Image {
-                        url: literal_text(arg),
+                        url: self.as_written(arg),
                         title: None,
                         alt: String::new(),
                     });
@@ -1374,17 +1376,17 @@ impl Reader {
             }
             "\\label" => {
                 if let Some(arg) = args.first() {
-                    self.label(literal_text(arg));
+                    self.label(self.as_written(arg));
                 }
             }
             "\\ref" | "\\eqref" | "\\autoref" | "\\nameref" => {
                 if let Some(arg) = args.first() {
-                    self.reference(literal_text(arg));
+                    self.reference(self.as_written(arg));
                 }
             }
             "\\cref" | "\\Cref" => {
                 if let Some(arg) = args.first() {
-                    for (i, label) in literal_text(arg).split(',').enumerate() {
+                    for (i, label) in self.as_written(arg).split(',').enumerate() {
                         if i > 0 {
                             self.text(", ");
                         }
@@ -1397,7 +1399,7 @@ impl Reader {
                 let content = args.next().unwrap_or_default();
                 match args.next() {
                     Some(label) => {
-                        let url = format!("{REFERENCE_LINK}{}", literal_text(&label));
+                        let url = format!("{REFERENCE_LINK}{}", self.as_written(&label));
                         self.href(url, content);
                     }
                     None => self.in_font(content, self.font()),
@@ -1475,6 +1477,13 @@ impl Reader {
         let outer = std::mem::replace(&mut self.literal, true);
         self.flow_groups(args);
         self.literal = outer;
+    }
+
+    /// What `pieces`, an argument that's no text, say (see
+    /// [`literal_text`]), with what [`delimiters::mark`] marked in them as
+    /// it was.
+    fn as_written(&self, pieces: &[Piece]) -> String {
+        delimiters::unmarked(&literal_text(pieces), &self.delimiter_mark)
     }
 
     /// Whether the document defined `name` as the reader can't expand, as
@@ -2202,7 +2211,7 @@ impl Reader {
     /// given, the count of notes: `\footnotemark` adds to it first.
     fn note_number(&mut self, given: Option<&Vec<Piece>>) -> i64 {
         given
-            .and_then(|given| literal_text(given).parse().ok())
+            .and_then(|given| self.as_written(given).parse().ok())
             .unwrap_or(self.footnote_count)
     }
 
@@ -2377,7 +2386,7 @@ impl Reader {
     fn cite(&mut self, args: Vec<Vec<Piece>>) {
         let mut args = args.into_iter();
         let keys = args.next().unwrap_or_default();
-        let keys = literal_text(&keys);
+        let keys = self.as_written(&keys);
         let keys: Vec<&str> = keys.split(',').map(str::trim).collect();
         let note = args.next().filter(|note| !note.is_empty());
         self.text(&format!("[{}", keys.join(", ")));
@@ -2615,7 +2624,7 @@ impl Reader {
                 at = past_let(&items, at);
             } else if name == "\\documentclass" {
                 let class = take_arguments(&mut items, &mut at, &mut unbracketed, TABULAR).required;
-                let class = class.first().map(|class| literal_text(class));
+                let class = class.first().map(|class| self.as_written(class));
                 self.authors_add = class.is_some_and(|class| {
                     AUTHORS_ADD.iter().any(|adding| class.starts_with(adding))
                 });
@@ -7873,6 +7882,26 @@ mod tests {
             assert_eq!(doc.blocks, expected.blocks, "{source}");
             assert_eq!(warnings, expected_warnings, "{source}");
         }
+    }
+
+    /// What's read as it's written, as an address, holds a `\left` or
+    /// `\right` before a `}` as it is, not as it's marked (see
+    /// `delimiters`).
+    #[test]
+    fn a_delimiter_in_an_address_is_as_written() {
+        for (source, address) in [
+            ("\\url{C:\\right}", "C:\\right"),
+            ("\\href{C:\\left}{x}", "C:\\left"),
+        ] {
+            let read = format!("{:?}", read(source).0.blocks);
+            assert!(read.contains(&format!("{address:?}")), "{source}: {read}");
+            assert!(!read.contains("SwiftShifter"), "{source}: {read}");
+        }
+        // A note's label, and a reference to it, alike.
+        assert_eq!(
+            read("a\\footnote{\\label{n\\right}b}c\\textsuperscript{\\ref{n\\right}}").0,
+            read("a\\footnote{\\label{n}b}c\\textsuperscript{\\ref{n}}").0
+        );
     }
 
     /// A macro of `\left` or `\right` alone, which takes its delimiter from
