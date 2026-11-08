@@ -592,6 +592,16 @@ const KATEX_ALIASES: [&str; 71] = [
     "tg", "thetasym", "uArr", "uarr", "weierp",
 ];
 
+/// Whether `piece` shows, of what a macro's text ends in: not a space, nor
+/// a line's end, but an empty line.
+fn shows(piece: &Piece) -> bool {
+    match piece {
+        Piece::Token(SyntaxKind::TokenWhiteSpace, _) => false,
+        Piece::Token(SyntaxKind::TokenLineBreak, breaks) => line_ends(breaks) > 1,
+        _ => true,
+    }
+}
+
 /// Takes the command `pieces` end in, if they end in one that would take
 /// its arguments from what's after them: with the spaces after it, which
 /// TeX doesn't see after a control word. Not one a command before it takes
@@ -599,11 +609,6 @@ const KATEX_ALIASES: [&str; 71] = [
 /// many as `required` says, nor a control symbol taking none with spaces
 /// after it, which are text.
 fn take_last_command(pieces: &mut Vec<Piece>, required: impl Fn(&str) -> usize) -> Option<Piece> {
-    let shows = |piece: &Piece| match piece {
-        Piece::Token(SyntaxKind::TokenWhiteSpace, _) => false,
-        Piece::Token(SyntaxKind::TokenLineBreak, breaks) => line_ends(breaks) > 1,
-        _ => true,
-    };
     let command = |piece: &Piece| match piece {
         Piece::Node(node) if node.kind() == SyntaxKind::ItemCmd => Some(command_name(node)),
         _ => None,
@@ -949,6 +954,12 @@ impl Reader {
                 }
                 Piece::Token(kind, text) => self.token(kind, &text),
                 Piece::Node(node) => match node.kind() {
+                    SyntaxKind::ItemCmd
+                        if command_name(&node) == "\\csname"
+                            && let Some(end) = csname_end(&items, at) =>
+                    {
+                        self.csname(&mut items, &mut at, end);
+                    }
                     SyntaxKind::ItemCmd if DEFINITIONS.contains(&command_name(&node).as_str()) => {
                         let name = command_name(&node);
                         self.define(&name, &mut items, &mut at, &mut unbracketed);
@@ -956,6 +967,10 @@ impl Reader {
                     }
                     SyntaxKind::ItemCmd => {
                         let name = command_name(&node);
+                        if name == "\\spacefactor" {
+                            self.spacefactor(&mut items, &mut at);
+                            continue;
+                        }
                         if self.expand(&name) {
                             continue;
                         }
@@ -1596,7 +1611,11 @@ impl Reader {
             .saturating_sub(expanded.max(text.len()) + CALL_COST);
         let root = mitex_parser::parse_without_macro(&text, CommandSpec::new(Default::default()));
         let mut expanded = pieces(&root);
-        let last_command = take_last_command(&mut expanded, |name| self.required_arguments(name));
+        let last_command = if self.name_last_command(&mut expanded) {
+            take_last_command(&mut expanded, |name| self.required_arguments(name))
+        } else {
+            None
+        };
         self.nesting_left -= nesting;
         self.expansion_depth += 1;
         self.non_space();
@@ -1644,6 +1663,88 @@ impl Reader {
         let outer = std::mem::replace(&mut self.literal, true);
         self.flow_groups(groups);
         self.literal = outer;
+    }
+
+    /// `\spacefactor`, right before `items[*at]`, and the number it's set to
+    /// (see [`take_number`]): what it sets, the space after a sentence, no
+    /// writer has a say in.
+    fn spacefactor(&mut self, items: &mut [Piece], at: &mut usize) {
+        take_number(items, at, |name| self.definitions.contains_key(name));
+        self.non_space();
+        // As after any control word, or a number.
+        self.skip_spaces = true;
+    }
+
+    /// `\csname`, right before `items[*at]`, to `\endcsname`, at `end`: the
+    /// command it names (see [`Reader::named_command`]), put in place of
+    /// `\endcsname`, to be read next and take its arguments from after it,
+    /// as in TeX, or nothing.
+    fn csname(&mut self, items: &mut [Piece], at: &mut usize, end: usize) {
+        let command = self.named_command(&items[*at..end]);
+        // TeX doesn't see the spaces after `\endcsname`, a control word.
+        self.non_space();
+        self.skip_spaces = true;
+        match command {
+            Some(command) => {
+                items[end] = command;
+                *at = end;
+            }
+            None => *at = end + 1,
+        }
+    }
+
+    /// The command `inside`, what's between a `\csname` and its
+    /// `\endcsname`, names (see [`csname_name`]), if any. A name that's not
+    /// a macro, nor a command known to the reader or LaTeX, is `\relax` in
+    /// TeX, and none; so is one past what's left of what the document may
+    /// expand to, counted as unexpanded.
+    fn named_command(&mut self, inside: &[Piece]) -> Option<Piece> {
+        let name = csname_name(inside).filter(|name| self.is_command(name))?;
+        let command = command_piece(&name)?;
+        let cost = name.len() + CALL_COST;
+        if cost >= self.expansion_left {
+            self.unexpanded += 1;
+            return None;
+        }
+        self.expansion_left -= cost;
+        Some(command)
+    }
+
+    /// Puts the command that a `\csname … \endcsname` that `pieces`, a
+    /// macro's text, end in names in its place, so that the command is the
+    /// one they end in (see [`take_last_command`]), and says whether they
+    /// may end in a command so. One naming nothing known yet is left, to be
+    /// read in order, as a definition in them may name it: they don't.
+    fn name_last_command(&mut self, pieces: &mut Vec<Piece>) -> bool {
+        let Some(last) = pieces.iter().rposition(shows) else {
+            return true;
+        };
+        if !is_command_named(&pieces[last], "\\endcsname") {
+            return true;
+        }
+        let Some(start) = pieces[..last]
+            .iter()
+            .rposition(|piece| is_command_named(piece, "\\csname"))
+        else {
+            return true;
+        };
+        let inside = &pieces[start + 1..last];
+        if !csname_name(inside).is_some_and(|name| self.is_command(&name)) {
+            return false;
+        }
+        let command = self.named_command(inside);
+        pieces.splice(start..=last, command);
+        true
+    }
+
+    /// Whether `name` is a macro, or a command the reader or LaTeX knows.
+    fn is_command(&self, name: &str) -> bool {
+        self.definitions.contains_key(name)
+            || known_to_latex(name)
+            || signature(name).is_some()
+            || symbol(name).is_some()
+            || layout(name).is_some()
+            || is_declaration(name)
     }
 
     /// Whether `body` may be read `depth` macros deep (see
@@ -3773,6 +3874,84 @@ fn line_ends(breaks: &str) -> usize {
         .matches(['\n', '\r'])
         .count()
         .max(1)
+}
+
+/// Where the `\endcsname` ending a `\csname` right before `items[from]`
+/// is, among them.
+fn csname_end(items: &[Piece], from: usize) -> Option<usize> {
+    let end = items[from..]
+        .iter()
+        .position(|piece| is_command_named(piece, "\\endcsname"))?;
+    Some(from + end)
+}
+
+/// The name of the command `inside`, what's between a `\csname` and its
+/// `\endcsname`, names, if it's of characters alone: what's not, as a
+/// macro, this doesn't expand.
+fn csname_name(inside: &[Piece]) -> Option<String> {
+    let characters = inside
+        .iter()
+        .all(|piece| matches!(piece, Piece::Token(kind, _) if *kind != SyntaxKind::TokenComment));
+    // TeX doesn't see the spaces after `\csname`, a control word.
+    characters.then(|| format!("\\{}", source_text(inside).trim_start_matches([' ', '\t'])))
+}
+
+/// Takes from `items[*at..]` the number a TeX assignment, as
+/// `\spacefactor3000`, sets: an `=` and spaces before it, then its digits
+/// or a command, as `\@m`. What's past its digits in a word is left, and
+/// so is a macro, `is_macro` says, which is read as it is, as its text may
+/// be more than a number.
+fn take_number(items: &mut [Piece], at: &mut usize, is_macro: impl Fn(&str) -> bool) {
+    let mut equals = false;
+    while let Some(piece) = items.get(*at) {
+        match piece {
+            Piece::Token(SyntaxKind::TokenWhiteSpace, _) => *at += 1,
+            Piece::Node(node) if node.kind() == SyntaxKind::ItemCmd => {
+                if !is_macro(&command_name(node)) {
+                    *at += 1;
+                }
+                return;
+            }
+            Piece::Token(SyntaxKind::TokenWord, word) => {
+                let mut number = word.as_str();
+                if !equals && let Some(after) = number.strip_prefix('=') {
+                    equals = true;
+                    number = after;
+                    if number.is_empty() {
+                        *at += 1;
+                        continue;
+                    }
+                }
+                let rest = number.trim_start_matches(|c: char| c.is_ascii_digit());
+                if rest.is_empty() {
+                    *at += 1;
+                } else if rest.len() < number.len() {
+                    items[*at] = Piece::Token(SyntaxKind::TokenWord, rest.to_string());
+                }
+                return;
+            }
+            _ => return,
+        }
+    }
+}
+
+/// Whether `piece` is the command `name`.
+fn is_command_named(piece: &Piece, name: &str) -> bool {
+    matches!(piece, Piece::Node(node)
+        if node.kind() == SyntaxKind::ItemCmd && command_name(node) == name)
+}
+
+/// The command `name` as a piece, if it parses as that one command.
+fn command_piece(name: &str) -> Option<Piece> {
+    let root = mitex_parser::parse_without_macro(name, CommandSpec::new(Default::default()));
+    match &pieces(&root)[..] {
+        [piece @ Piece::Node(node)]
+            if node.kind() == SyntaxKind::ItemCmd && command_name(node) == name =>
+        {
+            Some(piece.clone())
+        }
+        _ => None,
+    }
 }
 
 fn command_name(command: &SyntaxNode) -> String {
@@ -7398,6 +7577,98 @@ mod tests {
         ];
         for (source, written) in cases {
             assert_eq!(read(&source).0.blocks, read(written).0.blocks, "{source}");
+        }
+    }
+
+    /// Each row: a `\csname`, and what it stands for, written out, which it
+    /// reads as.
+    #[test]
+    fn csname_is_the_command_it_names() {
+        let shut = "\\providecommand\\BibitemShut[1]{\\csname bibitem#1\\endcsname}";
+        for (source, written) in [
+            ("\\def\\ab{x}\\csname ab\\endcsname y", "\\def\\ab{x}\\ab y"),
+            (
+                "\\def\\ab{x}\\csname  ab\\endcsname  y",
+                "\\def\\ab{x}\\ab y",
+            ),
+            // A macro taking arguments, or a command, takes them from after it.
+            (
+                "\\newcommand{\\f}[1]{(#1)}\\csname f\\endcsname{x}",
+                "\\newcommand{\\f}[1]{(#1)}\\f{x}",
+            ),
+            ("\\csname textbf\\endcsname{x}", "\\textbf{x}"),
+            ("a\\csname S\\endcsname b", "a\\S b"),
+            (
+                "\\newcommand{\\f}[1]{#1\\csname textbf\\endcsname}\\f{a}{x}",
+                "a\\textbf{x}",
+            ),
+            // In a macro, with its arguments.
+            (
+                &format!("{shut}\\providecommand\\bibitemNoStop{{.}}a\\BibitemShut{{NoStop}}b"),
+                "a.b",
+            ),
+            // revtex's, with what it sets the space after a sentence by.
+            (
+                &format!(
+                    "{shut}\\providecommand\\EOS{{\\spacefactor3000\\relax}}\\providecommand\\bibitemNoStop{{.\\EOS\\space}}a\\BibitemShut{{NoStop}}b"
+                ),
+                "a.\\space b",
+            ),
+            // A name the macro's text defines first.
+            (
+                "\\newcommand{\\f}[1]{\\def\\zz{Y}\\csname zz\\endcsname}\\f{} done",
+                "Y done",
+            ),
+            // An unknown name is `\relax`, which a command before it isn't
+            // past.
+            (
+                "\\newcommand{\\g}[1]{\\S\\csname x#1\\endcsname}\\g{y} b",
+                "\\S{} b",
+            ),
+            (&format!("{shut}a\\BibitemShut{{Stop}} b"), "a b"),
+            ("a\\csname nothing\\endcsname b", "ab"),
+            ("a\\csname ab c\\endcsname b", "ab"),
+            // What's not characters isn't expanded.
+            ("\\def\\x{ab}\\def\\ab{y}a\\csname \\x\\endcsname b", "ab"),
+            ("a\\csname {ab}\\endcsname b", "ab"),
+        ] {
+            assert_eq!(read(source).0.blocks, read(written).0.blocks, "{source}");
+        }
+    }
+
+    /// Each row: a source setting `\spacefactor`, and its text: what it
+    /// sets shows nothing.
+    #[test]
+    fn spacefactor_shows_nothing() {
+        for (source, written) in [
+            ("a\\spacefactor3000 b", "ab"),
+            ("a\\spacefactor = 3000\\relax b", "ab"),
+            ("a\\spacefactor=3000b", "ab"),
+            ("a\\spacefactor\\count b", "ab"),
+            ("a\\spacefactor\\@m b", "ab"),
+            // A macro is read: its text may be more than a number.
+            (
+                "\\def\\n{3000 hello}a\\spacefactor\\n b",
+                "\\def\\n{3000 hello}a\\n b",
+            ),
+            ("a\\spacefactor x", "ax"),
+        ] {
+            assert_eq!(read(source).0.blocks, read(written).0.blocks, "{source}");
+        }
+    }
+
+    /// A macro that calls itself through `\csname` ends, with the warning
+    /// for that.
+    #[test]
+    fn csname_counts_in_the_expansion() {
+        for source in [
+            "\\def\\a{\\csname a\\endcsname}\\a done",
+            "\\newcommand{\\a}[1]{\\csname a\\endcsname{#1#1}}\\a{x} done",
+        ] {
+            let (doc, warnings) = read(source);
+            assert!(format!("{:?}", doc.blocks).contains("done"), "{source}");
+            assert_eq!(warnings.len(), 1, "{source}");
+            assert!(warnings[0].one.contains("unexpanded"), "{source}");
         }
     }
 
