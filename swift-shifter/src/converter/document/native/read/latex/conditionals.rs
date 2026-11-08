@@ -29,10 +29,11 @@ enum Open {
 /// is left to the parser, which skips to the end, as TeX does. What's in
 /// comments, verbatim text and listings is passed by, as is what TeX
 /// doesn't read: `listing_length` says how long a listing is that a
-/// command, `\lstinline` or `\begin`, starts, before what's after it.
+/// command, `\lstinline` or `\begin`, starts, given what's after it, asked
+/// of each in order.
 pub(super) fn keep_else(
     source: &str,
-    listing_length: impl Fn(&str, &str) -> Option<usize>,
+    mut listing_length: impl FnMut(&str, &str) -> Option<usize>,
 ) -> String {
     let mut out = String::with_capacity(source.len());
     let (mut copied, mut at) = (0, 0);
