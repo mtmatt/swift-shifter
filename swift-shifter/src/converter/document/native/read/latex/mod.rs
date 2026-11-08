@@ -104,7 +104,7 @@ fn nesting_bound(source: &str) -> usize {
 /// `source`, parsed, and a warning of the lists nested too deep to keep
 /// (see [`MAX_LIST_NESTING`]).
 fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
-    let source = conditionals::keep_else(source);
+    let source = conditionals::keep_else(source, listings::length);
     let listed = listings::cut(&source);
     let cut = verbatim::cut(&listed.source);
     let delimited = delimiters::mark(&cut.source);
@@ -7882,6 +7882,41 @@ mod tests {
         ] {
             assert_eq!(read(&source).0.blocks, read(written).0.blocks, "{source}");
         }
+    }
+
+    /// What's after an `\iffalse` with no `\else`, whose `\fi` an `@` is
+    /// right after, is read, and only that (see `conditionals`).
+    #[test]
+    fn what_is_after_a_false_branch_is_read() {
+        for (source, written) in [
+            // TeX doesn't see the space after `\fi`.
+            ("\\iftrue\\iffalse X\\fi@x\\fi Tail", "@xTail"),
+            ("\\iffalse X\\fi@x Tail", "@x Tail"),
+        ] {
+            assert_eq!(read(source).0.blocks, read(written).0.blocks, "{source}");
+        }
+    }
+
+    /// A conditional in a listing is its code.
+    #[test]
+    fn a_conditional_in_a_listing_is_code() {
+        let (doc, _) = read("a \\lstinline|\\iffalse X\\fi| b");
+        assert_eq!(
+            doc.blocks,
+            vec![para(&[
+                text("a "),
+                Inline::Code("\\iffalse X\\fi".into()),
+                text(" b"),
+            ])]
+        );
+        let (doc, _) = read("\\begin{lstlisting}\n\\iffalse X\\fi\n\\end{lstlisting}");
+        assert_eq!(
+            doc.blocks,
+            vec![Block::Code {
+                lang: None,
+                code: "\\iffalse X\\fi".into(),
+            }]
+        );
     }
 
     /// Each row: a layout command defined as the reader can't expand, and

@@ -99,7 +99,8 @@ fn parse(source: &str) -> SyntaxNode {
     // verbatim text is cut out once it's kept, as the first cut skips it, and
     // with it out, what isn't LaTeX there can be told.
     let latex = unparsed(&verbatim::cut(source).source);
-    let cut = verbatim::cut(&conditionals::keep_else(&latex));
+    // The bench doesn't cut listings, so it finds none here either.
+    let cut = verbatim::cut(&conditionals::keep_else(&latex, |_, _| None));
     mitex_parser::parse_without_macro(
         &reader_formulas::close_scripts(&unparsed(&cut.source)),
         mitex_parser::spec::CommandSpec::new(Default::default()),

@@ -132,6 +132,18 @@ fn mark(source: &str) -> String {
         .expect("more names than the source holds")
 }
 
+/// How long the listing that `command`, `\lstinline` or `\begin`, starts
+/// is, from `after` it, if it starts one: what's to be passed by as code
+/// before listings are cut (see `conditionals::keep_else`).
+pub(super) fn length(command: &str, after: &str) -> Option<usize> {
+    let listing = match command {
+        "\\lstinline" => inline(after),
+        "\\begin" => block(after),
+        _ => None,
+    };
+    listing.map(|(_, length)| length)
+}
+
 /// `\lstinline`'s code, from what's after its name: a star, its options in
 /// brackets, then the code between a delimiter and itself again, as for
 /// `\verb`, or in braces, which may nest; and how long all that is. All of
