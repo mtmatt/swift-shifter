@@ -1525,7 +1525,7 @@ impl Reader {
                 Piece::Node(node) if node.kind() == SyntaxKind::ItemCmd => command_name(node),
                 _ => String::new(),
             };
-            arguments = signature(&name).map_or(0, |signature| signature.required);
+            arguments = self.required_arguments(&name);
             let body = self.macro_named(&name);
             let Some(body) = body.filter(|body| self.can_expand(body, depth)) else {
                 spliced.push(piece.clone());
@@ -1643,15 +1643,18 @@ impl Reader {
     }
 
     /// How many arguments the command `name` must take as it's read, of a
-    /// command the reader knows or a macro, past an optional first one. An
-    /// unknown one takes only the groups after it, none it must.
+    /// macro or a command the reader knows, past an optional first one. A
+    /// macro's are its own, though it's named as a layout command, as
+    /// [`Reader::flow`] reads it so. An unknown one takes only the groups
+    /// after it, none it must.
     fn required_arguments(&self, name: &str) -> usize {
-        if let Some(signature) = signature(name) {
-            return signature.required;
+        if let Some(Some(body)) = self.definitions.get(name) {
+            // `\newcommand{\x}[0][d]` takes none, and has a default.
+            return body
+                .parameters
+                .saturating_sub(usize::from(body.default.is_some()));
         }
-        self.macro_taking_arguments(name).map_or(0, |body| {
-            body.parameters - usize::from(body.default.is_some())
-        })
+        signature(name).map_or(0, |signature| signature.required)
     }
 
     /// What a call that isn't expanded took, as an unknown command's text.
@@ -7818,6 +7821,43 @@ mod tests {
             assert!(format!("{:?}", doc.blocks).contains("done"), "{source}");
             assert_eq!(warnings.len(), 1, "{source}");
             assert!(warnings[0].one.contains("unexpanded"), "{source}");
+        }
+    }
+
+    /// Each row: a macro named as a layout command, as defined, and what it
+    /// reads as written out: its arguments are its own, not the command's.
+    #[test]
+    fn macros_named_as_layout_commands_are_read_as_defined() {
+        let id = "\\newcommand{\\id}[1]{#1}";
+        for (source, written) in [
+            (
+                format!("\\def\\x{{X}}\\def\\small#1{{(#1)}}{id}\\id{{\\small\\x}} B"),
+                "(X) B",
+            ),
+            // Its argument, in a table or a list, is taken whole.
+            (
+                "\\def\\vspace#1{(#1)}\\def\\x{ab}\\begin{tabular}{l}\\vspace\\x\\end{tabular}"
+                    .into(),
+                "\\begin{tabular}{l}(ab)\\end{tabular}",
+            ),
+            (
+                "\\def\\vspace#1{(#1)}\\def\\x{ab}\\begin{itemize}\\item \\vspace\\x\\end{itemize}"
+                    .into(),
+                "\\begin{itemize}\\item (ab)\\end{itemize}",
+            ),
+            // One taking none, with a default.
+            (
+                format!("\\newcommand{{\\x}}[0][d]{{X}}\\def\\y{{Y}}{id}\\id{{\\x\\y}}B"),
+                "XYB",
+            ),
+            // A row after one is its macro's still.
+            (
+                "\\renewcommand{\\vspace}{V}\\def\\row{a & b \\\\}\\begin{tabular}{cc}\\vspace\\row\\end{tabular}"
+                    .into(),
+                "\\begin{tabular}{cc}Va & b \\\\\\end{tabular}",
+            ),
+        ] {
+            assert_eq!(read(&source).0.blocks, read(written).0.blocks, "{source}");
         }
     }
 
