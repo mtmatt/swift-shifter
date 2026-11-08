@@ -611,10 +611,15 @@ fn shows(piece: &Piece) -> bool {
 /// Takes the command `pieces` end in, if they end in one that would take
 /// its arguments from what's after them: with the spaces after it, which
 /// TeX doesn't see after a control word. Not one a command before it takes
-/// as an argument, as the pieces are read in order, each command taking as
-/// many as `required` says, nor a control symbol taking none with spaces
-/// after it, which are text.
-fn take_last_command(pieces: &mut Vec<Piece>, required: impl Fn(&str) -> usize) -> Option<Piece> {
+/// as an argument, as the pieces are read in order, each command taking an
+/// optional one if `optional` says, and as many more as `required` says,
+/// nor a control symbol taking none, of either, with spaces after it, which
+/// are text.
+fn take_last_command(
+    pieces: &mut Vec<Piece>,
+    required: impl Fn(&str) -> usize,
+    optional: impl Fn(&str) -> bool,
+) -> Option<Piece> {
     let command = |piece: &Piece| match piece {
         Piece::Node(node) if node.kind() == SyntaxKind::ItemCmd => Some(command_name(node)),
         _ => None,
@@ -622,23 +627,101 @@ fn take_last_command(pieces: &mut Vec<Piece>, required: impl Fn(&str) -> usize) 
     let last = pieces.iter().rposition(shows)?;
     let name = command(&pieces[last])?;
     let control_word = name[1..].starts_with(|c: char| c.is_ascii_alphabetic());
-    if !control_word && last + 1 < pieces.len() && required(&name) == 0 {
+    // An optional argument is looked for past spaces, as LaTeX does.
+    let takes_arguments = required(&name) > 0 || optional(&name);
+    if !control_word && last + 1 < pieces.len() && !takes_arguments {
         return None;
     }
-    // The arguments the commands read so far are still owed.
-    let mut owed = 0_usize;
-    for piece in pieces[..last].iter().filter(|piece| shows(piece)) {
-        owed = match command(piece) {
-            _ if owed > 0 => owed - 1,
-            Some(name) => required(&name),
-            None => 0,
+    // Each command before it, past what the one before took: whether it's
+    // still owed arguments, of which it would be one.
+    let before = &pieces[..last];
+    let mut unbracketed = false;
+    let mut at = 0;
+    while let Some(piece) = before.get(at) {
+        at += 1;
+        let Some(name) = command(piece) else {
+            continue;
         };
-    }
-    if owed > 0 {
-        return None;
+        let extent = arguments_extent(
+            before,
+            at,
+            optional(&name),
+            required(&name),
+            &mut unbracketed,
+        );
+        if extent.owed > 0 {
+            return None;
+        }
+        at += extent.length;
     }
     pieces.truncate(last + 1);
     pieces.pop()
+}
+
+/// Where a command's arguments end (see [`arguments_extent`]).
+struct Extent {
+    /// How many pieces they are.
+    length: usize,
+    /// How many it's still owed where the pieces end.
+    owed: usize,
+}
+
+/// How far a command's arguments are of `items`, from `at`, as
+/// [`take_arguments`] takes them: an optional one in brackets, if it takes
+/// one, then `required` more, a word giving one of each of its characters,
+/// and anything else, one, but for what TeX stops taking them at, an empty
+/// line or a group's end. `unbracketed` says no `]` is left in `items`, set
+/// where none was found, so that they aren't looked through for one again.
+fn arguments_extent(
+    items: &[Piece],
+    at: usize,
+    optional: bool,
+    required: usize,
+    unbracketed: &mut bool,
+) -> Extent {
+    let mut end = at;
+    if optional && !*unbracketed {
+        let next = past_spaces(items, end);
+        if let Some(Piece::Token(SyntaxKind::TokenLBracket, _)) = items.get(next) {
+            let close = items[next + 1..]
+                .iter()
+                .position(|piece| matches!(piece, Piece::Token(SyntaxKind::TokenRBracket, _)));
+            match close {
+                Some(close) => end = next + 1 + close + 1,
+                None => *unbracketed = true,
+            }
+        }
+    }
+    let mut owed = required;
+    while owed > 0 {
+        let next = past_spaces(items, end);
+        match items.get(next) {
+            None => break,
+            Some(Piece::Token(
+                SyntaxKind::TokenLineBreak
+                | SyntaxKind::TokenWhiteSpace
+                | SyntaxKind::TokenComment
+                | SyntaxKind::TokenLBrace
+                | SyntaxKind::TokenRBrace,
+                _,
+            )) => {
+                owed = 0;
+                break;
+            }
+            Some(Piece::Token(SyntaxKind::TokenWord, word)) => {
+                owed = owed.saturating_sub(word.chars().count());
+                end = next + 1;
+            }
+            Some(_) => {
+                owed -= 1;
+                end = next + 1;
+            }
+        }
+    }
+    Extent {
+        length: end - at,
+        owed,
+    }
 }
 
 /// How many files or folders `name`, a command reading a file in, names
@@ -1529,31 +1612,35 @@ impl Reader {
     /// this says so with `false`.
     fn splice(&mut self, items: &[Piece], spliced: &mut Vec<Piece>, depth: usize) -> bool {
         let mut at = 0;
-        // How many of what's next are a command's arguments.
-        let mut arguments = 0;
+        // Whether no `]` is left (see `arguments_extent`).
+        let mut unbracketed = false;
         while let Some(piece) = items.get(at) {
             at += 1;
             if holds_definition(piece) {
                 spliced.extend_from_slice(&items[at - 1..]);
                 return false;
             }
-            if arguments > 0 {
-                let space = matches!(
-                    piece,
-                    Piece::Token(SyntaxKind::TokenWhiteSpace | SyntaxKind::TokenLineBreak, _)
-                );
-                arguments -= usize::from(!space);
-                spliced.push(piece.clone());
-                continue;
-            }
             let name = match piece {
                 Piece::Node(node) if node.kind() == SyntaxKind::ItemCmd => command_name(node),
                 _ => String::new(),
             };
-            arguments = self.required_arguments(&name);
             let body = self.macro_named(&name);
             let Some(body) = body.filter(|body| self.can_expand(body, depth)) else {
                 spliced.push(piece.clone());
+                let extent = arguments_extent(
+                    items,
+                    at,
+                    self.takes_optional(&name),
+                    self.required_arguments(&name),
+                    &mut unbracketed,
+                );
+                let arguments = &items[at..at + extent.length];
+                if arguments.iter().any(holds_definition) {
+                    spliced.extend_from_slice(&items[at..]);
+                    return false;
+                }
+                spliced.extend_from_slice(arguments);
+                at += extent.length;
                 continue;
             };
             self.expansion_left -= body.length + 1;
@@ -1644,7 +1731,11 @@ impl Reader {
         let root = mitex_parser::parse_without_macro(&text, CommandSpec::new(Default::default()));
         let mut expanded = pieces(&root);
         let last_command = if self.name_last_command(&mut expanded) {
-            take_last_command(&mut expanded, |name| self.required_arguments(name))
+            take_last_command(
+                &mut expanded,
+                |name| self.required_arguments(name),
+                |name| self.takes_optional(name),
+            )
         } else {
             None
         };
@@ -1681,6 +1772,17 @@ impl Reader {
         }
         self.read_signature(name)
             .map_or(0, |signature| signature.required)
+    }
+
+    /// Whether the command `name` takes an optional first argument, as a
+    /// macro with a default does, of those [`Reader::required_arguments`]
+    /// counts past.
+    fn takes_optional(&self, name: &str) -> bool {
+        if let Some(Some(body)) = self.definitions.get(name) {
+            return body.default.is_some();
+        }
+        self.read_signature(name)
+            .is_some_and(|signature| signature.optional)
     }
 
     /// What a call that isn't expanded took, as an unknown command's text.
@@ -7853,6 +7955,54 @@ mod tests {
             assert!(format!("{:?}", doc.blocks).contains("done"), "{source}");
             assert_eq!(warnings.len(), 1, "{source}");
             assert!(warnings[0].one.contains("unexpanded"), "{source}");
+        }
+    }
+
+    /// Each row: a source, and what it reads as written out: a word's
+    /// characters are an argument each, as TeX takes them without braces,
+    /// and an optional argument is looked for past spaces.
+    #[test]
+    fn a_word_gives_an_argument_of_each_character() {
+        let id = "\\newcommand{\\id}[1]{#1}";
+        for (source, written) in [
+            // What's owed after it is taken: the command it ends in is
+            // the call's, taking its arguments from after it.
+            (
+                format!("\\newcommand{{\\f}}[2]{{#1#2}}{id}\\id{{\\f ab\\footnote}}{{note}}"),
+                "ab\\footnote{note}".to_string(),
+            ),
+            (
+                format!("\\newcommand{{\\f}}[3]{{#1#2#3}}{id}\\id{{\\f abc\\footnote}}{{note}}"),
+                "abc\\footnote{note}".to_string(),
+            ),
+            // A word longer than what's owed is text past it.
+            (
+                format!("\\newcommand{{\\f}}[1]{{(#1)}}{id}\\id{{\\f ab\\footnote}}{{note}}"),
+                "(a)b\\footnote{note}".to_string(),
+            ),
+            (
+                format!("\\newcommand{{\\?}}[1][d]{{(#1)}}{id}\\id{{\\? }}[v]"),
+                "(v)".to_string(),
+            ),
+            // An empty line ends what's taken, and so what's owed.
+            (
+                format!("\\newcommand{{\\f}}[2]{{#1#2}}{id}\\id{{\\f a\n\n\\footnote}}{{note}}"),
+                "\\newcommand{\\f}[2]{#1#2}\\f a\n\n\\footnote{note}".to_string(),
+            ),
+            // An optional argument's characters are none of the others.
+            (
+                "\\newcommand{\\f}[5][d]{(#2)(#3)(#4)(#5)}\\def\\word{hello}\\begin{tabular}{l}\\f[abc]\\word xyz\\end{tabular}"
+                    .to_string(),
+                "\\begin{tabular}{l}(hello)(x)(y)(z)\\end{tabular}".to_string(),
+            ),
+            // A row after it, in a table, is found.
+            (
+                "\\def\\pair#1#2{#1#2}\\def\\row{c&d\\\\}\\begin{tabular}{cc}\\pair ab\\row\\end{tabular}"
+                    .to_string(),
+                "\\begin{tabular}{cc}abc&d\\\\\\end{tabular}".to_string(),
+            ),
+        ] {
+            assert_eq!(read(&source).0.blocks, read(&written).0.blocks, "{source}");
         }
     }
 
