@@ -15,6 +15,8 @@ mod listings;
 mod macros;
 pub mod paths;
 pub mod stage;
+#[cfg(test)]
+mod text_loss;
 mod verbatim;
 
 use mitex_parser::CommandSpec;
