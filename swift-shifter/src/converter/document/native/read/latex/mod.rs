@@ -1714,7 +1714,9 @@ impl Reader {
     /// macro's text, end in names in its place, so that the command is the
     /// one they end in (see [`take_last_command`]), and says whether they
     /// may end in a command so. One naming nothing known yet is left, to be
-    /// read in order, as a definition in them may name it: they don't.
+    /// read in order, as a definition in them may name it, and says no. One
+    /// that's not of characters alone is left too, as an unknown command
+    /// (see [`csname_name`]).
     fn name_last_command(&mut self, pieces: &mut Vec<Piece>) -> bool {
         let Some(last) = pieces.iter().rposition(shows) else {
             return true;
@@ -1729,7 +1731,10 @@ impl Reader {
             return true;
         };
         let inside = &pieces[start + 1..last];
-        if !csname_name(inside).is_some_and(|name| self.is_command(&name)) {
+        let Some(name) = csname_name(inside) else {
+            return true;
+        };
+        if !self.is_command(&name) {
             return false;
         }
         let command = self.named_command(inside);
@@ -3877,23 +3882,35 @@ fn line_ends(breaks: &str) -> usize {
 }
 
 /// Where the `\endcsname` ending a `\csname` right before `items[from]`
-/// is, among them.
+/// is, among them, if only characters are between (see [`csname_name`]).
+/// It looks no further than those, so each `\csname`, which isn't one,
+/// ends the look of one before it.
 fn csname_end(items: &[Piece], from: usize) -> Option<usize> {
-    let end = items[from..]
-        .iter()
-        .position(|piece| is_command_named(piece, "\\endcsname"))?;
-    Some(from + end)
+    for (at, piece) in items.iter().enumerate().skip(from) {
+        if is_command_named(piece, "\\endcsname") {
+            return Some(at);
+        }
+        if !is_character(piece) {
+            return None;
+        }
+    }
+    None
 }
 
 /// The name of the command `inside`, what's between a `\csname` and its
-/// `\endcsname`, names, if it's of characters alone: what's not, as a
-/// macro, this doesn't expand.
+/// `\endcsname`, names, if it's of characters alone. What's not, as a
+/// macro, this doesn't expand: such a `\csname` is read as an unknown
+/// command, with what's after it, and a warning.
 fn csname_name(inside: &[Piece]) -> Option<String> {
-    let characters = inside
-        .iter()
-        .all(|piece| matches!(piece, Piece::Token(kind, _) if *kind != SyntaxKind::TokenComment));
+    let characters = inside.iter().all(is_character);
     // TeX doesn't see the spaces after `\csname`, a control word.
     characters.then(|| format!("\\{}", source_text(inside).trim_start_matches([' ', '\t'])))
+}
+
+/// Whether `piece` is characters, as a command's name may be made of: a
+/// token, but a comment.
+fn is_character(piece: &Piece) -> bool {
+    matches!(piece, Piece::Token(kind, _) if *kind != SyntaxKind::TokenComment)
 }
 
 /// Takes from `items[*at..]` the number a TeX assignment, as
@@ -7628,11 +7645,44 @@ mod tests {
             (&format!("{shut}a\\BibitemShut{{Stop}} b"), "a b"),
             ("a\\csname nothing\\endcsname b", "ab"),
             ("a\\csname ab c\\endcsname b", "ab"),
-            // What's not characters isn't expanded.
-            ("\\def\\x{ab}\\def\\ab{y}a\\csname \\x\\endcsname b", "ab"),
-            ("a\\csname {ab}\\endcsname b", "ab"),
         ] {
             assert_eq!(read(source).0.blocks, read(written).0.blocks, "{source}");
+        }
+    }
+
+    /// Each row: a `\csname` of more than characters, which isn't expanded,
+    /// and the same with unknown commands for `\csname` and `\endcsname`,
+    /// which it reads as, warning and all.
+    #[test]
+    fn csname_of_more_than_characters_is_an_unknown_command() {
+        for (source, written) in [
+            (
+                "\\def\\x{ab}\\def\\ab{y}a\\csname \\x\\endcsname b",
+                "\\def\\x{ab}\\def\\ab{y}a\\unknown \\x\\unknownend b",
+            ),
+            (
+                "a\\csname {ab}\\endcsname b",
+                "a\\unknown {ab}\\unknownend b",
+            ),
+            (
+                "a\\csname b%\nc\\endcsname d",
+                "a\\unknown b%\nc\\unknownend d",
+            ),
+            (
+                "\\newcommand{\\f}[1]{\\csname #1\\endcsname}a\\f{\\x} b",
+                "\\newcommand{\\f}[1]{\\unknown #1\\unknownend}a\\f{\\x} b",
+            ),
+            // One without an end, or with a `\csname` before its end.
+            ("a\\csname b", "a\\unknown b"),
+            (
+                "\\def\\ab{x}a\\csname \\csname ab\\endcsname",
+                "\\def\\ab{x}a\\unknown \\ab",
+            ),
+        ] {
+            let (doc, warnings) = read(source);
+            let (expected, expected_warnings) = read(written);
+            assert_eq!(doc.blocks, expected.blocks, "{source}");
+            assert_eq!(warnings, expected_warnings, "{source}");
         }
     }
 
