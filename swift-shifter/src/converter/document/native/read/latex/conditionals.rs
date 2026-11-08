@@ -24,10 +24,16 @@ enum Open {
 }
 
 /// `source` with each `\iffalse … \else`, and the `\fi` of the `\else`,
-/// shown as nothing, and each `\iftrue`, its `\else … \fi` and its `\fi`
-/// too. An `\iffalse` with no `\else` is left to the parser. What's in
-/// comments and verbatim text is passed by, as is what TeX doesn't read.
-pub(super) fn keep_else(source: &str) -> String {
+/// shown as nothing, each `\iffalse … \fi` with no `\else` too, and each
+/// `\iftrue`, its `\else … \fi` and its `\fi`. An `\iffalse` with neither
+/// is left to the parser, which skips to the end, as TeX does. What's in
+/// comments, verbatim text and listings is passed by, as is what TeX
+/// doesn't read: `listing_length` says how long a listing is that a
+/// command, `\lstinline` or `\begin`, starts, before what's after it.
+pub(super) fn keep_else(
+    source: &str,
+    listing_length: impl Fn(&str, &str) -> Option<usize>,
+) -> String {
     let mut out = String::with_capacity(source.len());
     let (mut copied, mut at) = (0, 0);
     // The conditionals open where the scan is, innermost last.
@@ -37,13 +43,17 @@ pub(super) fn keep_else(source: &str) -> String {
         let command = at + start;
         at = command + name.len();
         match name {
+            // The parser would skip it too, but to a `\fi` as it names one:
+            // past `\fi@x`, which is TeX's `\fi` and the text `@x`.
             "\\iffalse" => {
-                let (len, at_else) = branch(&source[at..], true);
+                let (len, end) = branch(&source[at..], true);
                 at += len;
-                if at_else {
+                if end != BranchEnd::None {
                     out.push_str(&source[copied..command]);
                     push_nothing(&mut out, &source[at..]);
                     copied = at;
+                }
+                if end == BranchEnd::Else {
                     open.push(Open::Kept);
                 }
             }
@@ -63,6 +73,9 @@ pub(super) fn keep_else(source: &str) -> String {
                 }
             }
             "\\verb" => at += verbatim::inline(&source[at..]).map_or(0, |(_, len)| len),
+            "\\lstinline" | "\\begin" if let Some(len) = listing_length(name, &source[at..]) => {
+                at += len;
+            }
             "\\begin" => {
                 at += verbatim::block(&source[at..], &mut unclosed).map_or(0, |(_, len)| len);
             }
@@ -90,17 +103,28 @@ fn push_nothing(out: &mut String, after: &str) {
     }
 }
 
+/// Where a conditional's branch that TeX skips ends (see [`branch`]).
+#[derive(PartialEq)]
+enum BranchEnd {
+    /// At an `\else`, after which TeX reads.
+    Else,
+    /// At its `\fi`.
+    Fi,
+    /// At the end of the text: none ends it.
+    None,
+}
+
 /// How much of `text`, a conditional's branch, TeX skips: to the `\fi` that
 /// ends it, or, `to_else`, an `\else`, past those of the conditionals it
-/// holds; or to the end. Whether it ends at an `\else`, after which TeX
-/// reads. Commands are named as the parser names them, and verbatim text is
-/// no different here, as TeX, skipping, doesn't see it; but an `\else` or
-/// `\fi` is one as TeX names it, so `\fi@x` is `\fi` and the text `@x`.
+/// holds; or to the end. And which it ends at. Commands are named as the
+/// parser names them, and verbatim text is no different here, as TeX,
+/// skipping, doesn't see it; but an `\else` or `\fi` is one as TeX names
+/// it, so `\fi@x` is `\fi` and the text `@x`.
 ///
 /// `files.rs` has the same `branch`, for pandoc. That file finds what the
 /// app really converts today, so it isn't touched for a reader that isn't
 /// in use yet.
-fn branch(text: &str, to_else: bool) -> (usize, bool) {
+fn branch(text: &str, to_else: bool) -> (usize, BranchEnd) {
     let mut nested = 0;
     let mut at = 0;
     while let Some((start, command)) = next_command(&text[at..], parser_letter) {
@@ -116,19 +140,25 @@ fn branch(text: &str, to_else: bool) -> (usize, bool) {
             command
         };
         match command {
-            "\\else" if nested == 0 && to_else => return (at, true),
-            "\\fi" if nested == 0 => return (at, false),
+            "\\else" if nested == 0 && to_else => return (at, BranchEnd::Else),
+            "\\fi" if nested == 0 => return (at, BranchEnd::Fi),
             "\\fi" => nested -= 1,
             _ if CONDITIONALS.contains(&command) => nested += 1,
             _ => {}
         }
     }
-    (text.len(), false)
+    (text.len(), BranchEnd::None)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// `source` kept as [`keep_else`] keeps it, in a document with no
+    /// listings.
+    fn kept(source: &str) -> String {
+        keep_else(source, |_, _| None)
+    }
 
     #[test]
     fn the_else_branch_is_kept() {
@@ -186,7 +216,15 @@ mod tests {
             ),
             (
                 "\\iffalse A\\fi@x\\else B\\fi",
-                "\\iffalse A\\fi@x\\else B\\fi",
+                "\\iffalse\\fi{}@x\\else B\\fi",
+            ),
+            // One with no `\else` (#73 item 18c), in an `\iftrue` too.
+            ("\\iffalse A\\fi B", "\\iffalse\\fi B"),
+            ("\\iffalse \\ifx a\\else b\\fi\\fi C", "\\iffalse\\fi C"),
+            ("\\iffalse A\\fi@x B", "\\iffalse\\fi{}@x B"),
+            (
+                "\\iftrue\\iffalse X\\fi@x\\fi Tail",
+                "\\iffalse\\fi\\iffalse\\fi{}@x\\iffalse\\fi Tail",
             ),
             (
                 "\\iffalse A\\else B\\fi@x",
@@ -198,7 +236,7 @@ mod tests {
                 "\\iffalse\\fi\\iffalse\\fi B\\iffalse\\fi\\iffalse\\fi D",
             ),
         ] {
-            assert_eq!(keep_else(source), expected, "{source}");
+            assert_eq!(kept(source), expected, "{source}");
         }
     }
 
@@ -207,8 +245,7 @@ mod tests {
         for source in [
             "no conditionals",
             "",
-            "\\iffalse A\\fi B",
-            "\\iffalse \\ifx a\\else b\\fi\\fi C",
+            // No `\fi`: the parser skips to the end, as TeX.
             "\\iffalse A",
             // In what the parser skips, or isn't LaTeX.
             "\\iftypst\\iffalse A\\else B\\fi\\fi",
@@ -219,20 +256,32 @@ mod tests {
             "\\ifx a\\else b\\fi",
             "a\\fi b",
         ] {
-            assert_eq!(keep_else(source), source, "{source}");
+            assert_eq!(kept(source), source, "{source}");
         }
+    }
+
+    /// A listing, as `listing_length` finds one, is passed by.
+    #[test]
+    fn listings_are_passed_by() {
+        // A listing between bars.
+        let listing_length = |command: &str, after: &str| {
+            if command != "\\lstinline" {
+                return None;
+            }
+            let code = after.strip_prefix('|')?;
+            code.find('|').map(|end| end + 2)
+        };
+        let source = "\\lstinline|\\iffalse X\\fi| Y";
+        assert_eq!(keep_else(source, listing_length), source);
     }
 
     /// `\else` in a comment isn't one; in `\verb` it is, as TeX, skipping,
     /// doesn't see a `\verb`.
     #[test]
     fn a_false_branch_is_read_as_tex_skips_it() {
+        assert_eq!(kept("\\iffalse% \\else\nA\\fi B"), "\\iffalse\\fi B");
         assert_eq!(
-            keep_else("\\iffalse% \\else\nA\\fi B"),
-            "\\iffalse% \\else\nA\\fi B"
-        );
-        assert_eq!(
-            keep_else("\\iffalse\\verb|\\else|B\\fi"),
+            kept("\\iffalse\\verb|\\else|B\\fi"),
             "\\iffalse\\fi|B\\iffalse\\fi"
         );
     }
