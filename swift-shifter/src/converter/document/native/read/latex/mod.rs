@@ -987,7 +987,7 @@ impl Reader {
                         let signature = if name == self.verbatim_mark || name == self.listing_mark {
                             Some(PLACEHOLDER)
                         } else {
-                            signature(&name)
+                            self.read_signature(&name)
                         };
                         let args = match signature {
                             Some(signature) => {
@@ -1155,6 +1155,9 @@ impl Reader {
     /// The command `name`, given its required arguments (see [`signature`]),
     /// or, unknown, the groups right after it.
     fn command(&mut self, name: &str, args: Vec<Vec<Piece>>) {
+        if self.defined_unexpandable(name) {
+            return self.unknown_command(name, args);
+        }
         if let Some(level) = SECTIONS.iter().position(|section| *section == name) {
             return self.heading(level, args);
         }
@@ -1372,16 +1375,35 @@ impl Reader {
             // Unknown commands keep their groups' text, as pandoc keeps it,
             // and as it's written: `\url`'s address joins nothing. What
             // else they meant is lost, and counted for a warning.
-            _ => {
-                // A macro left unexpanded is counted as that.
-                if !matches!(self.definitions.get(name), Some(Some(_))) {
-                    self.unknown_commands += 1;
-                }
-                let outer = std::mem::replace(&mut self.literal, true);
-                self.flow_groups(args);
-                self.literal = outer;
-            }
+            _ => self.unknown_command(name, args),
         }
+    }
+
+    /// An unknown command, `name`, given the groups right after it: their
+    /// text, counted for a warning, but for a macro left unexpanded, which
+    /// is counted as that.
+    fn unknown_command(&mut self, name: &str, args: Vec<Vec<Piece>>) {
+        if !matches!(self.definitions.get(name), Some(Some(_))) {
+            self.unknown_commands += 1;
+        }
+        let outer = std::mem::replace(&mut self.literal, true);
+        self.flow_groups(args);
+        self.literal = outer;
+    }
+
+    /// Whether the document defined `name` as the reader can't expand, as
+    /// with `\edef` (see [`Reader::define`]): it's no longer the command the
+    /// reader knows, as a layout command, whose arguments would go unseen,
+    /// but an unknown one.
+    fn defined_unexpandable(&self, name: &str) -> bool {
+        matches!(self.definitions.get(name), Some(None))
+    }
+
+    /// What arguments `name` takes as it's read (see [`signature`]): none
+    /// it must, as an unknown command, if it's defined as the reader can't
+    /// expand.
+    fn read_signature(&self, name: &str) -> Option<Signature> {
+        signature(name).filter(|_| !self.defined_unexpandable(name))
     }
 
     /// `groups`, each in a group of its own (see [`Reader::font`]).
@@ -1654,7 +1676,8 @@ impl Reader {
                 .parameters
                 .saturating_sub(usize::from(body.default.is_some()));
         }
-        signature(name).map_or(0, |signature| signature.required)
+        self.read_signature(name)
+            .map_or(0, |signature| signature.required)
     }
 
     /// What a call that isn't expanded took, as an unknown command's text.
@@ -7858,6 +7881,28 @@ mod tests {
             ),
         ] {
             assert_eq!(read(&source).0.blocks, read(written).0.blocks, "{source}");
+        }
+    }
+
+    /// Each row: a layout command defined as the reader can't expand, and
+    /// the same with an unknown command, which it reads as, warning and
+    /// all: its text isn't lost as a layout command's arguments.
+    #[test]
+    fn layout_commands_defined_unexpandably_are_unknown() {
+        for (source, written) in [
+            ("\\def\\vspace#1.{#1}a\\vspace{x}.b", "a\\unknown{x}.b"),
+            ("\\edef\\hspace{X}a\\hspace{1em} b", "a\\unknown{1em} b"),
+            ("\\edef\\smallskip{X}a\\smallskip b", "a\\unknown b"),
+            // In a macro's argument, it owes none.
+            (
+                "\\edef\\hspace{X}\\newcommand{\\id}[1]{#1}\\id{\\hspace}{1em}b",
+                "\\newcommand{\\id}[1]{#1}\\id{\\unknown}{1em}b",
+            ),
+        ] {
+            let (doc, warnings) = read(source);
+            let (expected, expected_warnings) = read(written);
+            assert_eq!(doc.blocks, expected.blocks, "{source}");
+            assert_eq!(warnings, expected_warnings, "{source}");
         }
     }
 
