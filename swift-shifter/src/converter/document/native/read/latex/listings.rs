@@ -286,20 +286,48 @@ pub(super) fn option(options: &str, key: &str) -> Option<String> {
     })
 }
 
-/// The language a listing's `options` say its code is in, lowercase, as
-/// writers name languages: without its comments, nor a dialect in brackets
-/// before it, as `[Sharp]C`'s, which they have no names for. One with a
-/// space or a backtick in it is none: a writer's code fence would break.
+/// The language a listing's `options` say its code is in, as writers name
+/// languages: lowercase, without its comments, and with a dialect in
+/// brackets before it, as `[ANSI]C`'s, only where it makes another language
+/// (see [`DIALECTS`]). `C++` is `cpp`. A name Typst wouldn't take whole is
+/// none: it takes an identifier, and the rest would go into the code, as
+/// `C++`'s `++`.
 pub(super) fn language(options: &str) -> Option<String> {
-    let language = without_comments(&option(options, "language")?);
+    let language = without_comments(&option(options, "language")?).to_lowercase();
     let language = language.trim();
     let language = match language.strip_prefix('[') {
-        Some(dialected) => dialected.split_once(']')?.1,
+        Some(dialected) => {
+            let (dialect, language) = dialected.split_once(']')?;
+            let (dialect, language) = (dialect.trim(), language.trim());
+            DIALECTS
+                .iter()
+                .find(|(of, base, _)| *of == dialect && *base == language)
+                .map_or(language, |(_, _, other)| other)
+        }
         None => language,
     };
-    let language = language.trim().to_lowercase();
-    let fits = !language.is_empty() && !language.contains(|c: char| c.is_whitespace() || c == '`');
-    fits.then_some(language)
+    let language = if language == "c++" { "cpp" } else { language };
+    is_typst_language(language).then(|| language.to_string())
+}
+
+/// `listings`'s dialects that make another language, lowercase: the dialect,
+/// its language, and the language it makes, as writers name it. `cs`, not
+/// `csharp`, which Typst doesn't know.
+const DIALECTS: [(&str, &str, &str); 4] = [
+    ("sharp", "c", "cs"),
+    ("objective", "c", "objective-c"),
+    ("objective", "caml", "ocaml"),
+    ("visual", "basic", "vb"),
+];
+
+/// Whether Typst takes all of `name` as a raw block's language: whether it's
+/// an identifier, here only of ASCII letters, digits, `_` and `-`.
+fn is_typst_language(name: &str) -> bool {
+    let mut chars = name.chars();
+    chars
+        .next()
+        .is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
 }
 
 /// `part`, an option, split at its `=`, the first that's not in a comment.
@@ -444,17 +472,54 @@ mod tests {
     fn languages_are_read_as_writers_name_them() {
         for (options, expected) in [
             ("language=Python", Some("python")),
-            ("language = {C++} ", Some("c++")),
-            ("language={[Sharp]C}", Some("c")),
+            ("language = {C++} ", Some("cpp")),
+            ("language={[Visual]C++}", Some("cpp")),
+            // A dialect that makes another language is that language.
+            ("language={[Sharp]C}", Some("cs")),
+            ("language={[objective] c}", Some("objective-c")),
+            ("language={[Objective]Caml}", Some("ocaml")),
+            ("language={[Visual]Basic}", Some("vb")),
+            ("language={[Sharp]Basic}", Some("basic")),
             ("language=[x86masm]Assembler", Some("assembler")),
+            ("language={[ANSI]C}", Some("c")),
+            ("language=Modula-2", Some("modula-2")),
             ("language={}", None),
             ("language={[Sharp]}", None),
             ("language=Py% note\nthon", Some("python")),
+            // Typst wouldn't take all of these.
             ("language={C ++}", None),
             ("language=a`b", None),
+            ("language=PL/I", None),
+            ("language=C\\#", None),
+            ("language=2c", None),
             ("caption=x", None),
         ] {
             assert_eq!(language(options).as_deref(), expected, "{options}");
+        }
+    }
+
+    /// The language Typst gets is the listing's, all of it.
+    #[test]
+    fn languages_are_written_whole_to_typst() {
+        use crate::converter::document::native::write::typst::{Options, Target, write};
+        let tex_fallback = std::collections::HashSet::new();
+        let options = Options {
+            target: Target::TypstFile,
+            fonts: Vec::new(),
+            paper: "a4",
+            base_dir: std::path::PathBuf::new(),
+            tex_fallback: &tex_fallback,
+        };
+        for (language, fence) in [
+            ("C++", "```cpp\nx\n```"),
+            ("{[Sharp]C}", "```cs\nx\n```"),
+            ("PL/I", "```\nx\n```"),
+        ] {
+            let source =
+                format!("\\begin{{lstlisting}}[language={language}]\nx\n\\end{{lstlisting}}");
+            let (doc, _) = super::super::read(&source);
+            let typst = write(&doc, &options).source;
+            assert!(typst.contains(fence), "{language}: {typst}");
         }
     }
 

@@ -6951,7 +6951,7 @@ mod tests {
             ),
             (
                 "\\begin{lstlisting}[language={[Sharp]C}, numbers=left]\nx\n\\end{lstlisting}",
-                vec![code_in("c", "x")],
+                vec![code_in("cs", "x")],
             ),
             (
                 "a\\begin{lstlisting}\n$x$ \\end{x}\n\\end{lstlisting}b",
