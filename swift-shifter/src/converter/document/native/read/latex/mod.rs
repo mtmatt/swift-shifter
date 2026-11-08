@@ -7,6 +7,7 @@
 //! does (see `graph::route_hop`).
 
 mod conditionals;
+mod delimiters;
 pub mod files;
 mod formulas;
 mod inputs;
@@ -106,9 +107,10 @@ fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
     let source = conditionals::keep_else(source);
     let listed = listings::cut(&source);
     let cut = verbatim::cut(&listed.source);
+    let delimited = delimiters::mark(&cut.source);
     // The parser's expanding macros, which may never end, would parse more
     // than `source` holds, past `nesting_bound`: `Reader::expand` reads them.
-    let closed = formulas::close_scripts(&cut.source);
+    let closed = formulas::close_scripts(&delimited.source);
     let separated = formulas::separate_formulas(&closed);
     let root = mitex_parser::parse_without_macro(&separated, CommandSpec::new(Default::default()));
     let mut reader = Reader {
@@ -116,6 +118,7 @@ fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
         verbatim_mark: cut.mark,
         listings: listed.listings,
         listing_mark: listed.mark,
+        delimiter_mark: delimited.mark,
         boundary: macros::boundary_for(&source),
         expansion_left: source
             .len()
@@ -919,6 +922,9 @@ struct Reader {
     /// command their placeholders are.
     listings: Vec<listings::Listing>,
     listing_mark: String,
+    /// What marks a `\left` or `\right` taking its delimiter from after a
+    /// macro's call (see [`delimiters`]).
+    delimiter_mark: String,
     /// What marks an argument's ends in a macro's text (see
     /// [`macros::boundary_for`]).
     boundary: char,
@@ -1453,6 +1459,7 @@ impl Reader {
             .filter(|_| !expanded_here)
             .and_then(|body| Macro::new(body, parameters, default))
             .map(|mut body| {
+                body.source = delimiters::unmarked(&body.source, &self.delimiter_mark);
                 if command == "\\DeclareMathOperator" {
                     let star = if starred { "*" } else { "" };
                     body.source = format!("\\operatorname{star}{{{}}}", body.source);
@@ -1836,7 +1843,8 @@ impl Reader {
     /// argument, which no block goes in. Empty, it shows nothing.
     fn math(&mut self, tex: &str, display: bool) {
         self.non_space();
-        let tex = self.expanded_math(tex);
+        let tex = delimiters::unmarked(tex, &self.delimiter_mark);
+        let tex = self.expanded_math(&tex);
         let tex = unlinked(&tex);
         let tex = tex.as_str();
         let trimmed = tex.trim_end();
@@ -7728,6 +7736,32 @@ mod tests {
             assert_eq!(doc.blocks, expected.blocks, "{source}");
             assert_eq!(warnings, expected_warnings, "{source}");
         }
+    }
+
+    /// A macro of `\left` or `\right` alone, which takes its delimiter from
+    /// after its call, leaves what's after its definition as it is, and
+    /// is the command in a formula.
+    #[test]
+    fn a_macro_of_a_delimiter_alone_is_read() {
+        // 2409.00095's `\l` and `\r`, and others.
+        let defined =
+            "\\def\\l{\\left}\\def\\r{\\right}\\def\\lft{\\left}\\newcommand{\\lb}{\\left }";
+        let source = format!(
+            "{defined}\\title{{T}}\\author{{A \\and B}}\\begin{{document}}a $\\lft( x \\r)$ $\\lb[ y \\r]$\\end{{document}}"
+        );
+        let (doc, warnings) = read(&source);
+        assert_eq!(doc.meta.title.as_deref(), Some("T"));
+        assert_eq!(doc.meta.authors.len(), 2);
+        assert_eq!(
+            doc.blocks,
+            vec![para(&[
+                text("a "),
+                Inline::Math("\\left( x \\right)".into()),
+                text(" "),
+                Inline::Math("\\left [ y \\right]".into()),
+            ])]
+        );
+        assert!(warnings.is_empty(), "{warnings:?}");
     }
 
     /// Each row: a source setting `\spacefactor`, and its text: what it
