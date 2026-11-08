@@ -104,7 +104,10 @@ fn nesting_bound(source: &str) -> usize {
 /// `source`, parsed, and a warning of the lists nested too deep to keep
 /// (see [`MAX_LIST_NESTING`]).
 fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
-    let source = conditionals::keep_else(source, listings::length);
+    let mut listing_lengths = listings::Lengths::default();
+    let source = conditionals::keep_else(source, |command, after| {
+        listing_lengths.length(command, after)
+    });
     let listed = listings::cut(&source);
     let cut = verbatim::cut(&listed.source);
     let delimited = delimiters::mark(&cut.source);
@@ -2797,6 +2800,12 @@ impl Reader {
                 let caption = listings::option(&options, "caption")
                     .or_else(|| listings::option(&options, "title"));
                 if let Some(caption) = caption {
+                    // Its conditionals, which `keep_else` passed by with the
+                    // rest of the listing, as TeX reads them.
+                    let mut listing_lengths = listings::Lengths::default();
+                    let caption = conditionals::keep_else(&caption, |command, after| {
+                        listing_lengths.length(command, after)
+                    });
                     let caption = formulas::separate_formulas(&formulas::close_scripts(&caption));
                     let root = mitex_parser::parse_without_macro(
                         &caption,
@@ -7917,6 +7926,38 @@ mod tests {
                 code: "\\iffalse X\\fi".into(),
             }]
         );
+        // Not in its caption, nor its title, which are TeX.
+        for key in ["caption", "title"] {
+            let source = format!(
+                "\\begin{{lstlisting}}[{key}={{\\iffalse Hidden\\else Visible\\fi}}]\nx\n\\end{{lstlisting}}"
+            );
+            let (doc, _) = read(&source);
+            assert_eq!(
+                doc.blocks,
+                vec![
+                    para(&[text("Visible")]),
+                    Block::Code {
+                        lang: None,
+                        code: "x".into(),
+                    },
+                ],
+                "{key}"
+            );
+        }
+    }
+
+    /// Many listings with no end take no longer to pass by than reading
+    /// them: each doesn't look to the end for its own.
+    #[test]
+    fn unclosed_listings_take_linear_time() {
+        let source = "\\begin{lstlisting}\n".repeat(20_000);
+        let mut listing_lengths = listings::Lengths::default();
+        let start = std::time::Instant::now();
+        let kept = conditionals::keep_else(&source, |command, after| {
+            listing_lengths.length(command, after)
+        });
+        assert_eq!(kept, source);
+        assert!(start.elapsed() < std::time::Duration::from_secs(1));
     }
 
     /// Each row: a layout command defined as the reader can't expand, and

@@ -132,16 +132,32 @@ fn mark(source: &str) -> String {
         .expect("more names than the source holds")
 }
 
-/// How long the listing that `command`, `\lstinline` or `\begin`, starts
-/// is, from `after` it, if it starts one: what's to be passed by as code
-/// before listings are cut (see `conditionals::keep_else`).
-pub(super) fn length(command: &str, after: &str) -> Option<usize> {
-    let listing = match command {
-        "\\lstinline" => inline(after),
-        "\\begin" => block(after),
-        _ => None,
-    };
-    listing.map(|(_, length)| length)
+/// The listings of a source, measured in order: what's to be passed by as
+/// code before listings are cut (see `conditionals::keep_else`).
+#[derive(Default)]
+pub(super) struct Lengths {
+    /// Whether a `lstlisting` with no `\end` was met: no later one has one
+    /// either, so none is looked for, which would look to the source's end
+    /// each time, as [`cut_into`] doesn't.
+    unclosed: bool,
+}
+
+impl Lengths {
+    /// How long the listing that `command`, `\lstinline` or `\begin`,
+    /// starts is, from `after` it, if it starts one.
+    pub(super) fn length(&mut self, command: &str, after: &str) -> Option<usize> {
+        let listing = match command {
+            "\\lstinline" => inline(after),
+            "\\begin" if self.unclosed => None,
+            "\\begin" => {
+                let block = block(after);
+                self.unclosed = block.is_none() && is_listing(after);
+                block
+            }
+            _ => None,
+        };
+        listing.map(|(_, length)| length)
+    }
 }
 
 /// `\lstinline`'s code, from what's after its name: a star, its options in
@@ -468,6 +484,23 @@ mod tests {
         // Past the bound, it's none.
         let long = format!("\\lstinline{{{}}}", "x".repeat(MAX_INLINE));
         assert!(cut(&long).listings.is_empty());
+    }
+
+    /// Listings are measured as [`cut_into`] cuts them: after one with no
+    /// `\end`, none is looked for.
+    #[test]
+    fn listings_are_measured_in_order() {
+        let closed = "{lstlisting}\nx\n\\end{lstlisting}";
+        let mut lengths = Lengths::default();
+        assert_eq!(lengths.length("\\lstinline", "|a| b"), Some(3));
+        assert_eq!(lengths.length("\\begin", closed), Some(closed.len()));
+        assert_eq!(
+            lengths.length("\\begin", "{verbatim}x\\end{verbatim}"),
+            None
+        );
+        assert_eq!(lengths.length("\\begin", "{lstlisting}\nx"), None);
+        assert_eq!(lengths.length("\\begin", closed), None);
+        assert_eq!(lengths.length("\\lstinline", "|a| b"), Some(3));
     }
 
     /// A placeholder is a command the source doesn't hold.
