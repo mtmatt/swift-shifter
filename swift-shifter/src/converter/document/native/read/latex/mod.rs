@@ -1715,8 +1715,9 @@ impl Reader {
     /// one they end in (see [`take_last_command`]), and says whether they
     /// may end in a command so. One naming nothing known yet is left, to be
     /// read in order, as a definition in them may name it, and says no. One
-    /// that's not of characters alone is left too, as an unknown command
-    /// (see [`csname_name`]).
+    /// that's not of characters alone is an unknown command (see
+    /// [`csname_name`]): it's left, and says yes, so that its `\endcsname`
+    /// is the command they end in.
     fn name_last_command(&mut self, pieces: &mut Vec<Piece>) -> bool {
         let Some(last) = pieces.iter().rposition(shows) else {
             return true;
@@ -3886,31 +3887,55 @@ fn line_ends(breaks: &str) -> usize {
 /// It looks no further than those, so each `\csname`, which isn't one,
 /// ends the look of one before it.
 fn csname_end(items: &[Piece], from: usize) -> Option<usize> {
-    for (at, piece) in items.iter().enumerate().skip(from) {
-        if is_command_named(piece, "\\endcsname") {
-            return Some(at);
-        }
-        if !is_character(piece) {
-            return None;
-        }
-    }
-    None
+    let end = from
+        + items[from..]
+            .iter()
+            .position(|piece| is_command_named(piece, "\\endcsname") || !is_character(piece))?;
+    let ends = is_command_named(&items[end], "\\endcsname");
+    (ends && characters_alone(&items[from..end])).then_some(end)
 }
 
 /// The name of the command `inside`, what's between a `\csname` and its
-/// `\endcsname`, names, if it's of characters alone. What's not, as a
-/// macro, this doesn't expand: such a `\csname` is read as an unknown
-/// command, with what's after it, and a warning.
+/// `\endcsname`, names, if it's of characters alone (see
+/// [`characters_alone`]). What's not, as a macro, this doesn't expand:
+/// such a `\csname` is read as an unknown command, with what's after it,
+/// and a warning.
 fn csname_name(inside: &[Piece]) -> Option<String> {
-    let characters = inside.iter().all(is_character);
     // TeX doesn't see the spaces after `\csname`, a control word.
-    characters.then(|| format!("\\{}", source_text(inside).trim_start_matches([' ', '\t'])))
+    characters_alone(inside)
+        .then(|| format!("\\{}", source_text(inside).trim_start_matches([' ', '\t'])))
+}
+
+/// Whether `pieces` are characters alone (see [`is_character`]), with no
+/// empty line among them: two lines' ends with only spaces between are one
+/// too, `\par`, which the parser gives apart.
+fn characters_alone(pieces: &[Piece]) -> bool {
+    let mut after_line_end = false;
+    pieces.iter().all(|piece| {
+        let empty_line = match piece {
+            Piece::Token(SyntaxKind::TokenLineBreak, _) => {
+                std::mem::replace(&mut after_line_end, true)
+            }
+            Piece::Token(SyntaxKind::TokenWhiteSpace, _) => false,
+            _ => {
+                after_line_end = false;
+                false
+            }
+        };
+        is_character(piece) && !empty_line
+    })
 }
 
 /// Whether `piece` is characters, as a command's name may be made of: a
-/// token, but a comment.
+/// token, but a comment, a line break (`\\`), which is a command, and an
+/// empty line, which is `\par`. A line's end is a space.
 fn is_character(piece: &Piece) -> bool {
-    matches!(piece, Piece::Token(kind, _) if *kind != SyntaxKind::TokenComment)
+    match piece {
+        Piece::Token(SyntaxKind::TokenComment | SyntaxKind::ItemNewLine, _) => false,
+        Piece::Token(SyntaxKind::TokenLineBreak, breaks) => line_ends(breaks) == 1,
+        Piece::Token(..) => true,
+        Piece::Node(_) => false,
+    }
 }
 
 /// Takes from `items[*at..]` the number a TeX assignment, as
@@ -7645,6 +7670,8 @@ mod tests {
             (&format!("{shut}a\\BibitemShut{{Stop}} b"), "a b"),
             ("a\\csname nothing\\endcsname b", "ab"),
             ("a\\csname ab c\\endcsname b", "ab"),
+            // A line's end is a space.
+            ("\\def\\ab{x}a\\csname a\nb\\endcsname b", "ab"),
         ] {
             assert_eq!(read(source).0.blocks, read(written).0.blocks, "{source}");
         }
@@ -7667,6 +7694,23 @@ mod tests {
             (
                 "a\\csname b%\nc\\endcsname d",
                 "a\\unknown b%\nc\\unknownend d",
+            ),
+            // A line break, or an empty line, which is `\par`.
+            (
+                "a\\csname b\\\\c\\endcsname d",
+                "a\\unknown b\\\\c\\unknownend d",
+            ),
+            (
+                "a\\csname b\n\nc\\endcsname d",
+                "a\\unknown b\n\nc\\unknownend d",
+            ),
+            (
+                "a\\csname b\r\n\r\nc\\endcsname d",
+                "a\\unknown b\r\n\r\nc\\unknownend d",
+            ),
+            (
+                "a\\csname b\n \t\nc\\endcsname d",
+                "a\\unknown b\n \t\nc\\unknownend d",
             ),
             (
                 "\\newcommand{\\f}[1]{\\csname #1\\endcsname}a\\f{\\x} b",
