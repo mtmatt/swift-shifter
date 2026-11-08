@@ -62,8 +62,11 @@ struct Word<'a> {
     text: &'a str,
     /// Where it is in the source.
     at: usize,
-    /// Whether a command splits it, right before or after it.
+    /// Whether a command or a group splits it, right before or after it.
     split: bool,
+    /// Whether it's right after an accent's command, which its first
+    /// letter is then of: `M\"obius` is read `Möbius`.
+    accented: bool,
 }
 
 /// `source` with its comments as spaces, each of the bytes it takes, so
@@ -110,31 +113,45 @@ fn source_words(source: &str) -> Vec<Word<'_>> {
         // Whether a word here runs on from a letter's command before it,
         // past spaces and braces.
         let mut after_letter = false;
+        // Whether it runs on from a group of text right before it, as
+        // `\"{o}dinger` and `{G}rothendieck` do: not one that's no text,
+        // as `\begin{document}`'s, which is passed by whole.
+        let mut after_group = false;
+        // Whether it's right after an accent's command, past braces.
+        let mut after_accent = false;
         while let Some(c) = text[at..end].chars().next() {
             if c == '\\' {
-                let command = &text[at..at + command_length(&text[at..])];
+                let command = &text[at..at + command_length(&text[at..end])];
                 at += command.len();
                 at += no_text_length(command, &text[at..end]);
                 after_letter = is_letter(command);
+                after_accent = is_accent(command);
+                after_group = false;
             } else if c.is_alphabetic() {
                 let length = text[at..end]
                     .find(|c: char| !c.is_alphabetic())
                     .unwrap_or(end - at);
-                let after = &text[at + length..];
-                let runs_on = after.starts_with('\\') && is_letter(&after[..command_length(after)])
-                    || after.starts_with('}') && after[1..].starts_with(char::is_alphabetic);
+                let after = &text[at + length..end];
+                let before_letter =
+                    after.starts_with('\\') && is_letter(&after[..command_length(after)]);
+                let before_group =
+                    after.starts_with('}') && after[1..].starts_with(char::is_alphabetic);
                 if text[at..at + length].chars().count() >= 3 {
                     words.push(Word {
                         text: &source[at..at + length],
                         at,
-                        // Or on from a group, as `\"{o}dinger` and `{G}rothendieck`.
-                        split: after_letter || runs_on || text[..at].ends_with('}'),
+                        split: after_letter || after_group || before_letter || before_group,
+                        accented: after_accent,
                     });
                 }
                 at += length;
                 after_letter = false;
+                after_accent = false;
+                after_group = false;
             } else {
                 after_letter &= matches!(c, ' ' | '{' | '}');
+                after_accent &= matches!(c, ' ' | '{' | '}');
+                after_group = c == '}';
                 at += c.len_utf8();
             }
         }
@@ -142,40 +159,25 @@ fn source_words(source: &str) -> Vec<Word<'_>> {
     words
 }
 
+/// Accents' commands, which make the letter after them another.
+const ACCENTS: &[&str] = &[
+    "'", "\"", "^", "`", "~", "=", ".", "H", "c", "v", "u", "d", "b", "k", "r", "t",
+];
+
+/// Commands that are letters of a word.
+const LETTERS: &[&str] = &[
+    "ss", "l", "L", "o", "O", "aa", "AA", "ae", "AE", "oe", "OE", "i", "j",
+];
+
+/// Whether `command` is an accent's (see [`ACCENTS`]).
+fn is_accent(command: &str) -> bool {
+    ACCENTS.contains(&&command[1..])
+}
+
 /// Whether `command` makes a letter of a word, or a word's letter of the
-/// next: an accent's, as `\'` or `\H`, or one that's a letter, as `\ss`.
+/// next: an accent's, or one that's a letter (see [`LETTERS`]).
 fn is_letter(command: &str) -> bool {
-    matches!(
-        &command[1..],
-        "'" | "\""
-            | "^"
-            | "`"
-            | "~"
-            | "="
-            | "."
-            | "H"
-            | "c"
-            | "v"
-            | "u"
-            | "d"
-            | "b"
-            | "k"
-            | "r"
-            | "t"
-            | "ss"
-            | "l"
-            | "L"
-            | "o"
-            | "O"
-            | "aa"
-            | "AA"
-            | "ae"
-            | "AE"
-            | "oe"
-            | "OE"
-            | "i"
-            | "j"
-    )
+    is_accent(command) || LETTERS.contains(&&command[1..])
 }
 
 /// How long the command `text` starts with is: a name of letters and `@`,
@@ -284,6 +286,9 @@ fn debug_strings(debug: &str) -> String {
                 '"' => break,
                 '\\' => match chars.next() {
                     Some('n') => out.push('\n'),
+                    Some('t') => out.push('\t'),
+                    Some('r') => out.push('\r'),
+                    Some('0') => out.push('\0'),
                     Some('u') => {
                         let hex: String =
                             chars.by_ref().skip(1).take_while(|c| *c != '}').collect();
@@ -310,11 +315,10 @@ fn lost_words<'a>(source: &'a str, reading: &str) -> Vec<Word<'a>> {
     let mut seen = HashSet::new();
     let mut lost = Vec::new();
     for word in source_words(source) {
-        // After an accent's command, its first letter is the accent's:
-        // `M\"obius` is read `Möbius`.
         let first = word.text.chars().next().map_or(0, char::len_utf8);
         let kept = read.contains(word.text)
-            || word.split && (reading.contains(word.text) || reading.contains(&word.text[first..]));
+            || word.split && reading.contains(word.text)
+            || word.accented && reading.contains(&word.text[first..]);
         if kept || !seen.insert(word.text) {
             continue;
         }
@@ -358,21 +362,39 @@ mod tests {
         );
         let lost: Vec<&str> = lost.iter().map(|word| word.text).collect();
         assert_eq!(lost, ["lost", "cat"]);
+        // The first word, after a group that's no text, is one of its own.
+        let lost = lost_words("\\begin{document}cat dog\\end{document}", "dog concatenate");
+        let lost: Vec<&str> = lost.iter().map(|word| word.text).collect();
+        assert_eq!(lost, ["cat"]);
+    }
+
+    /// An `\end{document}` with an odd count of backslashes before it ends
+    /// the body there, and the one left is a command of its own.
+    #[test]
+    fn a_backslash_before_the_end_is_passed_by() {
+        assert_eq!(words("\\begin{document}text\\\\end{document}"), ["text"]);
     }
 
     #[test]
     fn debug_strings_are_its_text_alone() {
-        let debug = format!("{:?}", vec![("Ann \"B\"\\", "e\u{301}\n")]);
-        assert_eq!(debug_strings(&debug), "Ann \"B\"\\\ne\u{301}\n\n");
+        let debug = format!("{:?}", vec![("Ann \"B\"\\", "e\u{301}\n\ta\rb\0")]);
+        assert_eq!(debug_strings(&debug), "Ann \"B\"\\\ne\u{301}\n\ta\rb\0\n");
+    }
+
+    /// The baseline's lines: a document and a word it loses, now.
+    fn baseline_path() -> std::path::PathBuf {
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/text-loss/baseline.txt")
     }
 
     /// The bench's documents' words their readings lack, and their
-    /// warnings.
+    /// warnings: failing on those the baseline doesn't hold, which
+    /// `TEXT_LOSS_UPDATE=1` writes from what's lost now.
     #[test]
     #[ignore = "a report on the bench's documents, run by hand"]
     fn text_loss() {
         let bench = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../bench");
         let manifest = std::fs::read_to_string(bench.join("documents.toml")).unwrap();
+        let mut all_lost = std::collections::BTreeSet::new();
         let mut dir = String::new();
         for line in manifest.lines() {
             let value = line.split('"').nth(1).unwrap_or("");
@@ -393,7 +415,28 @@ mod tests {
                     let end = source.ceil_char_boundary((word.at + 30).min(source.len()));
                     println!("  {}: {:?}", word.text, &source[start..end]);
                 }
+                all_lost.extend(lost.iter().map(|word| format!("{dir} {}", word.text)));
             }
         }
+        let path = baseline_path();
+        if std::env::var_os("TEXT_LOSS_UPDATE").is_some() {
+            let lines: String = all_lost.iter().map(|line| format!("{line}\n")).collect();
+            std::fs::write(&path, lines).unwrap();
+            println!("Wrote {}", path.display());
+            return;
+        }
+        let baseline = std::fs::read_to_string(&path).unwrap_or_default();
+        let baseline: std::collections::BTreeSet<String> =
+            baseline.lines().map(str::to_string).collect();
+        let found: Vec<&String> = baseline.difference(&all_lost).collect();
+        if !found.is_empty() {
+            println!("Read now, the baseline should lose them (TEXT_LOSS_UPDATE=1): {found:?}");
+        }
+        let new: Vec<&String> = all_lost.difference(&baseline).collect();
+        assert!(
+            new.is_empty(),
+            "lost, and not in {}: {new:?}",
+            path.display()
+        );
     }
 }
