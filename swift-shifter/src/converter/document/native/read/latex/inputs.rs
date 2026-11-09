@@ -342,6 +342,10 @@ mod tests {
             counts(&warnings),
             [("file the document reads wasn't found", 2)]
         );
+        // Its name past a space isn't its text either.
+        let (blocks, _) = read_with(&[], "a \\input {nope} b");
+        assert_eq!(blocks, read_with(&[], "a \\input{nope} b").0);
+        assert!(!format!("{blocks:?}").contains("nope"));
     }
 
     /// Files outside the document's folder aren't read, wherever a name or a
