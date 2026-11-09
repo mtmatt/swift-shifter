@@ -63,7 +63,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDFCMTBCOTYzMDg5NTM2OUMKUldTY05wVUlZN2tRRzMwV1ZlaXdsRnJ1OHgzcTBVbzV5eEwrTkhZc2JnVXFlWW40Q2tTaTFQMVkK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFDRTY3NjEyQkUyODFFNEMKUldSTUhpaStFbmJtckY5Q3pkK0dMZ0pZcUEyU0EzVS9KNHlBZkpVQmppVSt1dGtmdXd3Tyt2cUcK",
       "endpoints": [
         "https://github.com/mtmatt/swift-shifter/releases/latest/download/latest.json"
       ],
