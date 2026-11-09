@@ -14,6 +14,7 @@ use sha2::{Digest, Sha256};
 use zip::write::SimpleFileOptions;
 
 use super::html::{MATH_STYLE, NoteStyle, Writer, WrittenHeading};
+use super::meta_notes_in_text;
 use super::xhtml::{self, Features, Hooks, escape_attr, escape_text};
 use crate::converter::document::native::ast::{Block, Document};
 use crate::converter::document::native::local_path;
@@ -45,6 +46,8 @@ pub fn write(doc: &Document, options: &Options) -> Result<Vec<u8>, String> {
 
 /// [`write`], also returning what the book left out.
 pub fn write_reporting(doc: &Document, options: &Options) -> Result<(Vec<u8>, Dropped), String> {
+    // The book's pages show no title or authors to mark their notes on.
+    let doc = &*meta_notes_in_text(doc);
     let title = doc
         .meta
         .title
@@ -751,6 +754,23 @@ mod tests {
             files,
             first_stored,
         }
+    }
+
+    /// The book's pages show no title block: the notes on its title and
+    /// authors are referred to from a paragraph naming them, and are notes.
+    #[test]
+    fn notes_on_the_title_and_authors_are_referred_to_by_name() {
+        let options = Options {
+            base_dir: PathBuf::from("."),
+        };
+        let book = open(&write(&super::super::tests::noted(), &options).unwrap());
+        let chapter = book.text("OEBPS/text/ch001.xhtml");
+        let named = chapter.find("<p>T<sup").expect(&chapter);
+        assert!(named < chapter.find("Body").unwrap(), "{chapter}");
+        assert!(
+            chapter.contains("On T") && chapter.contains("On A"),
+            "{chapter}"
+        );
     }
 
     fn book(md: &str, base: &Path) -> Book {

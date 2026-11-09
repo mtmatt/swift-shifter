@@ -1,16 +1,17 @@
 //! [`Document`] → typst markup with Swift Shifter's page template. Used to
 //! typeset PDFs in-process and to write `.typ` files.
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::PathBuf;
 
 use super::{
-    BlockWriter, Footnotes, for_each_anchor, indent_rest, inline_anchor, lone_anchor,
-    renderable_tex,
+    BlockWriter, Footnotes, all_meta_notes, for_each_anchor, indent_rest, inline_anchor,
+    lone_anchor, meta_notes, meta_notes_in_text, meta_notes_markable, renderable_tex,
 };
 use crate::converter::document::native::ast::{
-    Align, Block, Document, Inline, List, Meta, RawFormat, Table, inline_text,
+    Align, Block, Document, Inline, List, Meta, NoteOn, RawFormat, Table, inline_text,
 };
 use crate::converter::document::native::typst::{VIRTUAL_DIR, tex_to_typst};
 use crate::converter::document::native::{local_path, percent_decode, read};
@@ -51,9 +52,28 @@ pub struct Output {
 const MITEX_PACKAGE: &str = "@preview/mitex:0.2.7";
 
 pub fn write(doc: &Document, options: &Options) -> Output {
+    let opens_with_title = matches!(
+        doc.blocks.first(),
+        Some(Block::Heading { content, .. }) if Some(inline_text(content).as_str()) == doc.meta.title.as_deref()
+    );
+    // Where there's no title block (see `preamble`), or its notes refer to
+    // notes, the notes on the title and the authors aren't marked in it.
+    let shows_title = doc
+        .meta
+        .title
+        .as_deref()
+        .is_some_and(|title| !title.is_empty());
+    let doc = &*if shows_title && !opens_with_title && meta_notes_markable(doc) {
+        Cow::Borrowed(doc)
+    } else {
+        meta_notes_in_text(doc)
+    };
     let (notes, note_bodies) = Footnotes::collect(doc);
     let mut anchors = HashSet::new();
-    for_each_anchor(&doc.blocks, &note_bodies, &mut |id| {
+    // The title block's notes are written too (see `TitleMarks`).
+    let mut written_notes = note_bodies.clone();
+    written_notes.extend(all_meta_notes(doc));
+    for_each_anchor(&doc.blocks, &written_notes, &mut |id| {
         anchors.insert(id);
     });
     let w = Writer {
@@ -66,17 +86,27 @@ pub fn write(doc: &Document, options: &Options) -> Output {
         formulas: Vec::new().into(),
         images: HashMap::new().into(),
     };
+    // Before the body, as the title block is, for its formulas to be first.
+    let marks_on = |on: NoteOn| -> String {
+        meta_notes(doc, on)
+            .into_iter()
+            .map(|body| format!("#footnote[{}]", w.blocks(body)))
+            .collect()
+    };
+    let marks = TitleMarks {
+        title: marks_on(NoteOn::Title),
+        authors: (0..doc.meta.authors.len())
+            .map(|i| marks_on(NoteOn::Author(i)))
+            .collect(),
+    };
     let body = w.blocks(&doc.blocks);
     let formulas = w.formulas.into_inner();
-    let opens_with_title = matches!(
-        doc.blocks.first(),
-        Some(Block::Heading { content, .. }) if Some(inline_text(content).as_str()) == doc.meta.title.as_deref()
-    );
     let extras = PreambleExtras {
         has_math: !formulas.is_empty(),
         opens_with_title,
     };
-    let preamble = preamble(&doc.meta, doc.effective_lang().as_deref(), options, extras);
+    let lang = doc.effective_lang();
+    let preamble = marked_preamble(&doc.meta, lang.as_deref(), options, extras, &marks);
     let source = format!("{preamble}\n{body}\n");
     // Locate each formula now that the text is final. Formulas appear in
     // order, so each search starts after the previous match; the marker
@@ -110,6 +140,14 @@ pub struct PreambleExtras {
     pub opens_with_title: bool,
 }
 
+/// The notes the title block marks (see [`Meta::notes`]), as typst: after
+/// the title, and after each author, by index.
+#[derive(Default)]
+struct TitleMarks {
+    title: String,
+    authors: Vec<String>,
+}
+
 /// Imports, page setup and styles, then a title block from `meta`. Also used
 /// in front of typst written by pandoc (epub/tex → pdf), which needs
 /// `horizontalrule`.
@@ -118,6 +156,17 @@ pub fn preamble(
     lang: Option<&str>,
     options: &Options,
     extras: PreambleExtras,
+) -> String {
+    marked_preamble(meta, lang, options, extras, &TitleMarks::default())
+}
+
+/// [`preamble`], its title block marking `marks`.
+fn marked_preamble(
+    meta: &Meta,
+    lang: Option<&str>,
+    options: &Options,
+    extras: PreambleExtras,
+    marks: &TitleMarks,
 ) -> String {
     let PreambleExtras {
         has_math,
@@ -166,11 +215,23 @@ pub fn preamble(
     );
     if !title.is_empty() && !opens_with_title {
         p.push_str(&format!(
-            "#align(center)[#text(size: 1.7em, weight: \"bold\", {})",
-            typst_str(title)
+            "#align(center)[#text(size: 1.7em, weight: \"bold\", {}){}",
+            typst_str(title),
+            marks.title
         ));
-        if !meta.authors.is_empty() {
-            p.push_str(&format!(" \\ #{}", typst_str(&meta.authors.join(", "))));
+        // Unmarked, the authors are one string, as they were before notes.
+        if marks.authors.iter().all(String::is_empty) {
+            if !meta.authors.is_empty() {
+                p.push_str(&format!(" \\ #{}", typst_str(&meta.authors.join(", "))));
+            }
+        } else {
+            let authors: Vec<String> = meta
+                .authors
+                .iter()
+                .zip(&marks.authors)
+                .map(|(author, marks)| format!("#{}{marks}", typst_str(author)))
+                .collect();
+            p.push_str(&format!(" \\ {}", authors.join(", ")));
         }
         p.push_str("]\n");
     }
@@ -648,6 +709,87 @@ fn longest_run(text: &str, c: char) -> usize {
 mod tests {
     use super::*;
     use crate::converter::document::native::read::markdown;
+
+    /// The notes on the title and authors are marked after them in the
+    /// title block, or, where there's none, referred to from a paragraph
+    /// naming them.
+    #[test]
+    fn notes_on_the_title_and_authors_are_marked_on_them() {
+        let options = Options {
+            target: Target::TypstFile,
+            fonts: Vec::new(),
+            paper: "a4",
+            base_dir: PathBuf::from("."),
+            tex_fallback: &HashSet::new(),
+        };
+        let doc = super::super::tests::noted();
+        let source = write(&doc, &options).source;
+        assert!(
+            source.contains(
+                "weight: \"bold\", \"T\")#footnote[On T] \\ #\"A\"#footnote[On A], #\"B\"]"
+            ),
+            "{source}"
+        );
+        assert!(!source.contains("#footnote[On T] <fn-"), "{source}");
+        let typeset = crate::converter::document::native::typeset(&doc, std::path::Path::new("."));
+        assert!(typeset.is_ok(), "{:?}", typeset.err());
+        let mut untitled = doc.clone();
+        untitled.meta.title = None;
+        let source = write(&untitled, &options).source;
+        assert!(source.contains("A#footnote[On A]"), "{source}");
+        // A formula in a note is written once, where there's no title
+        // block or one: by the body's notes, or the title block's.
+        let mut with_formula = doc.clone();
+        let Block::FootnoteDefinition { content, .. } = &mut with_formula.blocks[2] else {
+            panic!("the note on A");
+        };
+        content.push(Block::Paragraph(vec![Inline::Math("x".into())]));
+        let opening = Block::Heading {
+            level: 1,
+            content: vec![Inline::Text("T".into())],
+        };
+        let mut opens_with_title = with_formula.clone();
+        opens_with_title.blocks.insert(0, opening);
+        let mut untitled = with_formula.clone();
+        untitled.meta.title = None;
+        for doc in [with_formula, opens_with_title, untitled] {
+            let output = write(&doc, &options);
+            assert_eq!(output.formulas.len(), 1, "{}", output.source);
+        }
+        // An anchor in one is linked to from the body.
+        let mut anchored = doc.clone();
+        let Block::FootnoteDefinition { content, .. } = &mut anchored.blocks[1] else {
+            panic!("the note on T");
+        };
+        content.push(Block::Raw {
+            format: RawFormat::Html,
+            text: "<a id=\"target\"></a>".into(),
+        });
+        anchored.blocks[0] = Block::Paragraph(vec![Inline::Link {
+            url: "#target".into(),
+            title: None,
+            content: vec![Inline::Text("go".into())],
+        }]);
+        let source = write(&anchored, &options).source;
+        assert!(!source.contains("#link(\"#target\")"), "{source}");
+        // Notes in a note on it, which only the body's notes number, aren't
+        // marked in the title block.
+        let mut nested = doc;
+        let Block::FootnoteDefinition { content, .. } = &mut nested.blocks[1] else {
+            panic!("the note on T");
+        };
+        content.push(Block::Paragraph(vec![Inline::FootnoteRef("in".into())]));
+        nested.blocks.push(Block::FootnoteDefinition {
+            label: "in".into(),
+            content: vec![Block::Paragraph(vec![Inline::Text("Inner".into())])],
+        });
+        let source = write(&nested, &options).source;
+        assert!(
+            source.contains("weight: \"bold\", \"T\") \\ #\"A, B\"]"),
+            "{source}"
+        );
+        assert!(source.contains("Inner"), "{source}");
+    }
 
     fn opts(target: Target, fallback: &HashSet<usize>) -> Options<'_> {
         Options {

@@ -10,12 +10,14 @@ use unicode_math_class::MathClass;
 use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 
-use super::{DocumentIds, Footnotes, renderable_tex};
+use super::{DocumentIds, Footnotes, meta_notes_in_text, renderable_tex};
 use crate::converter::document::native::ast::{
     Align, Block, Document, Inline, List, RawFormat, Table, inline_text,
 };
 
 pub fn write(doc: &Document) -> String {
+    // The page shows no title or authors to mark their notes on.
+    let doc = &*meta_notes_in_text(doc);
     let mut w = Writer::new(doc, NoteStyle::Section);
     w.blocks(&doc.blocks);
     w.footnote_section();
@@ -614,6 +616,21 @@ mover.last-row-on-baseline > mpadded > mtable > mtr:last-child > mtd { padding-b
 mod tests {
     use super::*;
     use crate::converter::document::native::read::markdown;
+
+    /// The page shows no title block: the notes on its title and authors
+    /// are referred to from a paragraph naming them, and are notes.
+    #[test]
+    fn notes_on_the_title_and_authors_are_referred_to_by_name() {
+        let html = write(&super::super::tests::noted());
+        let body = &html[html.find("<main>").unwrap()..];
+        assert!(body.starts_with("<main>\n<p>T<sup"), "{body}");
+        assert!(body.contains(", A<sup"), "{body}");
+        let notes = &body[body.find("class=\"footnotes\"").unwrap()..];
+        assert!(
+            notes.find("On T").unwrap() < notes.find("On A").unwrap(),
+            "{notes}"
+        );
+    }
 
     fn body(md: &str) -> String {
         let html = write(&markdown::read(md));
