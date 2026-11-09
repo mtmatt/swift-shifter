@@ -17,6 +17,25 @@ pub struct Meta {
     pub description: Option<String>,
     /// A cover image (path or URL), for ebook output.
     pub cover: Option<String>,
+    /// Notes on the title and the authors, as LaTeX's `\thanks`, in the
+    /// order they're marked: each the label of a [`Block::FootnoteDefinition`]
+    /// among the document's blocks, which nothing else refers to.
+    pub notes: Vec<MetaNote>,
+}
+
+/// A note on the title or an author (see [`Meta::notes`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct MetaNote {
+    pub on: NoteOn,
+    pub label: String,
+}
+
+/// What a [`MetaNote`] is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NoteOn {
+    Title,
+    /// The author at this index of [`Meta::authors`].
+    Author(usize),
 }
 
 #[derive(Debug, Clone, PartialEq)]

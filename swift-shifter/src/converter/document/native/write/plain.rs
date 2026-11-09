@@ -3,13 +3,15 @@
 
 use unicode_width::UnicodeWidthStr;
 
-use super::{BlockWriter, Footnotes, indent_rest};
+use super::{BlockWriter, Footnotes, indent_rest, meta_notes_in_text};
 use crate::converter::document::native::ast::{
     Block, Document, Inline, List, RawFormat, Table, inline_text,
 };
 use crate::converter::document::native::read;
 
 pub fn write(doc: &Document) -> String {
+    // The text shows its title, but not its authors, to mark notes on.
+    let doc = &*meta_notes_in_text(doc);
     let (notes, note_bodies) = Footnotes::collect(doc);
     let w = Writer { notes };
     let mut parts: Vec<String> = Vec::new();
@@ -271,6 +273,27 @@ fn indent_all(text: &str, indent: &str) -> String {
 mod tests {
     use super::*;
     use crate::converter::document::native::read::markdown;
+
+    /// The text shows no authors: the notes on its title and authors are
+    /// referred to from a paragraph naming them.
+    #[test]
+    fn notes_on_the_title_and_authors_are_referred_to_by_name() {
+        let mut doc = super::super::tests::noted();
+        let text = write(&doc);
+        assert_eq!(
+            text,
+            "T\n=\n\nT[1], A[2]\n\nBody\n\n---\n\n[1] On T\n\n[2] On A\n"
+        );
+        // After a heading it opens with that's the title, which is written
+        // once.
+        let title = Block::Heading {
+            level: 1,
+            content: vec![Inline::Text("T".into())],
+        };
+        doc.blocks.insert(0, title);
+        let text = write(&doc);
+        assert!(text.starts_with("T\n=\n\nT[1], A[2]\n\nBody"), "{text}");
+    }
 
     #[test]
     fn writes_readable_plain_text() {

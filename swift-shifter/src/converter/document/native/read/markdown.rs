@@ -99,6 +99,7 @@ fn parse_front_matter(raw: &str) -> Option<Meta> {
         date: text("date"),
         description: text("description").or_else(|| text("abstract")),
         cover: text("cover-image").or_else(|| text("cover")),
+        notes: Vec::new(),
     })
 }
 

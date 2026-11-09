@@ -7,9 +7,12 @@ pub mod plain;
 pub mod typst;
 pub(crate) mod xhtml;
 
+use std::borrow::Cow;
 use std::collections::{HashMap, HashSet, VecDeque};
 
-use crate::converter::document::native::ast::{Block, Document, Inline, RawFormat, inline_text};
+use crate::converter::document::native::ast::{
+    Block, Document, Inline, NoteOn, RawFormat, inline_text,
+};
 use crate::converter::document::native::read;
 
 /// Footnote numbers, 1, 2, … as typst numbers them: each note where its
@@ -96,6 +99,90 @@ fn collect_inline_refs(inlines: &[Inline], out: &mut Vec<String>) {
             _ => {}
         }
     }
+}
+
+/// The bodies of the notes on `on`, the title or an author (see
+/// [`Meta::notes`](crate::converter::document::native::ast::Meta::notes)),
+/// for a writer that marks them where it shows the title and the authors.
+pub(crate) fn meta_notes(doc: &Document, on: NoteOn) -> Vec<&[Block]> {
+    doc.meta
+        .notes
+        .iter()
+        .filter(|note| note.on == on)
+        .filter_map(|note| {
+            doc.blocks.iter().find_map(|block| match block {
+                Block::FootnoteDefinition { label, content } if *label == note.label => {
+                    Some(content.as_slice())
+                }
+                _ => None,
+            })
+        })
+        .collect()
+}
+
+/// Whether a title block can mark `doc`'s notes on its title and authors
+/// (see [`meta_notes`]): none of them refers to a note, which only the
+/// body's notes number.
+pub(crate) fn meta_notes_markable(doc: &Document) -> bool {
+    let on_meta = |label: &String| doc.meta.notes.iter().any(|note| note.label == *label);
+    doc.blocks.iter().all(|block| match block {
+        Block::FootnoteDefinition { label, content } if on_meta(label) => {
+            let mut refs = Vec::new();
+            collect_refs(content, &mut refs);
+            refs.is_empty()
+        }
+        _ => true,
+    })
+}
+
+/// The bodies of all of `doc`'s notes on its title and authors (see
+/// [`meta_notes`]).
+pub(crate) fn all_meta_notes(doc: &Document) -> Vec<Vec<Block>> {
+    let mut on = vec![NoteOn::Title];
+    on.extend((0..doc.meta.authors.len()).map(NoteOn::Author));
+    on.into_iter()
+        .flat_map(|on| meta_notes(doc, on))
+        .map(<[Block]>::to_vec)
+        .collect()
+}
+
+/// `doc` with its notes on its title and authors referred to from a new
+/// first paragraph that names the title or author each is on, so that a
+/// writer whose title block doesn't mark them (see [`meta_notes`]) numbers
+/// them as the body's notes; `doc` as it is where it has none.
+pub(crate) fn meta_notes_in_text(doc: &Document) -> Cow<'_, Document> {
+    if doc.meta.notes.is_empty() {
+        return Cow::Borrowed(doc);
+    }
+    let mut named = Vec::new();
+    let mut last = None;
+    for note in &doc.meta.notes {
+        if last != Some(note.on) {
+            let name = match note.on {
+                NoteOn::Title => doc.meta.title.clone(),
+                NoteOn::Author(i) => doc.meta.authors.get(i).cloned(),
+            };
+            if !named.is_empty() {
+                named.push(Inline::Text(", ".to_string()));
+            }
+            named.extend(name.map(Inline::Text));
+            last = Some(note.on);
+        }
+        named.push(Inline::FootnoteRef(note.label.clone()));
+    }
+    // After a heading the body opens with that's the title, which writers
+    // take for their title.
+    let opens_with_title = matches!(
+        doc.blocks.first(),
+        Some(Block::Heading { content, .. })
+            if Some(inline_text(content).as_str()) == doc.meta.title.as_deref()
+    );
+    let mut doc = doc.clone();
+    doc.blocks
+        .insert(usize::from(opens_with_title), Block::Paragraph(named));
+    // They're the body's notes now, for no title block to mark.
+    doc.meta.notes.clear();
+    Cow::Owned(doc)
 }
 
 /// Calls `f` with each run of inlines held directly by `block`.
@@ -284,6 +371,8 @@ pub(crate) fn raw_html_elements(doc: &Document) -> usize {
         }
         count
     }
+    // The notes on the title and authors are written as well, wherever.
+    let doc = &*meta_notes_in_text(doc);
     let (_, note_bodies) = Footnotes::collect(doc);
     walk(&doc.blocks, false)
         + note_bodies
@@ -408,8 +497,85 @@ pub(crate) fn for_each_heading(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::converter::document::native::ast::RawFormat;
+    use crate::converter::document::native::ast::{MetaNote, RawFormat};
     use crate::converter::document::native::read::markdown;
+
+    /// A document titled `T` by `A` and `B`, with a note on its title, `On
+    /// T`, and one on `A`, `On A`, and a body, `Body`.
+    pub(crate) fn noted() -> Document {
+        let text = |text: &str| Block::Paragraph(vec![Inline::Text(text.into())]);
+        let note = |label: &str, body: &str| Block::FootnoteDefinition {
+            label: label.into(),
+            content: vec![text(body)],
+        };
+        let mut doc = Document {
+            blocks: vec![text("Body"), note("t", "On T"), note("a", "On A")],
+            ..Document::default()
+        };
+        doc.meta.title = Some("T".into());
+        doc.meta.authors = vec!["A".into(), "B".into()];
+        doc.meta.notes = vec![
+            MetaNote {
+                on: NoteOn::Title,
+                label: "t".into(),
+            },
+            MetaNote {
+                on: NoteOn::Author(0),
+                label: "a".into(),
+            },
+        ];
+        doc
+    }
+
+    #[test]
+    fn meta_notes_are_referred_to_from_the_text_or_found() {
+        let doc = noted();
+        let in_text = meta_notes_in_text(&doc);
+        assert_eq!(
+            in_text.blocks[0],
+            Block::Paragraph(vec![
+                Inline::Text("T".into()),
+                Inline::FootnoteRef("t".into()),
+                Inline::Text(", ".into()),
+                Inline::Text("A".into()),
+                Inline::FootnoteRef("a".into()),
+            ])
+        );
+        assert_eq!(in_text.blocks[1..], doc.blocks[..]);
+        // They're the body's now, for no title block to mark.
+        assert!(in_text.meta.notes.is_empty());
+        assert!(meta_notes_markable(&doc));
+        let (_, bodies) = Footnotes::collect(&in_text);
+        assert_eq!(bodies.len(), 2);
+        // A writer marking them finds them, and nothing else refers to them.
+        let on_a = meta_notes(&doc, NoteOn::Author(0));
+        assert_eq!(
+            on_a,
+            [&[Block::Paragraph(vec![Inline::Text("On A".into())])][..]]
+        );
+        assert!(meta_notes(&doc, NoteOn::Author(1)).is_empty());
+        assert!(Footnotes::collect(&doc).1.is_empty());
+        // What they lose is counted, as they're written.
+        let mut kbd = doc.clone();
+        kbd.blocks[2] = Block::FootnoteDefinition {
+            label: "a".into(),
+            content: vec![Block::Paragraph(vec![
+                Inline::Raw {
+                    format: RawFormat::Html,
+                    text: "<kbd>".into(),
+                },
+                Inline::Text("Ctrl".into()),
+                Inline::Raw {
+                    format: RawFormat::Html,
+                    text: "</kbd>".into(),
+                },
+            ])],
+        };
+        assert_eq!(raw_html_elements(&kbd), 1);
+        // None, none referred to.
+        let plain = markdown::read("Body\n");
+        assert!(matches!(meta_notes_in_text(&plain), Cow::Borrowed(_)));
+    }
 
     #[test]
     fn footnotes_number_in_reference_order() {

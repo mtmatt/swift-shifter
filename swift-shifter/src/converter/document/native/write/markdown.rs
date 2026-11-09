@@ -3,12 +3,14 @@
 
 use serde::Serialize;
 
-use super::{BlockWriter, Footnotes, indent_rest};
+use super::{BlockWriter, Footnotes, indent_rest, meta_notes_in_text};
 use crate::converter::document::native::ast::{
     Align, Block, Document, Inline, List, RawFormat, Table,
 };
 
 pub fn write(doc: &Document) -> String {
+    // The front matter's title and authors can't hold notes.
+    let doc = &*meta_notes_in_text(doc);
     let (notes, note_bodies) = Footnotes::collect(doc);
     let w = Writer { notes };
     let mut parts = Vec::new();
@@ -547,6 +549,17 @@ fn quote(text: &str) -> String {
 mod tests {
     use super::*;
     use crate::converter::document::native::read::{html, markdown, plain};
+
+    /// The front matter can't hold notes: those on the title and authors
+    /// are referred to from a paragraph naming them.
+    #[test]
+    fn notes_on_the_title_and_authors_are_referred_to_by_name() {
+        let md = write(&super::super::tests::noted());
+        assert!(
+            md.ends_with("T[^1], A[^2]\n\nBody\n\n[^1]: On T\n\n[^2]: On A\n"),
+            "{md}"
+        );
+    }
 
     fn doc_of(blocks: Vec<Block>) -> Document {
         Document {

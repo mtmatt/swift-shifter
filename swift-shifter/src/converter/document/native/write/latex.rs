@@ -9,7 +9,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::{HashSet, VecDeque};
 
 use super::latex_math::{self, Fallbacks};
-use super::{BlockWriter, DocumentIds, Footnotes, lone_anchor};
+use super::{BlockWriter, DocumentIds, Footnotes, lone_anchor, meta_notes_in_text};
 use crate::converter::document::native::ast::{
     Align, Block, Document, Inline, List, Meta, RawFormat, Table, contains_cjk, inline_text,
 };
@@ -21,8 +21,12 @@ pub fn write(doc: &Document) -> String {
         Some(Block::Heading { content, .. })
             if Some(inline_text(content).as_str()) == doc.meta.title.as_deref()
     );
-    // The title, authors and date are typeset only by `\maketitle`.
+    // The title, authors and date are typeset only by `\maketitle`. Their
+    // notes are the body's, not their `\thanks`, which can't hold a
+    // paragraph's end, nor a formula a `\maketitle` can't expand, and of
+    // which `article` numbers only nine.
     let make_title = doc.meta.title.is_some() && !opens_with_title;
+    let doc = &*meta_notes_in_text(doc);
     let mut w = Writer::new(doc, Punctuation::AsTyped);
     let mut body = w.blocks(&doc.blocks);
     let mut titles = w.titles(&doc.meta);
@@ -1321,6 +1325,23 @@ fn escape_code(code: &str, latin: &LatinFlags) -> String {
 mod tests {
     use super::*;
     use crate::converter::document::native::read::markdown;
+
+    /// The notes on the title and authors are the body's notes, referred to
+    /// from a paragraph naming them after the title block, not `\thanks`,
+    /// which can't hold all a note can.
+    #[test]
+    fn notes_on_the_title_and_authors_are_the_bodys() {
+        let doc = super::super::tests::noted();
+        let tex = write(&doc);
+        assert!(tex.contains("\\title{T}\n\\author{A \\and B}\n"), "{tex}");
+        assert!(
+            tex.contains(
+                "\\maketitle\n\nT\\footnote{\\label{fn:1}On T}, A\\footnote{\\label{fn:2}On A}"
+            ),
+            "{tex}"
+        );
+        assert!(!tex.contains("\\thanks"), "{tex}");
+    }
 
     fn body(md: &str) -> String {
         let tex = write(&markdown::read(md));

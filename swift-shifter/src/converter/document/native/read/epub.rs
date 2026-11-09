@@ -296,6 +296,7 @@ fn parse_package(opf: &str, opf_dir: &Path) -> Result<Package, String> {
         date: text_of("date").into_iter().next(),
         description: text_of("description").into_iter().next(),
         cover,
+        notes: Vec::new(),
     };
     Ok(Package {
         meta,
