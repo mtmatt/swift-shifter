@@ -1,0 +1,4 @@
+kitchen-sink.md - A paragraph with *emphasis*, **strong**, ~~strike~~, `code`, H~2~O, x^2^, a [link](https://example.org), an autolink [https://rust-lang.org](https://rust-lang.org), and inline math $e^{i\pi} + 1 = 0$.[^1]
+kitchen-sink.md + A paragraph with *emphasis*, **strong**, strike, `code`, H2O, x2, a [link](https://example.org), an autolink [https://rust-lang.org](https://rust-lang.org), and inline math $e^{i\pi} + 1 = 0$.[^1]
+kitchen-sink.md - ```rust "fn main() {\n    println!(\"hello\");\n}"
+kitchen-sink.md + ``` "fn main() {\n    println!(\"hello\");\n}"

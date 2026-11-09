@@ -14,6 +14,8 @@ mod inputs;
 mod listings;
 mod macros;
 pub mod paths;
+#[cfg(test)]
+mod round_trip;
 pub mod stage;
 #[cfg(test)]
 mod text_loss;
