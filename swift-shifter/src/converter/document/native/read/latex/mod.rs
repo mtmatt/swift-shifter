@@ -7430,6 +7430,25 @@ mod tests {
                 "\\newcommand{\\sample}[1]{\\lstinline{x_#1}}\\sample{}",
                 vec![para(&[Inline::Code("x_".into())])],
             ),
+            // Its options too, its code holding none.
+            (
+                "\\newcommand{\\shown}[1]{\\begin{lstlisting}[caption={#1}]\nx\n\\end{lstlisting}}\\shown{Title}",
+                vec![para(&[text("Title")]), code("x")],
+            ),
+            (
+                "\\newcommand{\\shown}[1]{\\begin{lstlisting}[language=#1]\nx\n\\end{lstlisting}}\\shown{Python}",
+                vec![code_in("python", "x")],
+            ),
+            // Not an escaped `#`, nor one in a comment, which are no
+            // parameters: these are listings, though in no macro.
+            (
+                "\\begin{lstlisting}[caption={Step \\#1}]\nx = { % y\n\\end{lstlisting}",
+                vec![para(&[text("Step #1")]), code("x = { % y")],
+            ),
+            (
+                "\\begin{lstlisting}[caption={A},% #1\n]\nx = { % y\n\\end{lstlisting}",
+                vec![para(&[text("A")]), code("x = { % y")],
+            ),
             // In a formula, as `\verb` is.
             (
                 "$\\text{\\lstinline|a_b|}$",
