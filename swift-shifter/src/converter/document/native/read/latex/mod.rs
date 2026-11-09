@@ -8,6 +8,8 @@
 
 mod conditionals;
 mod delimiters;
+#[cfg(test)]
+mod differential;
 pub mod files;
 mod formulas;
 mod inputs;
