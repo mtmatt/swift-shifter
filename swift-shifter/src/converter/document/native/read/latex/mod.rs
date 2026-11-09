@@ -2630,7 +2630,7 @@ impl Reader {
                 self.authors_add = class.is_some_and(|class| {
                     AUTHORS_ADD.iter().any(|adding| class.starts_with(adding))
                 });
-            } else if name == "\\usepackage" {
+            } else if matches!(name.as_str(), "\\usepackage" | "\\RequirePackage") {
                 let packages =
                     take_arguments(&mut items, &mut at, &mut unbracketed, TABULAR).required;
                 let packages = packages.first().map(|packages| self.as_written(packages));
@@ -6007,6 +6007,18 @@ mod tests {
                 "\\documentclass{article}\\usepackage{amsmath, jheppub}\\author[a]{A,}\\author[a,b]{B}\\begin{document}x\\end{document}",
                 None,
                 &["A,", "B"],
+                None,
+            ),
+            (
+                "\\documentclass{article}\\RequirePackage{authblk}\\author{A}\\author{B}\\begin{document}x\\end{document}",
+                None,
+                &["A", "B"],
+                None,
+            ),
+            (
+                "\\documentclass{article}\\usepackage[noblocks]{authblk}\\author{A}\\author{B}\\begin{document}x\\end{document}",
+                None,
+                &["A", "B"],
                 None,
             ),
             (
