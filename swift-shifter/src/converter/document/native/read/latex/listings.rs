@@ -56,8 +56,9 @@ pub(super) fn cut(source: &str) -> Cut {
 
 /// `source` with its listings cut out, appended to `listings`, each left as
 /// a placeholder of `mark`. One left unclosed is left as it is, and so is one
-/// whose code holds a macro's parameter (`#1`, `##`), for the macro's text,
-/// its arguments in it, to be cut again (see `Reader::expand_call`).
+/// whose code or options hold a macro's parameter (`#1`, `##`), for the
+/// macro's text, its arguments in it, to be cut again (see
+/// `Reader::expand_call`).
 pub(super) fn cut_into(source: &str, mark: &str, listings: &mut Vec<Listing>) -> String {
     let mut out = String::with_capacity(source.len());
     let (mut copied, mut at) = (0, 0);
@@ -105,13 +106,43 @@ pub(super) fn cut_into(source: &str, mark: &str, listings: &mut Vec<Listing>) ->
     out
 }
 
-/// Whether `listing`'s code holds a macro's parameter: a `#` and a digit or
-/// another `#`.
+/// Whether `listing`'s code, or its options, as its caption, hold a macro's
+/// parameter: a `#` and a digit or another `#`, in its options read as TeX
+/// (see [`tex_holds_parameter`]).
 fn holds_parameter(listing: &Listing) -> bool {
-    let (Listing::Inline(code) | Listing::Block { code, .. }) = listing;
-    code.as_bytes()
-        .windows(2)
-        .any(|pair| pair[0] == b'#' && (pair[1].is_ascii_digit() || pair[1] == b'#'))
+    let code_holds = |code: &str| {
+        code.as_bytes()
+            .windows(2)
+            .any(|pair| pair[0] == b'#' && (pair[1].is_ascii_digit() || pair[1] == b'#'))
+    };
+    match listing {
+        Listing::Inline(code) => code_holds(code),
+        Listing::Block { code, options } => {
+            code_holds(code) || options.as_deref().is_some_and(tex_holds_parameter)
+        }
+    }
+}
+
+/// Whether `tex` holds a macro's parameter as TeX reads it: not an escaped
+/// `\#`, as a caption's `Step \#1`, nor one in a comment.
+fn tex_holds_parameter(tex: &str) -> bool {
+    let tex = without_comments(tex);
+    let mut chars = tex.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\\' => {
+                chars.next();
+            }
+            '#' if chars
+                .peek()
+                .is_some_and(|c| c.is_ascii_digit() || *c == '#') =>
+            {
+                return true;
+            }
+            _ => {}
+        }
+    }
+    false
 }
 
 /// The command placeholders in `source` are: [`MARK`], and a letter or
