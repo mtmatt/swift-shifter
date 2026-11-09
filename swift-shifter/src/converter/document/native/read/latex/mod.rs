@@ -2630,6 +2630,15 @@ impl Reader {
                 self.authors_add = class.is_some_and(|class| {
                     AUTHORS_ADD.iter().any(|adding| class.starts_with(adding))
                 });
+            } else if name == "\\usepackage" {
+                let packages =
+                    take_arguments(&mut items, &mut at, &mut unbracketed, TABULAR).required;
+                let packages = packages.first().map(|packages| self.as_written(packages));
+                self.authors_add |= packages.is_some_and(|packages| {
+                    packages
+                        .split(',')
+                        .any(|package| AUTHORS_ADD_PACKAGES.contains(&package.trim()))
+                });
             } else if matches!(name.as_str(), "\\title" | "\\author" | "\\date")
                 && let Some(signature) = signature(&name)
             {
@@ -3278,6 +3287,11 @@ const AUTHORS_ADD: [&str; 6] = [
     "acmart",
     "elsarticle",
 ];
+
+/// The packages where each `\\author` adds one too, in any class: as
+/// `\author[1]{…}` with `authblk`, and `\author[a]{…}` with JHEP's and
+/// JCAP's.
+const AUTHORS_ADD_PACKAGES: [&str; 3] = ["authblk", "jheppub", "jcappub"];
 
 /// How many columns a table's specification gives at most: more than any
 /// table has, and few enough that a repeat count can't take all the memory.
@@ -5980,6 +5994,25 @@ mod tests {
                 "\\documentclass{amsart}\\author{A}\\author{B}\\begin{document}x\\end{document}",
                 None,
                 &["A", "B"],
+                None,
+            ),
+            // A package that adds them, in a class that doesn't.
+            (
+                "\\documentclass{IEEEtran}\\usepackage{authblk}\\author{A}\\author{B}\\affil{U}\\begin{document}x\\end{document}",
+                None,
+                &["A", "B"],
+                None,
+            ),
+            (
+                "\\documentclass{article}\\usepackage{amsmath, jheppub}\\author[a]{A,}\\author[a,b]{B}\\begin{document}x\\end{document}",
+                None,
+                &["A,", "B"],
+                None,
+            ),
+            (
+                "\\documentclass{article}\\usepackage{amsmath}\\author{A}\\author{B}\\begin{document}x\\end{document}",
+                None,
+                &["B"],
                 None,
             ),
             // A fragment's are read once.

@@ -1,8 +1,3 @@
-arxiv-2409.00087 Dinh
-arxiv-2409.00087 Hieu
-arxiv-2409.00087 Hoang
-arxiv-2409.00087 Quang
-arxiv-2409.00087 Thai
 arxiv-2409.00095 Author
 arxiv-2409.00095 Avenue
 arxiv-2409.00095 Boston
@@ -48,8 +43,6 @@ arxiv-2409.00177 Natural
 arxiv-2409.00177 Research
 arxiv-2409.00177 Sciences
 arxiv-2409.00177 supported
-arxiv-2409.00178 Chris
-arxiv-2409.00178 Hutt
 arxiv-2409.00188 Economics
 arxiv-2409.00188 Federation
 arxiv-2409.00188 Higher
