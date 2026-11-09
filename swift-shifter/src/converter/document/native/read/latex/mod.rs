@@ -31,7 +31,7 @@ use super::lists::loosens;
 use super::walk;
 use crate::converter::document::native::Warning;
 use crate::converter::document::native::ast::{
-    Align, Block, Document, Inline, List, ListItem, Meta, Table, inline_text,
+    Align, Block, Document, Inline, List, ListItem, Meta, MetaNote, NoteOn, Table, inline_text,
 };
 use crate::converter::document::native::write;
 use std::rc::Rc;
@@ -144,6 +144,10 @@ fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
     reader.close_notes();
     reader.end_paragraph();
     reader.blocks.append(&mut reader.notes);
+    for field_note in std::mem::take(&mut reader.field_notes) {
+        reader.meta.notes.push(field_note.note);
+        reader.blocks.push(field_note.definition);
+    }
     if !reader.note_aliases.is_empty() {
         walk::for_each_inlines(&mut reader.blocks, &mut |inlines| {
             for inline in inlines.iter_mut() {
@@ -769,6 +773,28 @@ fn files_named(name: &str) -> Option<usize> {
     }
 }
 
+/// What the labels of the notes `\\thanks` gives start with.
+const THANKS_LABEL: &str = "thanks-";
+
+/// A note `\\thanks` gives (see [`Reader::thanks`]): as [`Meta::notes`]
+/// has it, and its definition.
+struct FieldNote {
+    note: MetaNote,
+    definition: Block,
+    /// Which `\\thanks` of the document's it is, from 1.
+    number: usize,
+    /// The field that gave it, which the next of its kind takes the place
+    /// of, as it does of the field: `None` for none, as a class's own.
+    from: Option<Field>,
+}
+
+/// A field that's read in place of the one before (see [`FieldNote::from`]).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Field {
+    Title,
+    Authors,
+}
+
 /// What a reader knows of notes (see [`Reader::note_state`]): its fields
 /// of them, but for the notes read, of which it's how many.
 struct NoteState {
@@ -1012,9 +1038,18 @@ struct Reader {
     /// The calls of commands the reader doesn't know, which keep only the
     /// text of the groups after them.
     unknown_commands: usize,
-    /// The notes on fields dropped: `\\thanks`, and those a field read
-    /// (see [`Reader::field`]).
+    /// The notes a field read dropped (see [`Reader::field`]), which a
+    /// field's text can't hold; `\\thanks` gives notes the field keeps (see
+    /// [`Reader::thanks`]).
     dropped_field_notes: usize,
+    /// The field being read, `\\title` or an author, which a `\\thanks` is
+    /// a note on; none elsewhere, where it's on the title, as a class's own
+    /// (amsart's) is.
+    field_on: Option<NoteOn>,
+    /// The notes `\\thanks` gives, in the order they're read.
+    field_notes: Vec<FieldNote>,
+    /// How many `\\thanks` have been read, for their notes' labels.
+    thanks_count: usize,
     /// How many columns the table cell being read spans.
     cell_span: usize,
     /// The float's last caption, if it has one.
@@ -1329,7 +1364,12 @@ impl Reader {
             "\\cite" => self.cite(args),
             "\\title" => {
                 if let Some(arg) = args.into_iter().next() {
+                    // In place of the title before, and its notes.
+                    self.field_notes
+                        .retain(|note| note.from != Some(Field::Title));
+                    let outer = self.field_on.replace(NoteOn::Title);
                     let title = self.field(arg);
+                    self.field_on = outer;
                     self.meta.title = Some(title).filter(|title| !title.is_empty());
                 }
             }
@@ -1444,8 +1484,11 @@ impl Reader {
             // A line, which no writer's text can hold, outside of a block
             // of its own (see `Reader::aligned`).
             "\\tightlist" | "\\rule" | "\\nocite" | "\\pageref" | "\\centering" => {}
-            // A note on a field, which is a string: it goes, counted.
-            "\\thanks" => self.dropped_field_notes += 1,
+            "\\thanks" => {
+                if let Some(arg) = args.into_iter().next() {
+                    self.thanks(arg);
+                }
+            }
             // A file's name, where the file wasn't read in (see `inputs`).
             _ if files_named(name).is_some() => {}
             // No writer shows colors: the text, in a group of its own, and
@@ -2372,7 +2415,11 @@ impl Reader {
     /// else, it's no label a reference can go to, as nothing else has an id.
     fn label(&mut self, label: String) {
         if let Some(note) = &self.note {
-            self.note_labels.insert(label, note.clone());
+            // Not a `\\thanks`'s, which nothing else refers to (see
+            // `Meta::notes`): a reference to it keeps its text.
+            if !note.starts_with(THANKS_LABEL) {
+                self.note_labels.insert(label, note.clone());
+            }
             return;
         }
         if self.in_heading {
@@ -2656,8 +2703,10 @@ impl Reader {
                         .split(',')
                         .any(|package| AUTHORS_ADD_PACKAGES.contains(&package.trim()))
                 });
-            } else if matches!(name.as_str(), "\\title" | "\\author" | "\\date")
-                && let Some(signature) = signature(&name)
+            } else if matches!(
+                name.as_str(),
+                "\\title" | "\\author" | "\\date" | "\\thanks"
+            ) && let Some(signature) = signature(&name)
             {
                 let args = take_arguments(&mut items, &mut at, &mut unbracketed, signature);
                 self.command(&name, args.required);
@@ -2671,9 +2720,24 @@ impl Reader {
     /// counted for a warning.
     fn field(&mut self, arg: Vec<Piece>) -> String {
         let notes = self.note_state();
+        // By number, as a field in it may take the place of notes before.
+        let thanks_before = self.thanks_count;
         let text = inline_text(&self.table_cell(arg)).trim().to_string();
         self.dropped_field_notes += self.notes.len().saturating_sub(notes.notes);
         self.set_note_state(notes);
+        // The marks, in the notes `\\thanks` gave here, of the notes gone,
+        // which a later note would take the labels of.
+        for field_note in &mut self.field_notes {
+            let Block::FootnoteDefinition { content, .. } = &mut field_note.definition else {
+                continue;
+            };
+            if field_note.number <= thanks_before {
+                continue;
+            }
+            walk::for_each_inlines(content, &mut |inlines| {
+                inlines.retain(|inline| !matches!(inline, Inline::FootnoteRef(_)));
+            });
+        }
         text
     }
 
@@ -2707,21 +2771,62 @@ impl Reader {
     }
 
     /// The authors `arg` names, one for each stretch between its `\\and`s,
-    /// in place of those before it, or after them in a class that adds them.
+    /// in place of those before it, and their notes, or after them in a
+    /// class that adds them.
     fn authors(&mut self, arg: Vec<Piece>) {
         if !self.authors_add {
             self.meta.authors.clear();
+            self.field_notes
+                .retain(|note| note.from != Some(Field::Authors));
         }
         let is_and = |piece: &Piece| {
             matches!(piece, Piece::Node(node)
                 if node.kind() == SyntaxKind::ItemCmd && command_name(node) == "\\and")
         };
         for author in arg.split(is_and) {
+            let on = NoteOn::Author(self.meta.authors.len());
+            let outer = self.field_on.replace(on);
             let author = self.field(author.to_vec());
+            self.field_on = outer;
             if !author.is_empty() {
                 self.meta.authors.push(author);
+            } else {
+                // Notes on no author are on the title.
+                for field_note in &mut self.field_notes {
+                    if field_note.note.on == on {
+                        field_note.note.on = NoteOn::Title;
+                    }
+                }
             }
         }
+    }
+
+    /// `\\thanks`'s note on the field being read (see [`Reader::field_on`]),
+    /// read as a note's text: one showing nothing is none.
+    fn thanks(&mut self, arg: Vec<Piece>) {
+        self.thanks_count += 1;
+        let number = self.thanks_count;
+        // What it's on before its text, which may read fields of its own.
+        let field_on = self.field_on;
+        // Apart from the labels of `\\footnote`'s notes, which are numbers.
+        let label = format!("{THANKS_LABEL}{number}");
+        let content = self.note_content(&label, arg);
+        if content.is_empty() {
+            return;
+        }
+        self.field_notes.push(FieldNote {
+            note: MetaNote {
+                on: field_on.unwrap_or(NoteOn::Title),
+                label: label.clone(),
+            },
+            definition: Block::FootnoteDefinition { label, content },
+            number,
+            from: match field_on {
+                Some(NoteOn::Title) => Some(Field::Title),
+                Some(NoteOn::Author(_)) => Some(Field::Authors),
+                None => None,
+            },
+        });
     }
 
     /// A `figure` or `table`: its blocks, where it's written, as no writer
@@ -6080,7 +6185,10 @@ mod tests {
             assert_eq!(doc.meta.title.as_deref(), title, "{source}");
             assert_eq!(doc.meta.authors, authors, "{source}");
             assert_eq!(doc.meta.date.as_deref(), date, "{source}");
-            assert_eq!(doc.blocks, [para(&[text("x")])], "{source}");
+            // The notes `\\thanks` gives on them (see
+            // `thanks_are_notes_on_their_fields`) after the text.
+            assert_eq!(doc.blocks[..1], [para(&[text("x")])], "{source}");
+            assert_eq!(doc.blocks.len(), 1 + doc.meta.notes.len(), "{source}");
         }
     }
 
@@ -7547,24 +7655,112 @@ mod tests {
         }
     }
 
-    /// `\thanks` goes, with a warning, as does a note a field reads.
+    /// A note a field reads goes, with a warning, as a field's text can't
+    /// hold it.
     #[test]
-    fn thanks_are_a_warning() {
-        for (field, notes) in [
-            ("\\title{T\\footnote{\\label{n}F}}", 1),
-            ("\\author{A\\footnotemark\\footnotetext{F}}", 1),
-            ("\\author{A\\thanks{u}\\footnote{F}}", 2),
+    fn notes_in_fields_are_a_warning() {
+        for field in [
+            "\\title{T\\footnote{\\label{n}F}}",
+            "\\author{A\\footnotemark\\footnotetext{F}}",
+            "\\author{A\\thanks{u}\\footnote{F}}",
         ] {
             let (_, warnings) = read(&format!("{field}\\begin{{document}}x\\end{{document}}"));
             assert_eq!(warnings.len(), 1, "{field}: {warnings:?}");
-            assert_eq!(warnings[0].count, notes, "{field}");
+            assert_eq!(warnings[0].count, 1, "{field}");
+            assert!(warnings[0].one.contains("dropped"));
         }
-        let (doc, warnings) =
-            read("\\author{A\\thanks{u}\\and B\\thanks{v}}\\begin{document}x\\end{document}");
-        assert_eq!(doc.meta.authors, ["A", "B"]);
+    }
+
+    /// `\thanks` is a note on the title or the author it's in, or on the
+    /// title where it's in neither, as a class's own (amsart's) is.
+    #[test]
+    fn thanks_are_notes_on_their_fields() {
+        let thanks = |source: &str| {
+            let (doc, warnings) = read(source);
+            assert!(warnings.is_empty(), "{source}: {warnings:?}");
+            let on: Vec<(NoteOn, String)> = doc
+                .meta
+                .notes
+                .iter()
+                .map(|note| {
+                    let content = doc.blocks.iter().find_map(|block| match block {
+                        Block::FootnoteDefinition { label, content } if *label == note.label => {
+                            Some(inline_text(match content.as_slice() {
+                                [Block::Paragraph(text)] => text,
+                                _ => &[],
+                            }))
+                        }
+                        _ => None,
+                    });
+                    (note.on, content.expect("its definition"))
+                })
+                .collect();
+            (doc.meta, on)
+        };
+        let (meta, on) = thanks(
+            "\\title{T\\thanks{t}}\\author{A\\thanks{a}\\and B\\thanks{b} \\thanks{c}}\\begin{document}x\\end{document}",
+        );
+        assert_eq!(meta.title.as_deref(), Some("T"));
+        assert_eq!(meta.authors, ["A", "B"]);
+        assert_eq!(
+            on,
+            [
+                (NoteOn::Title, "t".into()),
+                (NoteOn::Author(0), "a".into()),
+                (NoteOn::Author(1), "b".into()),
+                (NoteOn::Author(1), "c".into()),
+            ]
+        );
+        let (_, on) = thanks(
+            "\\documentclass{amsart}\\author{A}\\thanks{Supported.}\\begin{document}x\\end{document}",
+        );
+        assert_eq!(on, [(NoteOn::Title, "Supported.".into())]);
+        // In place of those before, and their notes; on the title where
+        // they're on no author.
+        let (meta, on) = thanks(
+            "\\title{S\\thanks{s}}\\title{T}\\author{A\\thanks{a}}\\author{\\thanks{n}\\and B}\\begin{document}x\\end{document}",
+        );
+        assert_eq!(meta.authors, ["B"]);
+        assert_eq!(on, [(NoteOn::Title, "n".into())]);
+        // A field in a field, taking the place of notes before, reads.
+        for source in [
+            "\\title{S\\thanks{s}}\\author{A\\title{T}}\\begin{document}x\\end{document}",
+            "\\author{A\\thanks{a}\\and B\\author{C}}\\begin{document}x\\end{document}",
+            "\\title{T\\thanks{a}}\\date{\\title{U}}\\begin{document}x\\end{document}",
+        ] {
+            let (doc, _) = read(source);
+            assert_eq!(doc.blocks[0], para(&[text("x")]), "{source}");
+        }
+        // An `\author` takes the place of the notes the one before gave,
+        // those on an empty one too, which are on the title.
+        let (_, on) = thanks(
+            "\\title{T}\\author{\\thanks{old}}\\author{B\\thanks{b}}\\begin{document}x\\end{document}",
+        );
+        assert_eq!(on, [(NoteOn::Author(0), "b".into())]);
+        // A `\title` takes the place only of what one gave.
+        let (_, on) = thanks(
+            "\\documentclass{amsart}\\author{A}\\thanks{S}\\title{T}\\begin{document}x\\end{document}",
+        );
+        assert_eq!(on, [(NoteOn::Title, "S".into())]);
+        // One showing nothing is none.
+        let (_, on) = thanks("\\author{A\\thanks{}}\\begin{document}x\\end{document}");
+        assert!(on.is_empty());
+        // A note in one in a field goes, as one in the field does, and its
+        // mark with it, which would be the body's note's.
+        let (doc, warnings) = read(
+            "\\author{A\\thanks{u\\footnote{F}}}\\begin{document}x\\footnote{G}\\end{document}",
+        );
         assert_eq!(warnings.len(), 1, "{warnings:?}");
-        assert_eq!(warnings[0].count, 2);
-        assert!(warnings[0].one.contains("dropped"));
+        let Some(Block::FootnoteDefinition { content, .. }) = doc.blocks.last() else {
+            panic!("the note on A: {:?}", doc.blocks);
+        };
+        assert_eq!(*content, [para(&[text("u")])]);
+        // A reference to a label in one, which nothing else refers to, keeps
+        // its text.
+        let (doc, _) = read(
+            "\\documentclass{amsart}\\thanks{S\\label{s}}\\begin{document}\\ref{s}\\end{document}",
+        );
+        assert_eq!(doc.blocks[0], para(&[text("[s]")]));
     }
 
     /// A reference in a formula is its label as text, as nothing in a
