@@ -145,22 +145,37 @@ fn tex_holds_parameter(tex: &str) -> bool {
     false
 }
 
-/// The command placeholders in `source` are: [`MARK`], and a letter or
-/// more after it, the first that makes a name `source` doesn't hold.
+/// The command placeholders in `source` are: [`MARK`] and the first of
+/// none, `A`, `B`, …, `Z`, `AA`, … after it that makes no control word of
+/// the source's, as `verbatim`'s are named. The letters after each
+/// [`MARK`] in the source are read once, so this takes linear time.
 fn mark(source: &str) -> String {
-    (0usize..)
-        .map(|n| {
-            let mut suffix = String::new();
-            let mut n = n;
-            while n > 0 {
-                n -= 1;
-                suffix.insert(0, char::from(b'A' + (n % 26) as u8));
-                n /= 26;
-            }
-            format!("{MARK}{suffix}")
+    let taken: std::collections::HashSet<&str> = source
+        .match_indices(MARK)
+        .map(|(at, _)| {
+            let after = &source[at + MARK.len()..];
+            let letters = after.find(|c: char| !tex_letter(c)).unwrap_or(after.len());
+            &after[..letters]
         })
-        .find(|mark| !source.contains(mark.as_str()))
+        .collect();
+    (0usize..)
+        .map(suffix)
+        .find(|suffix| !taken.contains(suffix.as_str()))
+        .map(|suffix| format!("{MARK}{suffix}"))
         .expect("more names than the source holds")
+}
+
+/// `n` in bijective base 26, as spreadsheet columns are named: none, `A`,
+/// …, `Z`, `AA`, ….
+fn suffix(mut n: usize) -> String {
+    let mut letters = Vec::new();
+    while n > 0 {
+        n -= 1;
+        letters.push(b'A' + (n % 26) as u8);
+        n /= 26;
+    }
+    letters.reverse();
+    String::from_utf8(letters).expect("ASCII letters")
 }
 
 /// The listings of a source, measured in order: what's to be passed by as
@@ -538,9 +553,25 @@ mod tests {
     #[test]
     fn placeholders_are_named_apart_from_the_source() {
         let source = format!("{MARK} {MARK}A \\lstinline|x|");
-        let cut = cut(&source);
-        assert_eq!(cut.mark, format!("{MARK}B"));
-        assert_eq!(cut.source, format!("{MARK} {MARK}A {MARK}B{{0}}"));
+        let named = cut(&source);
+        assert_eq!(named.mark, format!("{MARK}B"));
+        assert_eq!(named.source, format!("{MARK} {MARK}A {MARK}B{{0}}"));
+        // A longer name it starts is no placeholder's.
+        let source = format!("{MARK}AB \\lstinline|x|");
+        assert_eq!(cut(&source).mark, MARK);
+    }
+
+    /// Many names a placeholder's would be take no more than reading them,
+    /// and the next is the placeholder's.
+    #[test]
+    fn many_names_taken_take_linear_time() {
+        let names: Vec<String> = (0..20_000)
+            .map(|n| format!("{MARK}{}", suffix(n)))
+            .collect();
+        let source = format!("{} \\lstinline|x|", names.join(" "));
+        let start = std::time::Instant::now();
+        assert_eq!(cut(&source).mark, format!("{MARK}{}", suffix(20_000)));
+        assert!(start.elapsed() < std::time::Duration::from_secs(1));
     }
 
     /// Each row: options, and the language they say.
