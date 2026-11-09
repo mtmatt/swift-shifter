@@ -726,6 +726,32 @@ fn arguments_extent(
     }
 }
 
+/// The arguments of `name`, an unknown command, from `items[*at..]`: the
+/// groups right after it; a file's name, those it names (see
+/// [`files_named`]), past spaces, as `\input {chapter}`'s, as TeX takes
+/// them, so that they're not its text.
+fn unknown_groups(name: &str, items: &[Piece], at: &mut usize) -> Vec<Vec<Piece>> {
+    let names_files = files_named(name);
+    let most = names_files.unwrap_or(usize::MAX);
+    let mut groups = Vec::new();
+    while groups.len() < most {
+        let next = if names_files.is_some() {
+            past_spaces(items, *at)
+        } else {
+            *at
+        };
+        let Some(Piece::Node(group)) = items.get(next) else {
+            break;
+        };
+        if group.kind() != SyntaxKind::ItemCurly {
+            break;
+        }
+        groups.push(pieces(group));
+        *at = next + 1;
+    }
+    groups
+}
+
 /// How many files or folders `name`, a command reading a file in, names
 /// (see [`inputs`]): what it takes, which shows nothing where the file isn't
 /// read in. Not in [`signature`], which would take a letter of `\\input
@@ -1099,20 +1125,7 @@ impl Reader {
                                 }
                                 args
                             }
-                            // Unknown: the groups right after it; a file's
-                            // name, those it names (see `files_named`).
-                            None => {
-                                let most = files_named(&name).unwrap_or(usize::MAX);
-                                let mut groups = Vec::new();
-                                while let Some(Piece::Node(group)) = items.get(at)
-                                    && group.kind() == SyntaxKind::ItemCurly
-                                    && groups.len() < most
-                                {
-                                    groups.push(pieces(group));
-                                    at += 1;
-                                }
-                                groups
-                            }
+                            None => unknown_groups(&name, &items, &mut at),
                         };
                         self.non_space();
                         let letters = &name[1..];
