@@ -85,6 +85,22 @@ pub fn find(
     }
 }
 
+/// The image `\includegraphics` names `name`, where [`find`] doesn't find
+/// it, in the folders `\graphicspath` names, `graphics`, each written
+/// before the name: as graphicx looks in them, each extension in turn in
+/// every folder, as [`find`] looks in the document's folder.
+pub fn find_in_graphics(
+    name: &str,
+    graphics: &[String],
+    exists: impl Fn(&str) -> bool,
+) -> Option<String> {
+    let scope = Scope {
+        folder: String::new(),
+        search: graphics.to_vec(),
+    };
+    find("\\includegraphics", &[name], &scope, exists).map(|found| found.path)
+}
+
 /// The file an `\import` of `name` in `folder` reads, from a file read
 /// with `scope`: `folder` + `name`, looked for as `\input` looks for it
 /// once `folder` is looked in first, as the file is then read.
@@ -348,5 +364,35 @@ mod tests {
         assert_eq!(find_in_book("\\input", &["BD-BIT"], &top), None);
         assert_eq!(find_in_book("\\input", &["/etc/none"], &top), None);
         assert_eq!(find_in_book("\\section", &["x"], &top), None);
+    }
+
+    /// `find_in_graphics` looks in each folder in turn, with an extension
+    /// and without, as `find` does in the document's; `find`, pandoc's,
+    /// looks in none of them.
+    #[test]
+    fn images_are_found_in_the_graphics_path() {
+        let files = [
+            "plot.png",
+            "figures/chart.png",
+            "art/chart.pdf",
+            "art/logo",
+            "figures/map.jpg",
+        ];
+        let exists = |path: &str| files.contains(&path);
+        let graphics = ["figures/".to_string(), "art/".to_string()];
+        let found = |name: &str| find_in_graphics(name, &graphics, exists);
+        // Each extension in every folder before the next: `.pdf` first.
+        assert_eq!(found("chart").as_deref(), Some("art/chart"));
+        assert_eq!(found("chart.png").as_deref(), Some("figures/chart.png"));
+        assert_eq!(found("map").as_deref(), Some("figures/map"));
+        assert_eq!(found("logo").as_deref(), Some("art/logo"));
+        assert_eq!(found("/chart"), None);
+        let top = Scope::default();
+        let pandoc = |name: &str| find("\\includegraphics", &[name], &top, exists);
+        assert_eq!(pandoc("chart"), None);
+        assert_eq!(
+            pandoc("plot").map(|found| found.path).as_deref(),
+            Some("plot")
+        );
     }
 }

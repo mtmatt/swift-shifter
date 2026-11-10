@@ -110,7 +110,7 @@ pub fn named(source: &str) -> Vec<Named> {
 /// the `\fi` that ends it, or, `to_else`, an `\else`, past those of the
 /// conditionals it holds; or to the end. Whether it ends at an `\else`,
 /// after which pandoc reads.
-fn branch(text: &str, to_else: bool) -> (usize, bool) {
+pub(super) fn branch(text: &str, to_else: bool) -> (usize, bool) {
     let mut nested = 0;
     let mut at = 0;
     while let Some((start, command)) = next_command(&text[at..], parser_letter) {
