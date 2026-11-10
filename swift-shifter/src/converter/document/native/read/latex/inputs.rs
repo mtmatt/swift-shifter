@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 
 use super::files;
 use super::paths::{self, Scope};
+use super::verbatim::{self, tex_letter};
 use crate::converter::document::native::Warning;
 
 /// How deep files may read others in: a file reading itself ends there.
@@ -78,6 +79,7 @@ pub(super) fn inlined(source: &str, dir: &Path) -> Inlined {
     let mut reading = Reading {
         dir: dir.to_path_buf(),
         canonical: dir.canonicalize().ok(),
+        graphics: Vec::new(),
         files: 0,
         growth_left: source.len().saturating_mul(GROWTH_PER_BYTE).max(MIN_GROWTH),
         inlined: Inlined {
@@ -101,12 +103,112 @@ fn ends_in_control_word(text: &str) -> bool {
     before_letters.len() < text.len() && backslashes % 2 == 1
 }
 
+/// Each `\graphicspath` in `source` with an argument of groups, read as
+/// [`files::named`] reads the commands naming files: not in a comment or
+/// verbatim text, nor in a branch of a conditional that isn't read, and not
+/// in a listing either, which the reader cuts out too. Where its argument
+/// ends, and the folders it names.
+fn graphics_paths(source: &str) -> Vec<(usize, Vec<String>)> {
+    let cut = verbatim::cut(source);
+    let text = cut.source.as_str();
+    let mut found = Vec::new();
+    let mut at = 0;
+    // As in `files::named`: whether each conditional open is an `\iftrue`.
+    let mut open: Vec<bool> = Vec::new();
+    let mut unclosed = Vec::new();
+    while let Some((start, name)) = verbatim::next_command(&text[at..], tex_letter) {
+        at += start + name.len();
+        let rest = &text[at..];
+        match name {
+            "\\iffalse" => {
+                let (length, at_else) = files::branch(rest, true);
+                at += length;
+                if at_else {
+                    open.push(false);
+                }
+            }
+            "\\else" if open.last() == Some(&true) => {
+                at += files::branch(rest, false).0;
+                open.pop();
+            }
+            "\\fi" => {
+                open.pop();
+            }
+            _ if verbatim::CONDITIONALS.contains(&name) => open.push(name == "\\iftrue"),
+            "\\verb" => at += verbatim::inline(rest).map_or(0, |(_, length)| length),
+            "\\begin" => {
+                at += listing_length(rest)
+                    .or_else(|| verbatim::block(rest, &mut unclosed).map(|(_, length)| length))
+                    .unwrap_or(0);
+            }
+            "\\graphicspath" => {
+                if let Some((folders, length)) = graphics_argument(rest) {
+                    at += length;
+                    found.push((cut.in_source(at), folders));
+                }
+            }
+            _ => {}
+        }
+    }
+    found
+}
+
+/// How long the `lstlisting` environment `text` starts with is, after its
+/// `\begin`, to its end; `None` where it's no listing.
+fn listing_length(text: &str) -> Option<usize> {
+    const END: &str = "\\end{lstlisting}";
+    text.strip_prefix("{lstlisting}")?;
+    Some(text.find(END).map_or(text.len(), |end| end + END.len()))
+}
+
+/// How long the comment `text` starts with is, to its line's end.
+fn comment_length(text: &str) -> usize {
+    text.find(['\n', '\r']).unwrap_or(text.len())
+}
+
+/// `text` past spaces, line ends and comments, as TeX passes them before
+/// an argument.
+fn past_spaces(mut text: &str) -> &str {
+    loop {
+        text = text.trim_start();
+        if !text.starts_with('%') {
+            return text;
+        }
+        text = &text[comment_length(text)..];
+    }
+}
+
+/// The folders `\graphicspath`'s argument, at `text`'s start, names, as
+/// written, as `figures/` in `{{figures/}}`, and how long it is; `None`
+/// where it's no argument of groups, as one a macro makes.
+fn graphics_argument(text: &str) -> Option<(Vec<String>, usize)> {
+    let mut inside = past_spaces(text).strip_prefix('{')?;
+    let mut folders = Vec::new();
+    while let Some(group) = past_spaces(inside).strip_prefix('{') {
+        // Not past a `{`, so that each unclosed one is looked past only to
+        // the next brace.
+        let end = group
+            .find(['{', '}'])
+            .filter(|&end| group[end..].starts_with('}'))?;
+        folders.push(group[..end].to_string());
+        inside = &group[end + 1..];
+    }
+    let after = past_spaces(inside).strip_prefix('}')?;
+    Some((folders, text.len() - after.len()))
+}
+
 /// Files being read in (see [`inlined`]).
 struct Reading {
     dir: PathBuf,
     /// The document's folder, links resolved, which files read are in;
     /// `None` where it can't be resolved, and none are read.
     canonical: Option<PathBuf>,
+    /// The folders the last `\graphicspath` read names, which an image not
+    /// found as named is looked for in (see [`Reading::image_file`]). One in
+    /// a group, an environment or a file `\import` reads isn't undone at its
+    /// end, as LaTeX undoes it, and one a macro makes is passed by: only an
+    /// image not found otherwise is looked for in them.
+    graphics: Vec<String>,
     /// How many have been read.
     files: usize,
     /// What the source may still grow by.
@@ -122,7 +224,14 @@ impl Reading {
         let exists = |path: &str| dir.join(path).is_file();
         let mut out = String::with_capacity(text.len());
         let mut at = 0;
+        let mut graphics = graphics_paths(text).into_iter().peekable();
         for named in files::named(text) {
+            // In place of those named before, as each `\graphicspath` is.
+            while let Some((_, folders)) =
+                graphics.next_if(|(set_at, _)| *set_at <= named.range.start)
+            {
+                self.graphics = folders;
+            }
             let args: Vec<&str> = named.args.iter().map(|arg| &text[arg.clone()]).collect();
             if named.command == "\\includegraphics" {
                 // Named as found, if it's in the folder and can be written
@@ -165,6 +274,10 @@ impl Reading {
                 out.push('\n');
             }
             at = named.range.end;
+        }
+        // For what's read after it, as a file read in isn't a group.
+        if let Some((_, folders)) = graphics.last() {
+            self.graphics = folders;
         }
         out.push_str(&text[at..]);
         out
@@ -214,7 +327,11 @@ impl Reading {
             }
             exists
         };
-        paths::find("\\includegraphics", args, scope, exists)?;
+        // As main finds it first, so that an image found so is as it was;
+        // in the folders `\graphicspath` names only where it isn't.
+        if paths::find("\\includegraphics", args, scope, exists).is_none() {
+            paths::find_in_graphics(args.first()?, &self.graphics, exists)?;
+        }
         taken.into_inner()
     }
 
@@ -331,6 +448,103 @@ mod tests {
             _ => panic!("{blocks:?}"),
         };
         assert_eq!(urls, ["ch/sub/fig.png", "top.png"]);
+    }
+
+    /// Each row: a document, with the files below beside it, and what its
+    /// image is named: as main names it where main finds it, whatever
+    /// `\graphicspath` names; else in the folders one before it names.
+    #[test]
+    fn images_not_found_are_looked_for_in_the_graphics_path() {
+        let files: Files = &[
+            ("plot.png", b"png"),
+            ("other/plot.pdf", b"pdf"),
+            ("other/only.png", b"png"),
+            ("pics/only.jpg", b"jpg"),
+            ("preamble.tex", b"\\graphicspath{{other/}}"),
+            ("ch/body.tex", b"\\graphicspath{{other/}}"),
+            ("ch/fig.tex", b"\\includegraphics{fig}"),
+            ("ch/fig.png", b"png"),
+            ("other/fig.png", b"png"),
+        ];
+        let set = "\\graphicspath{{other/}}";
+        for (main, url) in [
+            // Found as named: as main has it.
+            (format!("{set}\\includegraphics{{plot}}"), "plot.png"),
+            // A conditional of the document's own, a macro's folders and a
+            // file `\import` reads change none of it.
+            (
+                format!("\\newif\\ifdraft\\draftfalse\\ifdraft{set}\\fi\\includegraphics{{plot}}"),
+                "plot.png",
+            ),
+            (
+                "\\def\\dirs{{other/}}\\graphicspath{\\dirs}\\includegraphics{plot}".to_string(),
+                "plot.png",
+            ),
+            (
+                format!("{set}\\graphicspath{{\\dirs}}\\includegraphics{{plot}}"),
+                "plot.png",
+            ),
+            (
+                "\\import{ch/}{body}\\includegraphics{plot}".to_string(),
+                "plot.png",
+            ),
+            // Found in a folder `\import` looks in first, as main has it.
+            (format!("{set}\\import{{ch/}}{{fig}}"), "ch/fig.png"),
+            // Not found as named: in its folders.
+            (format!("{set}\\includegraphics{{only}}"), "other/only.png"),
+            (
+                "\\input{preamble}\n\\includegraphics{only}".to_string(),
+                "other/only.png",
+            ),
+            (
+                "\\import{ch/}{body}\\includegraphics{only}".to_string(),
+                "other/only.png",
+            ),
+            // The last one's, in place of those before.
+            (
+                format!("{set}\\graphicspath{{{{pics/}}}}\\includegraphics{{only}}"),
+                "pics/only.jpg",
+            ),
+            (
+                format!("{set}\\graphicspath{{}}\\includegraphics{{only}}"),
+                "only",
+            ),
+            // An `\iffalse`'s `\else`, which is read.
+            (
+                format!("\\iffalse x\\else{set}\\fi\\includegraphics{{only}}"),
+                "other/only.png",
+            ),
+            // Not one after it, nor one LaTeX doesn't read, nor a name from
+            // the root, nor one in none.
+            (format!("\\includegraphics{{only}}{set}"), "only"),
+            (format!("% {set}\n\\includegraphics{{only}}"), "only"),
+            (format!("\\verb|{set}|\\includegraphics{{only}}"), "only"),
+            (
+                format!("\\iffalse{set}\\fi\\includegraphics{{only}}"),
+                "only",
+            ),
+            (
+                format!("\\iftrue x\\else{set}\\fi\\includegraphics{{only}}"),
+                "only",
+            ),
+            (
+                format!("\\begin{{lstlisting}}{set}\\end{{lstlisting}}\\includegraphics{{only}}"),
+                "only",
+            ),
+            (format!("{set}\\includegraphics{{/only}}"), "/only"),
+            (format!("{set}\\includegraphics{{none}}"), "none"),
+        ] {
+            let (mut blocks, _) = read_with(files, &main);
+            let mut urls = Vec::new();
+            super::super::walk::for_each_inlines(&mut blocks, &mut |inlines| {
+                for inline in inlines.iter() {
+                    if let Inline::Image { url, .. } = inline {
+                        urls.push(url.clone());
+                    }
+                }
+            });
+            assert_eq!(urls, [url], "{main}");
+        }
     }
 
     /// A file that isn't there shows nothing, with a warning.
