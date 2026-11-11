@@ -5,13 +5,17 @@
 //! `\includegraphics` names its image as found, from the document's folder,
 //! as the image is read from there.
 //!
-//! Only files in the document's folder are read, where a link leads too: a
-//! converted document isn't to carry the rest of the disk with it, as
-//! `\input{/etc/passwd}` would. Past [`MAX_DEPTH`], [`MAX_FILES`] or what
-//! the source may grow to, a command is left unread. Each such command, and
+//! Files are read wherever their names lead, outside the document's folder
+//! too, as LaTeX and pandoc read them. Only an `\includegraphics` is
+//! renamed, and only to a file inside the folder (see
+//! [`Reading::is_inside`]). A name not found as written is found with the
+//! macros with no arguments defined before it expanded
+//! (`\input{\chapterfile}`). Past [`MAX_DEPTH`], [`MAX_FILES`] or what the
+//! source may grow to, a command is left unread. Each such command, and
 //! one naming a file that isn't there, shows nothing, and is counted for a
-//! warning.
+//! warning. `TEXINPUTS` isn't looked in.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::files;
@@ -36,8 +40,6 @@ pub(super) struct Inlined {
     pub(super) source: String,
     /// The commands naming a file that wasn't found.
     missing: usize,
-    /// Those naming one outside the document's folder.
-    outside: usize,
     /// Those left unread past the limits.
     cut_short: usize,
 }
@@ -50,17 +52,13 @@ impl Inlined {
             many,
             count,
             line: None,
+            detail: None,
         };
         [
             warning(
                 self.missing,
                 "file the document reads wasn't found",
                 "files the document reads weren't found",
-            ),
-            warning(
-                self.outside,
-                "file outside the document's folder wasn't read",
-                "files outside the document's folder weren't read",
             ),
             warning(
                 self.cut_short,
@@ -80,12 +78,12 @@ pub(super) fn inlined(source: &str, dir: &Path) -> Inlined {
         dir: dir.to_path_buf(),
         canonical: dir.canonicalize().ok(),
         graphics: Vec::new(),
+        macros: HashMap::new(),
         files: 0,
         growth_left: source.len().saturating_mul(GROWTH_PER_BYTE).max(MIN_GROWTH),
         inlined: Inlined {
             source: String::new(),
             missing: 0,
-            outside: 0,
             cut_short: 0,
         },
     };
@@ -103,12 +101,30 @@ fn ends_in_control_word(text: &str) -> bool {
     before_letters.len() < text.len() && backslashes % 2 == 1
 }
 
-/// Each `\graphicspath` in `source` with an argument of groups, read as
-/// [`files::named`] reads the commands naming files: not in a comment or
-/// verbatim text, nor in a branch of a conditional that isn't read, and not
-/// in a listing either, which the reader cuts out too. Where its argument
-/// ends, and the folders it names.
-fn graphics_paths(source: &str) -> Vec<(usize, Vec<String>)> {
+/// What a command in a document sets that later files' names are found
+/// with (see [`settings`]).
+#[derive(Debug, PartialEq)]
+enum Setting {
+    /// The folders a `\graphicspath` names.
+    GraphicsPath(Vec<String>),
+    /// A macro with no arguments, defined, and what it expands to; only
+    /// where it isn't defined yet, for `\providecommand`.
+    Macro {
+        name: String,
+        body: String,
+        provided: bool,
+    },
+    /// A macro defined with arguments, which names aren't expanded with.
+    Unmacro(String),
+}
+
+/// Each [`Setting`] in `source`, read as [`files::named`] reads the
+/// commands naming files: not in a comment or verbatim text, nor in a
+/// branch of a conditional that isn't read, and not in a listing either,
+/// which the reader cuts out too. Where the command ends, and what it sets:
+/// a `\graphicspath` with an argument of groups, and a `\newcommand`,
+/// `\renewcommand`, `\providecommand` or `\def`.
+fn settings(source: &str) -> Vec<(usize, Setting)> {
     let cut = verbatim::cut(source);
     let text = cut.source.as_str();
     let mut found = Vec::new();
@@ -144,13 +160,103 @@ fn graphics_paths(source: &str) -> Vec<(usize, Vec<String>)> {
             "\\graphicspath" => {
                 if let Some((folders, length)) = graphics_argument(rest) {
                     at += length;
-                    found.push((cut.in_source(at), folders));
+                    found.push((cut.in_source(at), Setting::GraphicsPath(folders)));
+                }
+            }
+            "\\newcommand" | "\\renewcommand" | "\\providecommand" | "\\def" => {
+                if let Some((setting, length)) = definition(name, rest) {
+                    at += length;
+                    found.push((cut.in_source(at), setting));
                 }
             }
             _ => {}
         }
     }
     found
+}
+
+/// The macro the definition `text` starts with, after its `command`,
+/// defines, and how long it is; `None` where it can't be read so.
+fn definition(command: &str, text: &str) -> Option<(Setting, usize)> {
+    let def = command == "\\def";
+    let mut rest = if def {
+        text
+    } else {
+        text.strip_prefix('*').unwrap_or(text)
+    };
+    rest = past_spaces(rest);
+    // `\name`, or `{\name}` but for `\def`.
+    let braced = !def && rest.starts_with('{');
+    if braced {
+        rest = past_spaces(&rest[1..]);
+    }
+    let after_slash = rest.strip_prefix('\\')?;
+    let letters = after_slash.len() - after_slash.trim_start_matches(tex_letter).len();
+    let name = format!(
+        "\\{}",
+        after_slash.get(..letters).filter(|n| !n.is_empty())?
+    );
+    rest = &after_slash[letters..];
+    if braced {
+        rest = past_spaces(rest).strip_prefix('}')?;
+    }
+    rest = past_spaces(rest);
+    // Arguments: `[1]` after a `\newcommand`'s name, `#1` after a `\def`'s.
+    if rest.starts_with(if def { '#' } else { '[' }) {
+        return Some((Setting::Unmacro(name), text.len() - rest.len()));
+    }
+    let body = rest.strip_prefix('{')?;
+    let end = group_end(body)?;
+    let setting = Setting::Macro {
+        name,
+        body: body[..end].to_string(),
+        provided: command == "\\providecommand",
+    };
+    Some((setting, text.len() - body.len() + end + 1))
+}
+
+/// Where the group `text` is the inside of ends: its `}`, past groups in it
+/// and escaped braces.
+fn group_end(text: &str) -> Option<usize> {
+    let mut depth = 0usize;
+    let mut chars = text.char_indices();
+    while let Some((at, c)) = chars.next() {
+        match c {
+            '\\' => {
+                chars.next();
+            }
+            '{' => depth += 1,
+            '}' if depth == 0 => return Some(at),
+            '}' => depth -= 1,
+            _ => {}
+        }
+    }
+    None
+}
+
+/// How many macros expanding a name expands, those they expand to too.
+const MAX_EXPANSIONS: usize = 8;
+
+/// `name`, a file's name a command gives, with the macros in it expanded
+/// as `macros` define them; `None` where it has none, or one is left that
+/// isn't defined so.
+fn expanded(name: &str, macros: &HashMap<String, String>) -> Option<String> {
+    if !name.contains('\\') {
+        return None;
+    }
+    let mut name = name.to_string();
+    for _ in 0..MAX_EXPANSIONS {
+        let Some(start) = name.find('\\') else {
+            return Some(name);
+        };
+        let after = &name[start + 1..];
+        let letters = after.len() - after.trim_start_matches(tex_letter).len();
+        let body = macros.get(&name[start..start + 1 + letters])?;
+        // TeX passes spaces after a control word.
+        let rest = after[letters..].trim_start_matches(' ');
+        name = format!("{}{body}{rest}", &name[..start]);
+    }
+    None
 }
 
 /// How long the `lstlisting` environment `text` starts with is, after its
@@ -200,8 +306,9 @@ fn graphics_argument(text: &str) -> Option<(Vec<String>, usize)> {
 /// Files being read in (see [`inlined`]).
 struct Reading {
     dir: PathBuf,
-    /// The document's folder, links resolved, which files read are in;
-    /// `None` where it can't be resolved, and none are read.
+    /// The document's folder, links resolved, which images are renamed
+    /// in (see [`Reading::is_inside`]); `None` where it can't be resolved,
+    /// and none are.
     canonical: Option<PathBuf>,
     /// The folders the last `\graphicspath` read names, which an image not
     /// found as named is looked for in (see [`Reading::image_file`]). One in
@@ -209,6 +316,11 @@ struct Reading {
     /// end, as LaTeX undoes it, and one a macro makes is passed by: only an
     /// image not found otherwise is looked for in them.
     graphics: Vec<String>,
+    /// The macros with no arguments defined before, which a file's name
+    /// that isn't found as written is expanded with (`\input{\chapter}`).
+    /// One defined in a group isn't undone at its end, as `\graphicspath`
+    /// isn't.
+    macros: HashMap<String, String>,
     /// How many have been read.
     files: usize,
     /// What the source may still grow by.
@@ -217,6 +329,26 @@ struct Reading {
 }
 
 impl Reading {
+    /// What `setting` sets, for the files named after it: each
+    /// `\graphicspath` in place of those before.
+    fn apply(&mut self, setting: Setting) {
+        match setting {
+            Setting::GraphicsPath(folders) => self.graphics = folders,
+            Setting::Macro {
+                name,
+                body,
+                provided,
+            } => {
+                if !(provided && self.macros.contains_key(&name)) {
+                    self.macros.insert(name, body);
+                }
+            }
+            Setting::Unmacro(name) => {
+                self.macros.remove(&name);
+            }
+        }
+    }
+
     /// `text`, a file read in `depth` files deep, looking in `scope`'s
     /// folders, with the files it reads in it.
     fn read_in(&mut self, text: &str, scope: &Scope, depth: usize) -> String {
@@ -224,13 +356,12 @@ impl Reading {
         let exists = |path: &str| dir.join(path).is_file();
         let mut out = String::with_capacity(text.len());
         let mut at = 0;
-        let mut graphics = graphics_paths(text).into_iter().peekable();
+        let mut settings = settings(text).into_iter().peekable();
         for named in files::named(text) {
-            // In place of those named before, as each `\graphicspath` is.
-            while let Some((_, folders)) =
-                graphics.next_if(|(set_at, _)| *set_at <= named.range.start)
+            while let Some((_, setting)) =
+                settings.next_if(|(set_at, _)| *set_at <= named.range.start)
             {
-                self.graphics = folders;
+                self.apply(setting);
             }
             let args: Vec<&str> = named.args.iter().map(|arg| &text[arg.clone()]).collect();
             if named.command == "\\includegraphics" {
@@ -247,16 +378,26 @@ impl Reading {
                 }
                 continue;
             }
-            let Some(found) = paths::find(named.command, &args, scope, exists) else {
-                // A name a macro makes isn't found either.
+            // As written, or else with the macros before it expanded
+            // (`\input{\chapterfile}`).
+            let found = paths::find(named.command, &args, scope, exists).or_else(|| {
+                let expanded = args
+                    .iter()
+                    .map(|arg| expanded(arg, &self.macros).unwrap_or_else(|| arg.to_string()))
+                    .collect::<Vec<_>>();
+                let expanded: Vec<&str> = expanded.iter().map(String::as_str).collect();
+                (expanded != args)
+                    .then(|| paths::find(named.command, &expanded, scope, exists))
+                    .flatten()
+            });
+            let Some(found) = found else {
+                // A name a macro makes that isn't defined so isn't found.
                 self.inlined.missing += 1;
                 continue;
             };
+            // Wherever it is, as LaTeX reads it: outside the document's
+            // folder too (`../shared`).
             let path = paths::tex_file(&found.path, exists);
-            if !self.is_inside(&path) {
-                self.inlined.outside += 1;
-                continue;
-            }
             let Some(read) = self.read(&path, depth) else {
                 continue;
             };
@@ -276,8 +417,8 @@ impl Reading {
             at = named.range.end;
         }
         // For what's read after it, as a file read in isn't a group.
-        if let Some((_, folders)) = graphics.last() {
-            self.graphics = folders;
+        for (_, setting) in settings {
+            self.apply(setting);
         }
         out.push_str(&text[at..]);
         out
@@ -562,38 +703,91 @@ mod tests {
         assert!(!format!("{blocks:?}").contains("nope"));
     }
 
-    /// Files outside the document's folder aren't read, wherever a name or a
-    /// link leads.
+    /// Files outside the document's folder are read, as LaTeX reads them,
+    /// whether a relative name, an absolute one or a link leads there.
     #[test]
-    fn files_outside_the_folder_are_not_read() {
+    fn files_outside_the_folder_are_read() {
         let root = tempfile::tempdir().unwrap();
         write_files(
             root.path(),
-            &[("secret.tex", b"SECRET"), ("doc/in.tex", b"in")],
+            &[
+                ("shared.tex", b"SHARED"),
+                // A name with a dot isn't taken for one with an extension
+                // (#192).
+                ("shared.v1.tex", b"VERSIONED"),
+                ("absolute.tex", b"ABSOLUTE"),
+                ("doc/in.tex", b"INSIDE"),
+            ],
         );
         let doc = root.path().join("doc");
-        let secret = root.path().join("secret.tex");
+        let absolute = root.path().join("absolute.tex");
         let main = format!(
-            "\\input{{in}} \\input{{../secret}} \\input{{{}}}",
-            secret.display()
+            "\\input{{in}} \\input{{../shared.tex}} \\input{{../shared.v1}} \\input{{{}}}",
+            absolute.display()
         );
         #[cfg(unix)]
         let main = {
-            std::os::unix::fs::symlink(&secret, doc.join("link.tex")).unwrap();
+            std::os::unix::fs::symlink(root.path().join("shared.tex"), doc.join("link.tex"))
+                .unwrap();
             main + " \\input{link}"
         };
         let (read, warnings) = read_in(&main, &doc);
-        assert!(
-            !format!("{:?}", read.blocks).contains("SECRET"),
-            "{:?}",
-            read.blocks
-        );
-        assert!(format!("{:?}", read.blocks).contains("in"));
-        let outside = if cfg!(unix) { 3 } else { 2 };
-        assert_eq!(
-            counts(&warnings),
-            [("file outside the document's folder wasn't read", outside)]
-        );
+        let text = format!("{:?}", read.blocks);
+        for expected in ["INSIDE", "SHARED", "VERSIONED", "ABSOLUTE"] {
+            assert!(text.contains(expected), "{expected}: {text}");
+        }
+        #[cfg(unix)]
+        assert_eq!(text.matches("SHARED").count(), 2, "{text}");
+        assert_eq!(warnings, []);
+    }
+
+    /// A name a macro with no arguments makes is found with it expanded,
+    /// as defined before, in the document or a file read in before.
+    #[test]
+    fn names_macros_make_are_expanded() {
+        let files: Files = &[
+            ("chapter.tex", b"CHAPTER"),
+            ("parts/one.tex", b"ONE"),
+            ("defs.tex", b"\\def\\partsdir{parts}"),
+            ("other.tex", b"OTHER"),
+        ];
+        let read = |main: &str| {
+            let (blocks, warnings) = read_with(files, main);
+            (format!("{blocks:?}"), counts(&warnings))
+        };
+        for main in [
+            "\\newcommand{\\chapterfile}{chapter}\\input{\\chapterfile}",
+            "\\newcommand*\\chapterfile{chapter}\\input{\\chapterfile}",
+            "\\def\\chapterfile{chapter}\\include{\\chapterfile}",
+            // Renewed, and one `\providecommand` doesn't change.
+            "\\def\\c{other}\\renewcommand{\\c}{chapter}\\providecommand{\\c}{other}\\input{\\c}",
+        ] {
+            let (text, warnings) = read(main);
+            assert!(
+                text.contains("CHAPTER") && !text.contains("OTHER"),
+                "{main}: {text}"
+            );
+            assert_eq!(warnings, [], "{main}");
+        }
+        // In a file read in before, with more after it.
+        let (text, _) = read("\\input{defs}\\input{\\partsdir/one}");
+        assert!(text.contains("ONE"), "{text}");
+        let (text, _) = read("\\input{defs}\\input{\\partsdir /one}");
+        assert!(text.contains("ONE"), "{text}");
+        // Not one defined after, with arguments, in a comment, or itself.
+        let missing = [("file the document reads wasn't found", 1)];
+        for main in [
+            "\\input{\\chapterfile}\\def\\chapterfile{chapter}",
+            "\\newcommand{\\chapterfile}[1]{chapter}\\input{\\chapterfile}",
+            "\\def\\chapterfile#1{chapter}\\input{\\chapterfile}",
+            "\\def\\chapterfile{chapter}\\def\\chapterfile#1{x}\\input{\\chapterfile}",
+            "% \\def\\chapterfile{chapter}\n\\input{\\chapterfile}",
+            "\\def\\loop{\\loop}\\input{\\loop}",
+        ] {
+            let (text, warnings) = read(main);
+            assert!(!text.contains("CHAPTER"), "{main}: {text}");
+            assert_eq!(warnings, missing, "{main}");
+        }
     }
 
     /// Files reading themselves, or each the next twice over, end, with a

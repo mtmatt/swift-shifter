@@ -691,6 +691,7 @@ impl Reader {
                     many,
                     count,
                     line,
+                    detail: None,
                 }
             })
             .collect();

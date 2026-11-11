@@ -164,14 +164,13 @@ fn score(doc: &Document, xelatex: &Path, scratch: &Path) -> Result<Scores, Strin
 }
 
 /// Slow, and needs what the benchmark workflow installs (TeX Live,
-/// pandoc, pdftotext, a display for the CLI's app), so it runs on its
+/// pdftotext, a display for the CLI's app), so it runs on its
 /// own: `cargo test --test bench_latex_typst -- --ignored`.
 #[test]
 #[ignore = "converts every benchmark document; run with --ignored"]
 fn latex_to_typst_scores() {
     let Some(xelatex) = xelatex() else { return };
-    // `.tex` converts through pandoc until the app's LaTeX reader does (#73).
-    if required("pandoc").is_none() || required("pdftotext").is_none() {
+    if required("pdftotext").is_none() {
         return;
     }
     let manifest = manifest();

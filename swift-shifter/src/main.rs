@@ -544,6 +544,7 @@ mod batch_tests {
             many: "things were lost",
             count: 1,
             line: None,
+            detail: None,
         };
         let converted = Converted {
             output: "/out/a.html".into(),

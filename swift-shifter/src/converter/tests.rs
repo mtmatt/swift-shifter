@@ -384,6 +384,7 @@ fn lost(count: usize) -> crate::converter::Warning {
         many: "things were lost",
         count,
         line: None,
+        detail: None,
     }
 }
 
@@ -454,15 +455,6 @@ fn test_native_engine_routes_md_txt_html_hops() {
         ("typst", "epub"),
         ("typst", "txt"),
         ("typst", "pdf"),
-    ] {
-        assert_eq!(
-            route_hop(from, to),
-            Some(Hop::DocumentNative),
-            "{from}->{to}"
-        );
-    }
-    // Not covered natively yet: still pandoc.
-    for (from, to) in [
         ("tex", "html"),
         ("tex", "md"),
         ("tex", "pdf"),
@@ -470,7 +462,7 @@ fn test_native_engine_routes_md_txt_html_hops() {
     ] {
         assert_eq!(
             route_hop(from, to),
-            Some(Hop::DocumentPandoc),
+            Some(Hop::DocumentNative),
             "{from}->{to}"
         );
     }

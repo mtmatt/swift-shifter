@@ -55,10 +55,6 @@ const MAX_STACK: usize = 1 << 30;
 /// `source`, a document in `dir`, with the files it reads in (see
 /// [`inputs`]), as [`read`] reads it, and warnings of what of those wasn't
 /// read too.
-#[allow(
-    dead_code,
-    reason = "native::convert reads .tex with it at the switch (#73)"
-)]
 pub fn read_in(source: &str, dir: &std::path::Path) -> (Document, Vec<Warning>) {
     let inlined = inputs::inlined(source, dir);
     let (doc, mut warnings) = read(&inlined.source);
@@ -91,6 +87,7 @@ pub fn read(source: &str) -> (Document, Vec<Warning>) {
         many: "documents nested too deeply to read were read as plain text",
         count: 1,
         line: None,
+        detail: None,
     };
     (super::plain::read(source), vec![warning])
 }
@@ -167,6 +164,7 @@ fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
             many: "lists or quotes nested too deeply were read as their text",
             count: reader.unlisted,
             line: None,
+            detail: None,
         });
     }
     if reader.unexpanded > 0 {
@@ -175,6 +173,7 @@ fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
             many: "commands expanding too far were left unexpanded",
             count: reader.unexpanded,
             line: None,
+            detail: None,
         });
     }
     if reader.dropped_field_notes > 0 {
@@ -183,6 +182,7 @@ fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
             many: "notes on the title or authors were dropped",
             count: reader.dropped_field_notes,
             line: None,
+            detail: None,
         });
     }
     if reader.unknown_commands > 0 {
@@ -191,6 +191,7 @@ fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
             many: "LaTeX commands the reader doesn't know kept only their text",
             count: reader.unknown_commands,
             line: None,
+            detail: None,
         });
     }
     if reader.sparse_tables > 0 {
@@ -199,6 +200,7 @@ fn read_parsed(source: &str) -> (Document, Vec<Warning>) {
             many: "tables too sparse to keep were read as their text",
             count: reader.sparse_tables,
             line: None,
+            detail: None,
         });
     }
     let mut doc = Document {

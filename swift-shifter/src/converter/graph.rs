@@ -183,8 +183,10 @@ pub enum Hop {
     PdfToHtml,
     PdfToMd,
     PdfToEpubOrMarker,
-    DocumentPandoc, // document::convert_document (tex input)
-    DocumentNative, // document::native (md/txt/html/epub/typst → md/txt/html/typst/pdf/epub/tex)
+    // document::convert_document, pandoc's tex route, which no hop takes now.
+    #[allow(dead_code, reason = "pandoc's tex route, removed in #73's 22b")]
+    DocumentPandoc,
+    DocumentNative, // document::native (md/txt/html/epub/typst/tex → md/txt/html/typst/pdf/epub/tex)
 }
 
 /// Classify a single hop. Inputs MUST already be normalized.
@@ -213,12 +215,11 @@ pub fn route_hop(from: &str, to: &str) -> Option<Hop> {
             "epub" => Some(PdfToEpubOrMarker),
             _ => None,
         },
-        "md" | "txt" | "html" | "epub" | "typst"
+        "md" | "txt" | "html" | "epub" | "typst" | "tex"
             if crate::converter::document::native::handles(from, to) =>
         {
             Some(DocumentNative)
         }
-        "tex" => Some(DocumentPandoc),
         _ => None,
     }
 }
