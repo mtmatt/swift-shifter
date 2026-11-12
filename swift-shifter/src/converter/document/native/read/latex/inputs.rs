@@ -14,6 +14,16 @@
 //! source may grow to, a command is left unread. Each such command, and
 //! one naming a file that isn't there, shows nothing, and is counted for a
 //! warning. `TEXINPUTS` isn't looked in.
+//!
+//! Known limit: a chapter read in by a macro with arguments
+//! (`\newcommand{\load}[1]{\input{chapters/#1}}` then `\load{one}`) is
+//! lost: the reader finds files before macros with arguments are expanded.
+//! Reading such calls before parsing was tried and left out (#73 item 22c,
+//! four review rounds). A call read there ran where LaTeX wouldn't run it,
+//! as in an optional argument's default or a definition's body, or took a
+//! definition `\begingroup` makes local for one that holds after it, and so
+//! would change text the reader reads correctly today. Writing the `\input`
+//! out where the macro is called (`\input{chapters/one}`) reads it.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
