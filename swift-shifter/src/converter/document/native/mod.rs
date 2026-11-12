@@ -14,11 +14,12 @@ use tauri::Emitter;
 
 use crate::converter::Converted;
 use crate::converter::document::ProgressPayload;
+use crate::converter::document::pdf;
 use crate::converter::document::utils::{output_path, target_to_ext};
 use ast::{Block, Document, Inline, List};
 
 /// Input formats the native readers handle (normalized extensions).
-pub const INPUTS: &[&str] = &["md", "txt", "html", "epub", "typst"];
+pub const INPUTS: &[&str] = &["md", "txt", "html", "epub", "typst", "tex"];
 /// Output formats the native writers handle.
 pub const OUTPUTS: &[&str] = &["md", "txt", "html", "pdf", "typst", "epub", "tex"];
 
@@ -34,17 +35,24 @@ pub struct Warning {
     /// The input line, of the first where there are several, where the
     /// reader knows it.
     pub line: Option<usize>,
+    /// What else there is to say of it, shown after the rest: the error a
+    /// LaTeX engine gave.
+    pub detail: Option<String>,
 }
 
 impl Warning {
     /// "2 SVG images became their alt text", "1 … at line 12", "3 …
-    /// (first at line 12)".
+    /// (first at line 12)", and then ": " and the detail, where there's one.
     pub fn message(&self) -> String {
         let what = if self.count == 1 { self.one } else { self.many };
-        match self.line {
+        let message = match self.line {
             Some(line) if self.count == 1 => format!("1 {what} at line {line}"),
             Some(line) => format!("{} {what} (first at line {line})", self.count),
             None => format!("{} {what}", self.count),
+        };
+        match &self.detail {
+            Some(detail) => format!("{message}: {detail}"),
+            None => message,
         }
     }
 }
@@ -107,13 +115,52 @@ pub async fn convert_document(
 }
 
 /// Synchronous core of [`convert_document`]: also returns what the
-/// conversion left out.
+/// conversion left out. A `.tex` file to PDF is typeset by the LaTeX
+/// engine installed, where there's one that can (see `pdf::latex_engine`).
 pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, String> {
-    let from = input
+    let engine = (extension(input) == "tex" && target == "pdf")
+        .then(|| pdf::latex_engine(input))
+        .flatten();
+    convert_with(input, target, out, engine.as_ref())
+}
+
+/// `input`'s extension, normalized.
+fn extension(input: &Path) -> String {
+    input
         .extension()
         .and_then(|e| e.to_str())
         .map(|e| crate::converter::graph::normalize_ext(&e.to_lowercase()).to_string())
-        .unwrap_or_default();
+        .unwrap_or_default()
+}
+
+/// [`convert`], a `.tex` file to PDF typeset by `engine` where it's given.
+/// Where the engine fails, the reader reads the file and typst typesets
+/// it, and a warning says so, with the engine's error.
+fn convert_with(
+    input: &Path,
+    target: &str,
+    out: &Path,
+    engine: Option<&pdf::Engine>,
+) -> Result<Vec<Warning>, String> {
+    let from = extension(input);
+    // What the engine or the reader couldn't do, first among the warnings.
+    let mut warnings = Vec::new();
+    if let Some(engine) = engine {
+        match pdf::typeset_latex(input, engine) {
+            Ok(pdf) => {
+                std::fs::write(out, pdf)
+                    .map_err(|e| format!("Failed to write {}: {e}", out.display()))?;
+                return Ok(Vec::new());
+            }
+            Err(error) => warnings.push(Warning {
+                one: "document the LaTeX engine couldn't typeset was typeset with Typst",
+                many: "documents the LaTeX engine couldn't typeset were typeset with Typst",
+                count: 1,
+                line: None,
+                detail: Some(error),
+            }),
+        }
+    }
 
     // A typst file is compiled as written; reading it into the AST would
     // only lose what typst can lay out.
@@ -126,15 +173,12 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
     // An EPUB is extracted to a temp folder its images are read from; it
     // must outlive the writing.
     let mut book_dir = None;
-    // What the reader couldn't read, first among the warnings.
-    let mut warnings = Vec::new();
     let mut doc = match from.as_str() {
         "epub" => {
             let book = read::epub::read(input)?;
             book_dir = Some(book.dir);
             book.doc
         }
-        // tex isn't in `INPUTS` until the LaTeX reader is done (#73).
         "md" | "txt" | "html" | "typst" | "tex" => {
             let source = std::fs::read(input)
                 .map_err(|e| format!("Failed to read {}: {e}", input.display()))?;
@@ -151,8 +195,10 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
                     doc
                 }
                 "tex" => {
-                    let (doc, warning) = read::latex::read(source);
-                    warnings.extend(warning);
+                    // Absolute, as the reader finds files in it; `.` for a
+                    // bare file name.
+                    let (doc, unread) = read::latex::read_in(source, &input_dir(input));
+                    warnings.extend(unread);
                     doc
                 }
                 _ => read::html::read(source),
@@ -210,6 +256,7 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
             many: "raw HTML elements kept only their text",
             count: raw_html_lost,
             line: None,
+            detail: None,
         });
     }
     if svgs_as_alt_text > 0 {
@@ -218,6 +265,7 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
             many: "SVG images became their alt text",
             count: svgs_as_alt_text,
             line: None,
+            detail: None,
         });
     }
 
@@ -235,6 +283,7 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
                     many: "formulas couldn't be typeset and are shown as TeX",
                     count: shown_as_tex,
                     line: None,
+                    detail: None,
                 });
             }
             pdf
@@ -268,6 +317,7 @@ pub fn convert(input: &Path, target: &str, out: &Path) -> Result<Vec<Warning>, S
                         many,
                         count,
                         line: None,
+                        detail: None,
                     });
                 }
             }
@@ -1135,7 +1185,8 @@ mod tests {
         assert!(handles("md", "tex"));
         assert!(handles("epub", "tex"));
         assert!(handles("typst", "md") && handles("typst", "pdf"));
-        assert!(!handles("tex", "html"));
+        assert!(handles("tex", "html") && handles("tex", "pdf"));
+        assert!(!handles("tex", "tex"));
     }
 
     #[test]
@@ -1148,6 +1199,140 @@ mod tests {
         let html = std::fs::read_to_string(&out).unwrap();
         assert!(html.contains("<title>Notes</title>"), "{html}");
         assert!(html.contains("<p>Body</p>"));
+    }
+
+    /// A `.tex` file in a folder of its own, reading in `part.tex` beside it.
+    fn tex_with_an_input() -> (tempfile::TempDir, PathBuf) {
+        tex_named_with_an_input("main.tex")
+    }
+
+    /// [`tex_with_an_input`], the file named `name`.
+    fn tex_named_with_an_input(name: &str) -> (tempfile::TempDir, PathBuf) {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join(name);
+        std::fs::write(
+            &input,
+            "\\documentclass{article}\n\\begin{document}\nBefore.\n\n\\input{part}\n\\end{document}\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("part.tex"), "From the part.\n").unwrap();
+        (dir, input)
+    }
+
+    #[test]
+    fn tex_is_read_with_the_files_it_reads_in() {
+        let (dir, input) = tex_with_an_input();
+        let out = dir.path().join("main.md");
+        let warnings = convert(&input, "md", &out).unwrap();
+        assert_eq!(warnings, []);
+        let md = std::fs::read_to_string(&out).unwrap();
+        assert!(
+            md.contains("Before.") && md.contains("From the part."),
+            "{md}"
+        );
+        // A chapter outside the document's folder (#192).
+        std::fs::write(dir.path().join("shared.v1.tex"), "Shared chapter.\n").unwrap();
+        std::fs::create_dir(dir.path().join("doc")).unwrap();
+        let inner = dir.path().join("doc/main.tex");
+        std::fs::write(
+            &inner,
+            "\\begin{document}\n\\input{../shared.v1}\n\\end{document}\n",
+        )
+        .unwrap();
+        let out = dir.path().join("doc/main.md");
+        assert_eq!(convert(&inner, "md", &out).unwrap(), []);
+        let md = std::fs::read_to_string(&out).unwrap();
+        assert!(md.contains("Shared chapter."), "{md}");
+        // A bare file name's folder is the working directory, absolute.
+        let cwd = std::env::current_dir().unwrap();
+        assert_eq!(input_dir(Path::new("main.tex")), cwd);
+    }
+
+    /// An engine named `name` that's the shell script `script`.
+    #[cfg(unix)]
+    fn script_engine(dir: &Path, name: &'static str, script: &str) -> pdf::Engine {
+        use std::os::unix::fs::PermissionsExt as _;
+        let program = dir.join(format!("fake-{name}"));
+        std::fs::write(&program, format!("#!/bin/sh\n{script}")).unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755)).unwrap();
+        pdf::Engine { name, program }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tex_to_pdf_is_the_engines_where_it_succeeds() {
+        // A name with a dot besides the extension's: the engine's PDF is
+        // `paper.v1.pdf`.
+        let (dir, input) = tex_named_with_an_input("paper.v1.tex");
+        let bin = tempfile::tempdir().unwrap();
+        // Run in the document's folder, with shell escape off, it writes
+        // its PDF where it's told.
+        let engine = script_engine(
+            bin.path(),
+            "xelatex",
+            "[ \"$1\" = -disable-write18 ] && [ -f part.tex ] || exit 3\n\
+             for arg; do case $arg in -output-directory=*) out=${arg#-output-directory=};; esac; done\n\
+             printf '%%PDF-from-the-engine' > \"$out/paper.v1.pdf\"\n",
+        );
+        let out = dir.path().join("paper.v1.pdf");
+        let warnings = convert_with(&input, "pdf", &out, Some(&engine)).unwrap();
+        assert_eq!(warnings, []);
+        assert_eq!(std::fs::read(&out).unwrap(), b"%PDF-from-the-engine");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tex_to_pdf_is_typsts_where_the_engines_fonts_lack_cjk_text() {
+        let (dir, input) = tex_with_an_input();
+        let bin = tempfile::tempdir().unwrap();
+        // It makes a PDF, noting characters it couldn't show.
+        let engine = script_engine(
+            bin.path(),
+            "lualatex",
+            "for arg; do case $arg in -output-directory=*) out=${arg#-output-directory=};; esac; done\n\
+             printf 'Missing character: There is no X in font cmr10!\\n' > \"$out/main.log\"\n\
+             printf '%%PDF-from-the-engine' > \"$out/main.pdf\"\n",
+        );
+        let out = dir.path().join("main.pdf");
+        // Without CJK text, a character missing is the engine's to note.
+        let warnings = convert_with(&input, "pdf", &out, Some(&engine)).unwrap();
+        assert_eq!(warnings, []);
+        assert_eq!(std::fs::read(&out).unwrap(), b"%PDF-from-the-engine");
+
+        std::fs::write(&input, "\\begin{document}\n中文。\n\\end{document}\n").unwrap();
+        let warnings = convert_with(&input, "pdf", &out, Some(&engine)).unwrap();
+        let messages: Vec<String> = warnings.iter().map(Warning::message).collect();
+        assert_eq!(
+            messages,
+            [
+                "1 document the LaTeX engine couldn't typeset was typeset with Typst: \
+                 lualatex: Missing character: There is no X in font cmr10!"
+            ]
+        );
+        assert_eq!(page_count(&std::fs::read(&out).unwrap()), 1);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn tex_to_pdf_is_typsts_with_a_warning_where_the_engine_fails() {
+        let (dir, input) = tex_with_an_input();
+        let bin = tempfile::tempdir().unwrap();
+        let engine = script_engine(
+            bin.path(),
+            "pdflatex",
+            "printf '%s\\n' '! Undefined control sequence.' 'l.5 \\foo'\nexit 1\n",
+        );
+        let out = dir.path().join("main.pdf");
+        let warnings = convert_with(&input, "pdf", &out, Some(&engine)).unwrap();
+        let messages: Vec<String> = warnings.iter().map(Warning::message).collect();
+        assert_eq!(
+            messages,
+            [
+                "1 document the LaTeX engine couldn't typeset was typeset with Typst: \
+              pdflatex: ! Undefined control sequence. l.5 \\foo"
+            ]
+        );
+        assert_eq!(page_count(&std::fs::read(&out).unwrap()), 1);
     }
 
     #[test]
@@ -3176,6 +3361,7 @@ mod tests {
             many: "SVG images became their alt text",
             count,
             line,
+            detail: None,
         };
         assert_eq!(
             warning(1, None).message(),

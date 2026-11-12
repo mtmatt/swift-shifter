@@ -394,6 +394,7 @@ fn not_found(
             many: "files the document names weren't found",
             count,
             line: None,
+            detail: None,
         })
         .into_iter()
         .collect()

@@ -474,6 +474,7 @@ mod tests {
             many: "SVG images became their alt text",
             count,
             line: None,
+            detail: None,
         };
         let converted = |warnings| {
             Ok(converter::Converted {
