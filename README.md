@@ -38,23 +38,21 @@ If your system warns about the app the first time you open it:
 
 Some conversions still run another program, which isn't built in yet. Since v2.0.0 the app doesn't install them for you. When one is missing, the conversion that needs it tells you how to install it, and `swift-shifter doctor` lists which ones it finds.
 
-| Tool                       | Needed for                                                                                                  | Install                                                                                                                                      |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| [pandoc][pandoc]           | LaTeX (`.tex`) documents                                                                                    | macOS: `brew install pandoc` · Windows: `winget install JohnMacFarlane.Pandoc` · Linux: your package manager, e.g. `sudo apt install pandoc` |
-| [ffmpeg][ffmpeg]           | audio, video, and images to GIF                                                                             | macOS: `brew install ffmpeg` · Windows: `winget install Gyan.FFmpeg` · Linux: your package manager, e.g. `sudo apt install ffmpeg`           |
-| [pymupdf4llm][pymupdf4llm] | reading PDFs (the default engine)                                                                           | `pipx install pymupdf4llm --include-deps` (with [pipx](https://pipx.pypa.io))                                                                |
-| [marker-pdf][marker]       | optional: reading PDFs to Markdown or EPUB, and on to LaTeX or Typst, where marker is turned on in Settings | `pipx install marker-pdf`, then `pipx inject marker-pdf psutil`                                                                              |
+| Tool                       | Needed for                                                                                                  | Install                                                                                                                            |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| [ffmpeg][ffmpeg]           | audio, video, and images to GIF                                                                             | macOS: `brew install ffmpeg` · Windows: `winget install Gyan.FFmpeg` · Linux: your package manager, e.g. `sudo apt install ffmpeg` |
+| [pymupdf4llm][pymupdf4llm] | reading PDFs (the default engine)                                                                           | `pipx install pymupdf4llm --include-deps` (with [pipx](https://pipx.pypa.io))                                                      |
+| [marker-pdf][marker]       | optional: reading PDFs to Markdown or EPUB, and on to LaTeX or Typst, where marker is turned on in Settings | `pipx install marker-pdf`, then `pipx inject marker-pdf psutil`                                                                    |
 
 PDF output is built in: Typst is part of the app, so a PDF needs no LaTeX install. For `.tex → PDF`, a LaTeX engine you have installed (Tectonic, XeLaTeX, LuaLaTeX or pdfLaTeX) is used, since it keeps raw LaTeX; without one, the built-in Typst typesets it.
 
-[pandoc]: https://pandoc.org/installing.html
 [ffmpeg]: https://ffmpeg.org/download.html
 [pymupdf4llm]: https://pypi.org/project/pymupdf4llm/
 [marker]: https://github.com/datalab-to/marker
 
 ## Formats
 
-- **Documents:** Markdown, plain text, HTML, LaTeX, Typst, PDF and EPUB, to one another. LaTeX input needs pandoc, and PDF input needs pymupdf4llm, or marker where it's turned on in Settings. PDF output is typeset by the built-in Typst.
+- **Documents:** Markdown, plain text, HTML, LaTeX, Typst, PDF and EPUB, to one another. PDF input needs pymupdf4llm, or marker where it's turned on in Settings. PDF output is typeset by the built-in Typst.
 - **Images:** PNG, JPEG, WebP, GIF, BMP and TIFF, to one another and to AVIF and PDF, and HEIC/HEIF too on macOS. AVIF is written but not read yet. Converting to GIF needs ffmpeg.
 - **Video:** MP4, MOV, MKV, WebM and AVI, to one another, to GIF and to audio, with ffmpeg. A GIF can't be converted back to video.
 - **Audio:** MP3, AAC, FLAC, OGG, WAV, OPUS and M4A, with ffmpeg.
@@ -65,7 +63,7 @@ When there's no direct route between two formats, the app chains conversions and
 ## How it differs
 
 - **From online converters:** your files stay on your computer, and there is no upload size limit or queue.
-- **From pandoc:** most conversions are Swift Shifter's own, written for the formats it aims to do best. Its PDF output is typeset with Typst, without a LaTeX install. It also converts images, audio, video and data, from a menu bar and a hotkey rather than a command line. For LaTeX input it still uses pandoc, until its own LaTeX reader is done ([#73](https://github.com/mtmatt/swift-shifter/issues/73)).
+- **From pandoc:** most conversions are Swift Shifter's own, written for the formats it aims to do best. Its PDF output is typeset with Typst, without a LaTeX install. It also converts images, audio, video and data, from a menu bar and a hotkey rather than a command line. LaTeX input is read by its own reader too ([#73](https://github.com/mtmatt/swift-shifter/issues/73)).
 
 ## Features
 
@@ -122,7 +120,7 @@ The release `.app` lands in `swift-shifter/target/release/bundle/`.
 | Backend logic          | Rust                                                                                                                         |
 | Image processing       | [`image`](https://crates.io/crates/image) crate + [`ravif`](https://crates.io/crates/ravif) for AVIF + macOS `sips` for HEIC |
 | Video / audio          | System `ffmpeg` (install it yourself; the app says how)                                                                      |
-| Document conversion    | Native Rust engine for Markdown / plain text / HTML / EPUB / Typst; `pandoc` for LaTeX input (install it yourself)           |
+| Document conversion    | Native Rust engine for Markdown / plain text / HTML / EPUB / Typst / LaTeX                                                   |
 | PDF output             | [typst](https://typst.app) compiler linked in (no install, CJK font selection, TeX math via `mitex`)                         |
 | PDF ↔ EPUB / HTML / MD | `pymupdf4llm` (install it with pipx); optional ML engine via `marker-pdf`                                                    |
 | Data serialization     | `serde_json`, `serde_yaml`, `toml`, `csv` crates                                                                             |
@@ -147,7 +145,7 @@ swift-shifter/
 │   │       ├── image.rs     # image crate + ravif (AVIF) + sips (HEIC)
 │   │       ├── media.rs     # ffmpeg subprocess wrapper
 │   │       ├── data.rs      # JSON/YAML/TOML/CSV converters
-│   │       └── document/    # native engine + embedded typst, pandoc, pymupdf4llm/marker-pdf
+│   │       └── document/    # native engine + embedded typst, LaTeX engines, pymupdf4llm/marker-pdf
 │   │           ├── mod.rs
 │   │           ├── binaries.rs  # finding the external tools
 │   │           ├── conversion.rs # conversion logic per format
@@ -216,7 +214,7 @@ git tag v0.2.0 && git push origin v0.2.0
 - [x] Update check via Tauri updater plugin
 - [x] Windows and Linux support
 - [x] CI/CD pipeline with signed releases
-- [x] Document conversion (native engine, embedded typst for PDF; pandoc for LaTeX input)
+- [x] Document conversion (native engine, embedded typst for PDF)
 - [x] Images to PDF
 - [x] EPUB <-> PDF
 - [x] PDF/EPUB -> HTML and Markdown
@@ -226,6 +224,6 @@ git tag v0.2.0 && git push origin v0.2.0
 
 ### Coming next
 
-- [ ] A native LaTeX reader, so `.tex` input no longer goes through pandoc ([#73](https://github.com/mtmatt/swift-shifter/issues/73))
-- [ ] Removing pandoc ([#74](https://github.com/mtmatt/swift-shifter/issues/74))
+- [ ] A native LaTeX reader ([#73](https://github.com/mtmatt/swift-shifter/issues/73)): `.tex` input goes only through it now, and pandoc's route is gone; a chapter read in by a macro with arguments (`\load{one}`) is still lost, a known limit
+- [x] Removing pandoc ([#74](https://github.com/mtmatt/swift-shifter/issues/74)): no conversion runs it; only the development tests and CI still compare with it
 - [ ] Linking ffmpeg's libraries rather than running its binary ([#81](https://github.com/mtmatt/swift-shifter/issues/81))

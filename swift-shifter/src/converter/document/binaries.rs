@@ -5,6 +5,9 @@ use std::path::PathBuf;
 #[cfg(target_os = "macos")]
 pub const BREW_PATHS: &[&str] = &["/opt/homebrew/bin", "/usr/local/bin"];
 
+/// Where pandoc is, for the tests that compare with it: no conversion
+/// runs it.
+#[cfg(test)]
 pub fn find_pandoc_binary() -> Option<PathBuf> {
     if let Ok(p) = which::which("pandoc") {
         return Some(p);

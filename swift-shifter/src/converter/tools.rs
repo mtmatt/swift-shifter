@@ -11,18 +11,16 @@ use super::{document, media};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tool {
     Ffmpeg,
-    Pandoc,
     Pymupdf4llm,
     Marker,
 }
 
 impl Tool {
-    pub const ALL: [Tool; 4] = [Tool::Ffmpeg, Tool::Pandoc, Tool::Pymupdf4llm, Tool::Marker];
+    pub const ALL: [Tool; 3] = [Tool::Ffmpeg, Tool::Pymupdf4llm, Tool::Marker];
 
     pub fn name(self) -> &'static str {
         match self {
             Tool::Ffmpeg => "ffmpeg",
-            Tool::Pandoc => "pandoc",
             Tool::Pymupdf4llm => "pymupdf4llm",
             Tool::Marker => "marker-pdf",
         }
@@ -31,7 +29,6 @@ impl Tool {
     fn needed_for(self) -> &'static str {
         match self {
             Tool::Ffmpeg => "audio and video",
-            Tool::Pandoc => "LaTeX (.tex) documents",
             Tool::Pymupdf4llm => "reading PDFs",
             Tool::Marker => "PDF to EPUB with marker (Settings, engines)",
         }
@@ -50,15 +47,6 @@ impl Tool {
             }
             Tool::Ffmpeg => {
                 "Install it with your package manager, e.g. sudo apt install ffmpeg (or see https://ffmpeg.org/download.html)"
-            }
-            Tool::Pandoc if macos => {
-                "Install it with: brew install pandoc (or see https://pandoc.org/installing.html)"
-            }
-            Tool::Pandoc if windows => {
-                "Install it with: winget install JohnMacFarlane.Pandoc (or see https://pandoc.org/installing.html)"
-            }
-            Tool::Pandoc => {
-                "Install it with your package manager, e.g. sudo apt install pandoc (or see https://pandoc.org/installing.html)"
             }
             // pymupdf4llm has no command of its own: pipx needs --include-deps.
             Tool::Pymupdf4llm => {
@@ -84,7 +72,6 @@ impl Tool {
     pub fn find(self) -> Option<PathBuf> {
         match self {
             Tool::Ffmpeg => media::find_ffmpeg(),
-            Tool::Pandoc => document::find_pandoc_binary(),
             Tool::Pymupdf4llm => document::find_pymupdf4llm_python(),
             Tool::Marker => document::find_marker_binary(),
         }
@@ -143,16 +130,16 @@ mod tests {
     #[test]
     fn a_missing_tool_is_looked_for_again_and_a_found_one_is_kept() {
         let cache = OnceLock::new();
-        let err = Tool::Pandoc.locate_with(&cache, || None).unwrap_err();
-        assert_eq!(err, Tool::Pandoc.missing());
+        let err = Tool::Ffmpeg.locate_with(&cache, || None).unwrap_err();
+        assert_eq!(err, Tool::Ffmpeg.missing());
         assert_eq!(cache.get(), None);
 
         // Installed since: found, then kept without looking again.
-        let pandoc = PathBuf::from("/usr/bin/pandoc");
-        let found = Tool::Pandoc.locate_with(&cache, || Some(pandoc.clone()));
-        assert_eq!(found.as_ref(), Ok(&pandoc));
-        let kept = Tool::Pandoc.locate_with(&cache, || panic!("looked again"));
-        assert_eq!(kept, Ok(pandoc));
+        let ffmpeg = PathBuf::from("/usr/bin/ffmpeg");
+        let found = Tool::Ffmpeg.locate_with(&cache, || Some(ffmpeg.clone()));
+        assert_eq!(found.as_ref(), Ok(&ffmpeg));
+        let kept = Tool::Ffmpeg.locate_with(&cache, || panic!("looked again"));
+        assert_eq!(kept, Ok(ffmpeg));
     }
 
     #[test]
