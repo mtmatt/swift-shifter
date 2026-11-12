@@ -122,9 +122,8 @@ enum BranchEnd {
 /// skipping, doesn't see it; but an `\else` or `\fi` is one as TeX names
 /// it, so `\fi@x` is `\fi` and the text `@x`.
 ///
-/// `files.rs` has the same `branch`, for pandoc. That file finds what the
-/// app really converts today, so it isn't touched for a reader that isn't
-/// in use yet.
+/// `files.rs` has the same `branch`, for finding the files read in, kept
+/// apart from the reader's since it was written for pandoc's route (#185).
 fn branch(text: &str, to_else: bool) -> (usize, BranchEnd) {
     let mut nested = 0;
     let mut at = 0;

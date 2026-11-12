@@ -99,7 +99,6 @@ pub async fn convert_document(
         .ok();
     };
     progress(0.0);
-    // Typst output is written as `.typ`, like the pandoc path.
     let out = output_path(path, target_to_ext(target), output_dir)?;
     let input = PathBuf::from(path);
     let out_for_task = out.clone();
@@ -466,105 +465,6 @@ pub fn image_to_pdf(image: &Path) -> Result<Vec<u8>, String> {
         allow_packages: false,
     };
     typst::compile_pdf(project).map_err(|e| e.message)
-}
-
-/// Typeset typst markup written by pandoc (tex → pdf without LaTeX) under Swift
-/// Shifter's page template, with `meta` for the title block. `root` is where
-/// its image paths resolve.
-pub fn typeset_pandoc_typst(body: &str, root: &Path, meta: &ast::Meta) -> Result<Vec<u8>, String> {
-    let body = unlink_dangling_labels(body);
-    let lang = ast::detect_cjk_lang(&body);
-    let fonts = typst::text_fonts(lang);
-    if ast::contains_cjk(&body) && !typst::has_cjk_font(&fonts) {
-        return Err(no_cjk_font_error());
-    }
-    let options = write::typst::Options {
-        target: write::typst::Target::Pdf,
-        fonts,
-        paper: typst::default_paper(),
-        base_dir: root.to_path_buf(),
-        tex_fallback: &HashSet::new(),
-    };
-    let preamble = write::typst::preamble(
-        meta,
-        lang,
-        &options,
-        write::typst::PreambleExtras::default(),
-    );
-    let project = typst::Project {
-        main: format!("{preamble}\n{body}\n"),
-        main_name: None,
-        root: root.to_path_buf(),
-        files: HashMap::new(),
-        allow_packages: false,
-    };
-    typst::compile_pdf(project).map_err(|e| format!("Couldn't typeset the PDF: {}", e.message))
-}
-
-/// Point links to labels the document never defines (broken anchors, common
-/// in real ebooks) at a plain URL instead: typst rejects links to unknown
-/// labels, which would fail the whole conversion. Pandoc writes labels as
-/// `<name>`, or as `label("name")` when the name has other characters.
-fn unlink_dangling_labels(body: &str) -> String {
-    const LINK: &str = "link(";
-    // Labels are defined anywhere except as a link target.
-    let mut defined = HashSet::new();
-    for (at, _) in body.match_indices(['<', 'l']) {
-        if let Some((name, _)) = label_at(body, at)
-            && !body[..at].ends_with(LINK)
-        {
-            defined.insert(name);
-        }
-    }
-    let mut out = String::with_capacity(body.len());
-    let mut rest = body;
-    while let Some(i) = rest.find(LINK) {
-        let target = i + LINK.len();
-        out.push_str(&rest[..target]);
-        match label_at(rest, target) {
-            Some((name, len)) if !defined.contains(name) => {
-                // A `label("…")` name is already escaped for a string.
-                out.push_str(&format!("\"#{name}\""));
-                rest = &rest[target + len..];
-            }
-            _ => rest = &rest[target..],
-        }
-    }
-    out.push_str(rest);
-    out
-}
-
-/// The label written at `body[at..]`, `<name>` or `label("name")`, and its
-/// length in bytes. A `\<` is escaped text, not a label.
-fn label_at(body: &str, at: usize) -> Option<(&str, usize)> {
-    let text = &body[at..];
-    if let Some(after) = text.strip_prefix('<') {
-        let is_label_char = |c: char| c.is_alphanumeric() || matches!(c, '_' | '-' | '.' | ':');
-        let len = after
-            .find(|c: char| !is_label_char(c))
-            .unwrap_or(after.len());
-        let closed = len > 0 && after[len..].starts_with('>');
-        return (closed && !body[..at].ends_with('\\')).then(|| (&after[..len], len + 2));
-    }
-    let after = text.strip_prefix("label(\"")?;
-    if body[..at].ends_with(|c: char| c.is_alphanumeric() || c == '-' || c == '_') {
-        return None;
-    }
-    let mut escaped = false;
-    let end = after.char_indices().find_map(|(i, c)| match c {
-        '\\' if !escaped => {
-            escaped = true;
-            None
-        }
-        '"' if !escaped => Some(i),
-        _ => {
-            escaped = false;
-            None
-        }
-    })?;
-    after[end + 1..]
-        .starts_with(')')
-        .then(|| (&after[..end], "label(\"".len() + end + 2))
 }
 
 /// Markdown → standalone HTML, for converters that produce Markdown first
@@ -1915,42 +1815,6 @@ mod tests {
         std::fs::write(&report, "Fine.\n\n#undefined-function()\n").unwrap();
         let error = typst_file_to_pdf(&report).unwrap_err();
         assert!(error.contains("report.typ:3:"), "{error}");
-    }
-
-    #[test]
-    fn dangling_label_links_become_plain_urls() {
-        let body = "#link(<intro>)[Intro] #link(<gone>)[Gone] #link(<a.b-c>)[X]\n\
-                    = Intro <intro>\n\\<not-a-label> #link(<not-a-label>)[Y]\n";
-        assert_eq!(
-            unlink_dangling_labels(body),
-            "#link(<intro>)[Intro] #link(\"#gone\")[Gone] #link(\"#a.b-c\")[X]\n\
-             = Intro <intro>\n\\<not-a-label> #link(\"#not-a-label\")[Y]\n"
-        );
-        // Not a label link: left alone.
-        assert_eq!(unlink_dangling_labels("#link(<x y>)"), "#link(<x y>)");
-        // Pandoc's form for names with other characters.
-        assert_eq!(
-            unlink_dangling_labels(
-                "#link(label(\"weird id!\"))[x] #link(label(\"a \\\" b\"))[y]\n#label(\"a \\\" b\")"
-            ),
-            "#link(\"#weird id!\")[x] #link(label(\"a \\\" b\"))[y]\n#label(\"a \\\" b\")"
-        );
-        assert_eq!(
-            unlink_dangling_labels("#mylabel(\"x\") #link(label(\"x\"))"),
-            "#mylabel(\"x\") #link(\"#x\")"
-        );
-    }
-
-    #[test]
-    fn pandoc_typst_with_broken_links_still_typesets() {
-        let meta = ast::Meta {
-            title: Some("Book".into()),
-            authors: vec!["A. Author".into()],
-            ..Default::default()
-        };
-        let body = "= Chapter <ch1>\nSee #link(<ch1>)[above] and #link(<missing>)[nowhere].\n";
-        let pdf = typeset_pandoc_typst(body, &std::env::temp_dir(), &meta).unwrap();
-        assert_eq!(page_count(&pdf), 1);
     }
 
     #[test]

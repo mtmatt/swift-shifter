@@ -3,8 +3,7 @@
 //! source's own tokens and pairs braces and environments: which arguments a
 //! command takes is the reader's to say, the parser's own table being
 //! math's. Verbatim text is cut out before it's parsed (see [`verbatim`]).
-//! `.tex` input still goes to pandoc until the reader reads what pandoc
-//! does (see `graph::route_hop`).
+//! All `.tex` input is read here (see `graph::route_hop`).
 
 mod conditionals;
 mod delimiters;
@@ -18,7 +17,6 @@ mod macros;
 pub mod paths;
 #[cfg(test)]
 mod round_trip;
-pub mod stage;
 #[cfg(test)]
 mod text_loss;
 mod verbatim;

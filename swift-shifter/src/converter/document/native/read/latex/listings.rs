@@ -4,8 +4,8 @@
 //! braces, `%` and `\end` included. Each is left as a placeholder that the
 //! reader puts it back at.
 //!
-//! This is the reader's own: `verbatim::cut` is also what pandoc's route
-//! finds files with (see `files`), and is left as it is. So what's in a
+//! This is the reader's own: `verbatim::cut` is also what `files` finds
+//! the files read in with (see `inputs`), and is left as it is. So what's in a
 //! comment, verbatim text, or what the parser skips is passed by as it
 //! passes it by.
 

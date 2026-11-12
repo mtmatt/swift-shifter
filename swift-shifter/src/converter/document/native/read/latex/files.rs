@@ -1,8 +1,8 @@
 //! Where a LaTeX source names files: `\input`, `\include`, the `import`
 //! package's commands and `\includegraphics`, with where their arguments
-//! are. It's for converting a document whose files are in folders of their
-//! own (#170): their paths are rewritten, and pandoc reads the files in
-//! itself, so commands are found where pandoc 3.9 reads them: past
+//! are, for reading those files in (see `inputs`). It was written for the
+//! pandoc route, which read the files in itself (#170), so commands are
+//! found where pandoc 3.9 reads them: past
 //! comments, verbatim text (taken as the reader takes it, see
 //! [`super::verbatim`]), the false branch of an `\iffalse`, though not its
 //! `\else` (#185), and an `\iftrue`'s `\else`.

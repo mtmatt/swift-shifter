@@ -56,29 +56,6 @@ pub fn find_md_file(dir: &Path) -> Option<PathBuf> {
     None
 }
 
-/// Map a file extension to the pandoc format name used on the command line.
-pub fn ext_to_pandoc_format(ext: &str) -> &str {
-    match ext {
-        "md" | "markdown" => "markdown",
-        "txt" => "plain",
-        "tex" | "latex" => "latex",
-        "typ" | "typst" => "typst",
-        "epub" => "epub",
-        "pdf" => "pdf",
-        _ => ext,
-    }
-}
-
-/// Map a file extension to the pandoc *reader* name. Differs from
-/// [`ext_to_pandoc_format`] for `.txt`: pandoc has no `plain` reader (it's a
-/// writer-only format), so plain-text input is read as Markdown.
-pub fn ext_to_pandoc_input_format(ext: &str) -> &str {
-    match ext {
-        "txt" => "markdown",
-        _ => ext_to_pandoc_format(ext),
-    }
-}
-
 /// Output file extension for a given target format keyword. Typst output is
 /// written as `.typ`, the extension `typst compile` and editors expect.
 pub fn target_to_ext(target: &str) -> &str {
@@ -94,23 +71,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn txt_reads_as_markdown_but_writes_as_plain() {
-        // pandoc has no `plain` reader, so .txt input must read as markdown,
-        // while .txt output stays `plain`.
-        assert_eq!(ext_to_pandoc_input_format("txt"), "markdown");
-        assert_eq!(ext_to_pandoc_format("txt"), "plain");
-    }
-
-    #[test]
-    fn input_format_matches_output_for_non_txt() {
-        for ext in ["md", "tex", "latex", "typ", "typst", "epub", "pdf"] {
-            assert_eq!(ext_to_pandoc_input_format(ext), ext_to_pandoc_format(ext));
-        }
-    }
-
-    #[test]
-    fn typst_reads_from_typ_and_writes_typ() {
-        assert_eq!(ext_to_pandoc_input_format("typ"), "typst");
+    fn typst_and_latex_are_written_as_typ_and_tex() {
         assert_eq!(target_to_ext("typst"), "typ");
         assert_eq!(target_to_ext("latex"), "tex");
         assert_eq!(target_to_ext("md"), "md");
