@@ -148,19 +148,8 @@ struct TitleMarks {
     authors: Vec<String>,
 }
 
-/// Imports, page setup and styles, then a title block from `meta`. Also used
-/// in front of typst written by pandoc (epub/tex → pdf), which needs
-/// `horizontalrule`.
-pub fn preamble(
-    meta: &Meta,
-    lang: Option<&str>,
-    options: &Options,
-    extras: PreambleExtras,
-) -> String {
-    marked_preamble(meta, lang, options, extras, &TitleMarks::default())
-}
-
-/// [`preamble`], its title block marking `marks`.
+/// Imports, page setup and styles, then a title block from `meta`, marking
+/// `marks`.
 fn marked_preamble(
     meta: &Meta,
     lang: Option<&str>,

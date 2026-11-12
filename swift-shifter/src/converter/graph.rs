@@ -183,9 +183,6 @@ pub enum Hop {
     PdfToHtml,
     PdfToMd,
     PdfToEpubOrMarker,
-    // document::convert_document, pandoc's tex route, which no hop takes now.
-    #[allow(dead_code, reason = "pandoc's tex route, removed in #73's 22b")]
-    DocumentPandoc,
     DocumentNative, // document::native (md/txt/html/epub/typst/tex → md/txt/html/typst/pdf/epub/tex)
 }
 

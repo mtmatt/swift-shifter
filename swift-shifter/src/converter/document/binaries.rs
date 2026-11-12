@@ -1,4 +1,4 @@
-use crate::converter::document::{PANDOC_PATH, PYMUPDF4LLM_PYTHON};
+use crate::converter::document::PYMUPDF4LLM_PYTHON;
 use crate::converter::tools::Tool;
 use std::path::PathBuf;
 
@@ -180,10 +180,6 @@ pub fn find_pymupdf4llm_python() -> Option<PathBuf> {
 
 pub fn get_pymupdf4llm_python() -> Result<PathBuf, String> {
     Tool::Pymupdf4llm.locate(&PYMUPDF4LLM_PYTHON)
-}
-
-pub fn get_pandoc() -> Result<PathBuf, String> {
-    Tool::Pandoc.locate(&PANDOC_PATH)
 }
 
 pub fn get_marker() -> Result<PathBuf, String> {

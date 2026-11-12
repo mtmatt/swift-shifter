@@ -93,9 +93,6 @@ async fn run_single_hop(
         Hop::HeicInput => image::convert_heic(path, to, out_dir),
         Hop::Media => media::convert_media(app, path, to, out_dir).await,
         Hop::Data => data::convert_data(path, to, out_dir),
-        Hop::DocumentPandoc => {
-            return document::convert_document(app, path, to, out_dir).await;
-        }
         Hop::DocumentNative => {
             return document::native::convert_document(app, path, to, out_dir).await;
         }

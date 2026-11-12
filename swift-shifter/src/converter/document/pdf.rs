@@ -2,8 +2,7 @@
 //! a LaTeX engine is installed, typeset by it as written
 //! ([`typeset_latex`]). Everything else is typeset in-process with typst
 //! (see `native::typst`), and so is `.tex` when no suitable engine exists
-//! or the engine fails. [`latex_setup`] is the pandoc route's, which no
-//! conversion takes now (#73's 22b removes it).
+//! or the engine fails.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -12,21 +11,12 @@ use std::path::{Path, PathBuf};
 use crate::converter::document::binaries::BREW_PATHS;
 use crate::converter::document::native::ast::contains_cjk;
 
-/// LaTeX engines pandoc can drive, most preferred first. pdflatex can't
-/// typeset CJK text, so it's never chosen for it.
+/// LaTeX engines [`typeset_latex`] runs, most preferred first. pdflatex
+/// can't typeset CJK text, so it's never chosen for it.
 const ENGINES: &[&str] = &["tectonic", "xelatex", "lualatex", "pdflatex"];
 
-/// CJK font for the XeLaTeX-family engines, which can't report what's
-/// installed. These ship with the OS (or the usual Noto CJK package on Linux).
-#[cfg(target_os = "macos")]
-const LATEX_CJK_FONT: &str = "Songti SC";
-#[cfg(target_os = "windows")]
-const LATEX_CJK_FONT: &str = "SimSun";
-#[cfg(not(any(target_os = "macos", target_os = "windows")))]
-const LATEX_CJK_FONT: &str = "Noto Serif CJK SC";
-
-/// An installed engine: its name, which says how pandoc and
-/// [`latex_command`] run it, and the binary to run.
+/// An installed engine: its name, which says how [`latex_command`] runs
+/// it, and the binary to run.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Engine {
     pub(crate) name: &'static str,
@@ -193,30 +183,6 @@ fn latex_error(log: &str, printed: &str) -> String {
     }
 }
 
-/// How to run pandoc with a LaTeX engine.
-#[derive(Debug, PartialEq)]
-pub struct LatexSetup {
-    /// `--pdf-engine NAME` and any font variables.
-    pub args: Vec<String>,
-    /// A `PATH` that also holds the engine's directory, when it isn't on
-    /// `PATH` already (e.g. Homebrew's bin for a GUI app).
-    pub path: Option<OsString>,
-}
-
-/// The LaTeX setup for `input` (a `.tex` file), or `None` when no engine
-/// that can typeset it is installed: then the caller typesets via typst.
-pub fn latex_setup(input: &Path) -> Option<LatexSetup> {
-    let engines = installed_engines();
-    let has_cjk = std::fs::read(input)
-        .map(|bytes| contains_cjk(&String::from_utf8_lossy(&bytes)))
-        .unwrap_or(false);
-    let engine = choose(&engines, has_cjk)?;
-    Some(LatexSetup {
-        args: engine_args(engine, has_cjk),
-        path: search_path(std::env::var_os("PATH"), engine),
-    })
-}
-
 fn installed_engines() -> Vec<Engine> {
     ENGINES
         .iter()
@@ -240,18 +206,6 @@ fn find_engine(name: &str) -> Option<PathBuf> {
 
 fn choose(engines: &[Engine], has_cjk: bool) -> Option<&Engine> {
     engines.iter().find(|e| !(has_cjk && e.name == "pdflatex"))
-}
-
-/// Pandoc gets the engine's name, not its path: `search_path` makes sure it
-/// can find it. xeCJK / luatexja (pulled in by pandoc's template when
-/// `CJKmainfont` is set) handle CJK once they have a font.
-fn engine_args(engine: &Engine, has_cjk: bool) -> Vec<String> {
-    let mut args = vec!["--pdf-engine".to_string(), engine.name.to_string()];
-    if has_cjk {
-        args.push("-V".to_string());
-        args.push(format!("CJKmainfont={LATEX_CJK_FONT}"));
-    }
-    args
 }
 
 /// `current` with the engine's directory appended, or `None` when it's
@@ -301,14 +255,6 @@ mod tests {
             "typst takes over"
         );
         assert!(choose(&[], false).is_none());
-    }
-
-    #[test]
-    fn cjk_sets_a_font_for_xelatex_family() {
-        let args = engine_args(&engine("xelatex", "/usr/bin"), true);
-        assert_eq!(args[..2], ["--pdf-engine", "xelatex"]);
-        assert_eq!(args[3], format!("CJKmainfont={LATEX_CJK_FONT}"));
-        assert_eq!(engine_args(&engine("xelatex", "/usr/bin"), false).len(), 2);
     }
 
     fn args(cmd: &std::process::Command) -> Vec<String> {

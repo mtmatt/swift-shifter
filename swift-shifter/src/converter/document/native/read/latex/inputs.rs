@@ -36,8 +36,8 @@ use crate::converter::document::native::Warning;
 /// How deep files may read others in: a file reading itself ends there.
 const MAX_DEPTH: usize = 64;
 
-/// How many files may be read in, the same one each time it is: as many as
-/// a document is staged with for pandoc (see `stage::MAX_FILES`).
+/// How many files may be read in, the same one each time it is: far more
+/// than a book reads in, as pandoc's route, now gone, allowed (#170).
 const MAX_FILES: usize = 1000;
 
 /// What the source may grow by for each of its own bytes, and at least: two

@@ -1,6 +1,5 @@
 //! Where the files a LaTeX document names are, as LaTeX with the `import`
-//! package finds them (#170), so that their paths can be rewritten for
-//! pandoc, which reads the files itself but doesn't know the package.
+//! package finds them (#170), for reading them in (see `inputs`).
 //!
 //! The package's rules (`import.sty`, 2020 and later):
 //! - `\import{folder}{file}` (and `\inputfrom`, `\includefrom`, which
