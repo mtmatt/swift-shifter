@@ -421,9 +421,9 @@ mod tests {
         assert_eq!(found, "\u{2713} ffmpeg: /usr/bin/ffmpeg"); // ✓
 
         // A missing tool gets the same install hint as a conversion that needs it.
-        let missing = format_check(Tool::Pandoc, None);
-        assert_eq!(missing, format!("\u{2717} {}", Tool::Pandoc.missing())); // ✗
-        assert!(missing.contains(Tool::Pandoc.install_hint()));
+        let missing = format_check(Tool::Marker, None);
+        assert_eq!(missing, format!("\u{2717} {}", Tool::Marker.missing())); // ✗
+        assert!(missing.contains(Tool::Marker.install_hint()));
     }
 
     #[test]
